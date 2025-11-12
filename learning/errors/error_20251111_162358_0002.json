@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251111_162358_0002",
+  "timestamp": "2025-11-11T16:23:58.573911",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 4,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mcomprobante_detalle' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mcomprobante_detalle",
+    "expected_value": "Lista de items"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0002",
+      "tNumero": "333",
+      "tSerie": "446477",
+      "fEmision": "30-06-25",
+      "nPrecioTotal": 122.94,
+      "tCliente": "Semien Alejandro"
+    }
+  },
+  "ocr_text_length": 1133,
+  "ocr_text_preview": "BSQE\nBS0002\nHawk\nINTERNATIONAL\nBBS ND REVD 09 JUL 2025\nBechtel Supplier Quality & Expediting Inc.\n300 Post Oak Blvd MS75\nHouston,\nTexas 77056\nAttn.: Semien Alejandro\nBS0002\nServizi resi dalle nostre risorse nel mese di giugno 2025 - SPESE\nServices rendered by our resources in June 2025 - EXPENSES\n(vedi allegato/see spreadsheet here attached)\nTotale complessivo in USD $ $ 120.60\nTotal amount due in USD $\nStamp duty excl art. 15 DPR 633/1972 (€ 2,00) $ 2.34\nTOTAL $ 122.94\nFATTURA NO.:\nINVOICE No. ",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_162358_0002_ocr_text.txt"
+}

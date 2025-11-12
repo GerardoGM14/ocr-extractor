@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_153502_0095",
+  "timestamp": "2025-11-11T15:35:02.596514",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 129,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mcomprobante_detalle' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mcomprobante_detalle",
+    "expected_value": "Lista de items"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "tNumero": "23",
+      "tSerie": null,
+      "fEmision": "30 Jul 2025",
+      "nPrecioTotal": 131.1,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1401,
+  "ocr_text_preview": "BECHTEL\nGiovanni Capacite Aringay (195606)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n23 Jun 2025 - 06 Jul 2025 E (M-S 8 hour Days) POT 8NJ-2500 E9 6M\nApproved Signed\nJuly 03, 2025 17:06:30 (UTC July 04, 2025 00:06:30) July 03, 2025 05:08:53 (UTC July 03, 2025 12:08:53)\nCook, David John Aringay, Giovanni Capacite\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153502_0095_ocr_text.txt"
+}

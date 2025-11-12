@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_160751_0096",
+  "timestamp": "2025-11-11T16:07:51.423722",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 131,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mcomprobante_detalle' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mcomprobante_detalle",
+    "expected_value": "Lista de items"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "tNumero": "7",
+      "tSerie": null,
+      "fEmision": "30 Jul 2025",
+      "nPrecioTotal": 111.1,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 771,
+  "ocr_text_preview": "Giovanni Capacite Aringay (195606)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) POT 8NJ-2500 E9 6M\nApproved\nJuly 17, 2025 16:38:08 (UTC July 17, 2025 23:38:08)\nSigned\nJuly 17, 2025 16:33:33 (UTC July 17, 2025 23:33:33)\nCook, David John\nAringay, Giovanni Capacite\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\n26439-\nREG-240",
+  "ocr_text": "Giovanni Capacite Aringay (195606)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) POT 8NJ-2500 E9 6M\nApproved\nJuly 17, 2025 16:38:08 (UTC July 17, 2025 23:38:08)\nSigned\nJuly 17, 2025 16:33:33 (UTC July 17, 2025 23:33:33)\nCook, David John\nAringay, Giovanni Capacite\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\n26439-\nREG-24084PAY 26439712 AAA-43078- 111 10 11 10 10 11 3 10 11 11 10 11 3\nEZ00-YZ-B\nGrand Total 111 10 11 10 10 11 3 10 11 11 10 11 3\nStraight Time 111 10 11 10 10 11 3 10 11 11 10 11 3\nOver Time\nUser Comments\nREG-24084PAY Report. Date\nREG-24084PAY Report Jul 12, 2025\nJul 19, 2025"
+}

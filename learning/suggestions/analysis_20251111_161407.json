@@ -1,0 +1,1266 @@
+{
+  "analysis": {
+    "patterns": [
+      "La mayoría de los errores son de tipo 'missing_field', indicando que el OCR no pudo encontrar o reconocer los campos requeridos.",
+      "El campo 'tNumero' es el que más frecuentemente falta.",
+      "Los campos 'tSequentialNumber', 'mdivisa' y 'mresumen' también presentan errores de extracción.",
+      "Todos los errores provienen del mismo PDF: '82c0c2a9-085c-4328-a42b-3a9e6d73e0b2', lo que sugiere un problema con este documento en particular."
+    ],
+    "root_causes": [
+      "Mala calidad de la imagen del PDF: baja resolución, escaneo deficiente, texto borroso o distorsionado.",
+      "Diseño inconsistente del documento: la ubicación de los campos puede variar entre documentos, dificultando la identificación por parte del OCR.",
+      "Formato de los campos no estandarizado: 'tNumero', 'tSequentialNumber', 'mdivisa' y 'mresumen' pueden tener diferentes formatos o etiquetas en el documento.",
+      "OCR no entrenado para el tipo de documento: el OCR puede no estar optimizado para reconocer la fuente, el diseño o el vocabulario específico de estos documentos.",
+      "Definición incorrecta de las regiones de interés (ROI) para la extracción: las áreas donde se espera encontrar los campos pueden no estar correctamente definidas."
+    ],
+    "prompt_improvements": [
+      "Proporcionar ejemplos de los valores esperados para cada campo en el prompt. Por ejemplo: 'Extrae el número de factura (tNumero). Ejemplos: OE0001, OR0001, SQR 082156'.",
+      "Incluir palabras clave o frases que ayuden a identificar los campos. Por ejemplo: 'Extrae el número de resumen (mresumen) que se encuentra después de la etiqueta 'Resumen:' o 'Descripción:''.",
+      "Especificar el formato esperado para cada campo. Por ejemplo: 'Extrae el número de secuencia (tSequentialNumber) que es un número entero'.",
+      "Indicar la ubicación relativa de los campos en el documento. Por ejemplo: 'Extrae el número de factura (tNumero) que se encuentra cerca del logo de la empresa'.",
+      "Si es posible, proporcionar un diccionario de sinónimos para las etiquetas de los campos. Por ejemplo: 'mdivisa puede ser también llamado 'Moneda', 'Currency', 'Funct. Curr.' o 'Entered Curr.''"
+    ],
+    "extraction_improvements": [
+      "Preprocesamiento de la imagen: aplicar técnicas de mejora de la imagen como corrección de la inclinación, eliminación de ruido, mejora del contraste y binarización para mejorar la calidad del texto antes de la OCR.",
+      "Definir regiones de interés (ROI) dinámicamente: utilizar algoritmos para detectar la ubicación de las etiquetas de los campos y definir las ROI en función de estas etiquetas.",
+      "Utilizar expresiones regulares para validar y formatear los valores extraídos. Por ejemplo, para 'tNumero', se puede usar una expresión regular para verificar que el valor extraído coincida con un patrón específico (e.g., letras seguidas de números).",
+      "Implementar lógica de post-procesamiento para corregir errores comunes de OCR. Por ejemplo, corregir '0' por 'O' o '1' por 'I'.",
+      "Utilizar un modelo de aprendizaje automático para la extracción de campos: entrenar un modelo con ejemplos de documentos anotados para que aprenda a extraer los campos de forma más precisa.",
+      "Implementar un sistema de validación humana: permitir que un humano revise y corrija los resultados de la extracción para garantizar la precisión."
+    ],
+    "recommendations": [
+      "Investigar la calidad de la imagen del PDF '82c0c2a9-085c-4328-a42b-3a9e6d73e0b2' y aplicar técnicas de preprocesamiento de imagen para mejorarla.",
+      "Analizar la estructura del documento '82c0c2a9-085c-4328-a42b-3a9e6d73e0b2' para identificar patrones en la ubicación de los campos y ajustar las ROI en consecuencia.",
+      "Ajustar el prompt de OCR con las mejoras sugeridas, incluyendo ejemplos, palabras clave y formatos esperados.",
+      "Implementar lógica de post-procesamiento para corregir errores comunes de OCR y validar los valores extraídos.",
+      "Considerar el uso de un modelo de aprendizaje automático para la extracción de campos si la precisión sigue siendo baja después de aplicar las mejoras anteriores.",
+      "Si el volumen de documentos es bajo, implementar un sistema de validación humana para garantizar la precisión."
+    ]
+  },
+  "errors_analyzed": 40,
+  "analyzed_at": "2025-11-11T16:14:07.484007",
+  "errors": [
+    {
+      "error_id": "error_20251111_160827_0107",
+      "timestamp": "2025-11-11T16:08:27.929732",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 160,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "midioma": [
+          {
+            "iMIdioma": 4,
+            "tIdioma": "Otro"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 2,
+            "tTipo": "Resumen"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ],
+        "mproveedor": [
+          {
+            "tRazonSocial": "Lorena\nSubject"
+          }
+        ]
+      },
+      "ocr_text_length": 2812,
+      "ocr_text_preview": "Torres Ferreira, Lorena\nSubject: Recovery Plan - WTP ON PLANT / Bechtel\nLocation: Hotel Costa Del Sol - Cajamarca / conexión via TEAMS; STO-Alcantara-10th Floor-02-Suri (10)-VC\nStart: martes 10-06-2025 12:00\nEnd: martes 10-06-2025 20:00\nRecurrence: (none)\nMeeting Status: Accepted\nOrganizer: Hilbck Peschiera, Roberto\nRequired Attendees: Hilbck Peschiera, Roberto; INGRID DEMARIA; BURMESTER, ENRIQUE (Newmont); Cerna, Juan (Newmont); Johm\nFelipe Mendoza Sanchez; Ruiz Ulloa, Maria Eliana; Garabito Ma",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160827_0107_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160827_0106",
+      "timestamp": "2025-11-11T16:08:27.928137",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 160,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mresumen' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mresumen",
+        "expected_value": "Lista de items de resumen"
+      },
+      "extracted_data": {
+        "midioma": [
+          {
+            "iMIdioma": 4,
+            "tIdioma": "Otro"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 2,
+            "tTipo": "Resumen"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ],
+        "mproveedor": [
+          {
+            "tRazonSocial": "Lorena\nSubject"
+          }
+        ]
+      },
+      "ocr_text_length": 2812,
+      "ocr_text_preview": "Torres Ferreira, Lorena\nSubject: Recovery Plan - WTP ON PLANT / Bechtel\nLocation: Hotel Costa Del Sol - Cajamarca / conexión via TEAMS; STO-Alcantara-10th Floor-02-Suri (10)-VC\nStart: martes 10-06-2025 12:00\nEnd: martes 10-06-2025 20:00\nRecurrence: (none)\nMeeting Status: Accepted\nOrganizer: Hilbck Peschiera, Roberto\nRequired Attendees: Hilbck Peschiera, Roberto; INGRID DEMARIA; BURMESTER, ENRIQUE (Newmont); Cerna, Juan (Newmont); Johm\nFelipe Mendoza Sanchez; Ruiz Ulloa, Maria Eliana; Garabito Ma",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160827_0106_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160823_0105",
+      "timestamp": "2025-11-11T16:08:23.344752",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 163,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "OTRE",
+          "_sequential_number": "OR0001",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 49660.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1090,
+      "ocr_text_preview": "Curran, Michael\nOTRE\nOR0001\nFrom: Raucci, Sharon\nSent: Monday, July 21, 2025 10:50 AM\nTo: BARS Input, Glendale\nCc: Atkins, Garrett; May, Robert; Gann, Julie; Gosain, Tarun; Pletcher, Ben\nSubject: BWB2-55600-430 - WATC M&TE Lab - OBARS Upload - Jun 2025\nAttachments: 55600-430 M&TE-Testing-Lab-OBARS-Upload-2025-06-R00.csv; 55600-430 M&TE-Testing-Lab-OBARS-Upload-2025-06-R00.xls;\n06-2025 LAB BILL OUT R_0.xlsx\nBechtel Level 3 - General. Non-Confidential Business Information.\n*** Re-submittal with re",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160823_0105_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160822_0104",
+      "timestamp": "2025-11-11T16:08:22.417798",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 161,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "OTRE",
+          "_sequential_number": "OR0001",
+          "tNumero": null,
+          "tSerie": null,
+          "fEmision": "7/22/25",
+          "tCliente": null,
+          "nPrecioTotal": 94910.0
+        }
+      },
+      "ocr_text_length": 968,
+      "ocr_text_preview": "7/22/25, 8:47 AM\nPeriod : JUL-2025\nPosted Status: Posted\nPosted Date :\nSource : OBR\nCategory : Original JVs\nFunct. Curr. : USD\nEntered Curr.: USD\nCurrency Type: Corporate\nCurrency Rate : 1\nCurrency Date: 22-JUL-25\nLine Ent- Sub- Nat Sub Perform Entered\nNo. Off Cre Acct Cls Job Job Org Debits\n1 YD1A 000 0000 080 55600 430 DNT0609 4,410.00\n2 YD1A 000 0000 890 26196 530 8NT0309 45,250.00\n3 YD1A 000 0000 890 26442 421 8NT0309\ncusp.oci.becpsn.com/OA_CGI/FNDWRR.exe?temp_id=61389287\nOBR Journal Details",
+      "ocr_text": "7/22/25, 8:47 AM\nPeriod : JUL-2025\nPosted Status: Posted\nPosted Date :\nSource : OBR\nCategory : Original JVs\nFunct. Curr. : USD\nEntered Curr.: USD\nCurrency Type: Corporate\nCurrency Rate : 1\nCurrency Date: 22-JUL-25\nLine Ent- Sub- Nat Sub Perform Entered\nNo. Off Cre Acct Cls Job Job Org Debits\n1 YD1A 000 0000 080 55600 430 DNT0609 4,410.00\n2 YD1A 000 0000 890 26196 530 8NT0309 45,250.00\n3 YD1A 000 0000 890 26442 421 8NT0309\ncusp.oci.becpsn.com/OA_CGI/FNDWRR.exe?temp_id=61389287\nOBR Journal Details\nBatch Name: 49334-072220250839\nJournal Name: JUL-25 Usage Cost USD\nSource Ref : OBARSS2507BWB1\nJournal Desc: OBARS BWATC\nTransaction Date: 22-JUL-25\nEntered Funct Equiv Funct Equiv R Sub Emp Bill Line Description\nCredits Debits Credits O Sub No To\n49,660.00 RECOVERY-JOB\nBWATC-Test Booth/Lab\n49,660.00 BWATC-Test Booth/Lab\n49,660.00\nhttps://cusp.oci.becpsn.com/OA_CGI/FNDWRR.exe?temp_id=61389287\nPage No. : 1\nRun Date : 22-Jul-2025\nRun Time : 08:07:02\nOTRE\nOR0001\n1/1"
+    },
+    {
+      "error_id": "error_20251111_160817_0103",
+      "timestamp": "2025-11-11T16:08:17.676506",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 154,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "OTEM",
+          "_sequential_number": "OE0001",
+          "tSerie": null,
+          "fEmision": "05/26/25",
+          "nPrecioTotal": 653.57,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1885,
+      "ocr_text_preview": "HYATT\nPLACE\nINVOICE\nFanny Lore Flores Fuentes\nAddressline\nTampa, FL 33602\nTel: 813-616-1234 OTEM\nhyatt.com/en-US/hotel/florida/hyatt-\nhouse-tampa-downtown/t\nOE0001\nRoom No. 1017\nArrival 05/26/25\nDeparture 05/28/25\nFolio Window 1\nFolio No.\nConfirmation No. 4491884201\nGroup Name\nBooking No. 2191402775\nDate Description Charges Credits\n05/25/25 Deposit Transferred at C/I 575.19\n05/25/25 No Show Room 169.00\n05/25/25 Occupancy Tax 6% 10.14\n05/25/25 Hillsborough Tax 0.85\n05/25/25 Hillsborough County To",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160817_0103_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160803_0102",
+      "timestamp": "2025-11-11T16:08:03.136440",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 137,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tSequentialNumber' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tSequentialNumber",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "hoja": {
+          "tJson": "BECHTEL\nDavid John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) STO 8NJ-2500 E9 6M\nApproved Signed\nJuly 18, 2025 04:37:56 (UTC July 18, 2025 11:37:56) July 17, 2025 12:51:53 (UTC July 17, 2025 19:51:53)\nSmith, Gilbert Mooche Cook, David John\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\nREG-24084PAY 26711110 BSQE PSQ 15 2 2 5 2 2 2\nActivities\nREG-24084REG 24084REG 61 8 6 8 4 8 6 3 6 6 6\nPersonal Carers 4 4\nLeave\nGrand Total 80 8 8 8 8 8 8 8 8 8 8\nStraight Time 80 8 8 8 8 8 8 8 8 8 8\nOver Time",
+          "tJsonTraducido": null,
+          "lFormato": false,
+          "iMIdioma": 2,
+          "iMDocumentoTipo": 1,
+          "tSequentialNumber": null
+        }
+      },
+      "ocr_text_length": 688,
+      "ocr_text_preview": "BECHTEL\nDavid John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) STO 8NJ-2500 E9 6M\nApproved Signed\nJuly 18, 2025 04:37:56 (UTC July 18, 2025 11:37:56) July 17, 2025 12:51:53 (UTC July 17, 2025 19:51:53)\nSmith, Gilbert Mooche Cook, David John\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\nREG-24084PAY 26711110",
+      "ocr_text": "BECHTEL\nDavid John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) STO 8NJ-2500 E9 6M\nApproved Signed\nJuly 18, 2025 04:37:56 (UTC July 18, 2025 11:37:56) July 17, 2025 12:51:53 (UTC July 17, 2025 19:51:53)\nSmith, Gilbert Mooche Cook, David John\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\nREG-24084PAY 26711110 BSQE PSQ 15 2 2 5 2 2 2\nActivities\nREG-24084REG 24084REG 61 8 6 8 4 8 6 3 6 6 6\nPersonal Carers 4 4\nLeave\nGrand Total 80 8 8 8 8 8 8 8 8 8 8\nStraight Time 80 8 8 8 8 8 8 8 8 8 8\nOver Time"
+    },
+    {
+      "error_id": "error_20251111_160800_0101",
+      "timestamp": "2025-11-11T16:08:00.160141",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 138,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "OTEM",
+          "_sequential_number": "OE0001",
+          "tNumero": null,
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 936,
+      "ocr_text_preview": "BECHEXPRPT_792855_4QL9RG\nOTEM\nOE0001\nPage 1 of 3\nPolicy: T&E - Latin America\nBechtel Expense Report\nReport Key : 1292340\nReport Number: 4QL9RG\nEmployee ID : 792855\nEmployee Name : FLORES FUENTES, FANNY LORENA\nOrg Code : HXB0000\nDefault Approver: BALDINI, SERGIO REYNALDO\nFinal Approver: CONCHA ROBLERO, CECILIA PAOLA\nReport Name: Viaje a USA Mayo 2025\nReport Date : May 28, 2025\nReport Purpose: Viaje a USA Mayo 2025\nReport Total: 1,838,816.00 = USD 1,880.05\nBechtel owes Card : 1,838,816.00\nBechtel ",
+      "ocr_text": "BECHEXPRPT_792855_4QL9RG\nOTEM\nOE0001\nPage 1 of 3\nPolicy: T&E - Latin America\nBechtel Expense Report\nReport Key : 1292340\nReport Number: 4QL9RG\nEmployee ID : 792855\nEmployee Name : FLORES FUENTES, FANNY LORENA\nOrg Code : HXB0000\nDefault Approver: BALDINI, SERGIO REYNALDO\nFinal Approver: CONCHA ROBLERO, CECILIA PAOLA\nReport Name: Viaje a USA Mayo 2025\nReport Date : May 28, 2025\nReport Purpose: Viaje a USA Mayo 2025\nReport Total: 1,838,816.00 = USD 1,880.05\nBechtel owes Card : 1,838,816.00\nBechtel owes Employee :\nAMOUNT ENT AMOUNT ENT CURR BILL AMOUNT BILL CURR\n62.38 58,628.00 CLP 59.94 USD\n15.95 14,969.00 CLP 15.30 USD\n798.77 751,010.00 CLP 767.85 USD\n23.92 22,448.00 CLP 22.95 USD\n241.15 226,647.00 CLP 231.73 USD\n75.16 70,544.00 CLP 72.13 USD\n35.00 32,915.00 CLP 33.65 USD\n49.44 46,484.00 CLP 47.53 USD\n575.19 541,605.00 CLP 553.75 USD\n78.38 73,566.00 CLP 75.22 USD\n1,955.34 1,838,816.00 CLP 1,880.05 USD\nJul 8, 2025 11:08:01 AM"
+    },
+    {
+      "error_id": "error_20251111_160758_0100",
+      "timestamp": "2025-11-11T16:07:58.853016",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 136,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "tNumero": null,
+          "tSerie": null,
+          "fEmision": "30 Jul 2025",
+          "nPrecioTotal": 80.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 653,
+      "ocr_text_preview": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activ",
+      "ocr_text": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activities PSQ 6 2 2 1 1\nREG-24084REG 24084REG 71 6 6 8 8 5 7 7 8 8\nVacation 3 3\nGrand Total 80 8 8 8 8 8 8 8 8 8\nStraight Time 80 8 8 8 8 8 8 8 8 8\nOver Time"
+    },
+    {
+      "error_id": "error_20251111_160758_0099",
+      "timestamp": "2025-11-11T16:07:58.851614",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 136,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tSequentialNumber' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tSequentialNumber",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "hoja": {
+          "tJson": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activities PSQ 6 2 2 1 1\nREG-24084REG 24084REG 71 6 6 8 8 5 7 7 8 8\nVacation 3 3\nGrand Total 80 8 8 8 8 8 8 8 8 8\nStraight Time 80 8 8 8 8 8 8 8 8 8\nOver Time",
+          "tJsonTraducido": null,
+          "lFormato": false,
+          "iMIdioma": 2,
+          "iMDocumentoTipo": 1,
+          "tSequentialNumber": null
+        }
+      },
+      "ocr_text_length": 653,
+      "ocr_text_preview": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activ",
+      "ocr_text": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activities PSQ 6 2 2 1 1\nREG-24084REG 24084REG 71 6 6 8 8 5 7 7 8 8\nVacation 3 3\nGrand Total 80 8 8 8 8 8 8 8 8 8\nStraight Time 80 8 8 8 8 8 8 8 8 8\nOver Time"
+    },
+    {
+      "error_id": "error_20251111_160758_0098",
+      "timestamp": "2025-11-11T16:07:58.420339",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 125,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS082156",
+          "tSerie": null,
+          "fEmision": "7/6/2025",
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 5197,
+      "ocr_text_preview": "BSQE AUSTRALIA ENTRIES\nInvoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nSQR 082156 Obaid Shaikh 26232-115 Australia 7/6/2025 PSQ Support 18.0 Hours 154 2,772.00 AUD\nSOR 082156 Obaid Shaikh 26232-115 Australia 7/20/2025 26231-540-419211-PY21-YZ-B 27.5 Hours 154 4,235.00 AUD\nSQR 082156 Obaid Shaikh 26232-115 Australia 7/20/2025 26231-540-419211-PY21-YZ-B 6.5 Hours 154 1,001.00 AUD\nSQR 082156 Obaid Sha",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160758_0098_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160753_0097",
+      "timestamp": "2025-11-11T16:07:53.289771",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 123,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0009",
+          "tSerie": null,
+          "fEmision": "7/6/2025",
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 4924,
+      "ocr_text_preview": "CFAR BAREDS1 - BARS - BSQE LABOR DETAILS\nBSQE Billings For Month of July and Year 2025\nJob: 26442 - YANACOCHA AWTP - OFFSHORE\nSub Job: 223 - BSQE\nBSQE\nBS0009\nEmp Name Invoice Invoice Date Assignment Number Additional Info Bill Code Class Activity Hours Hrly Rate Amount\nBSQE SERVICE CHARGES - BSQE01\nCharles Cook BSQE070625 7/6/2025 26443-220-YZA-MFB0-10001 INSPECTING 10.00 98 REG 980.00\nDonald W George BSQE070625 7/6/2025 26443-220-YZA-MPVE-1A001 SQR INSPECTING 7.00 112 OVT 784.00\nNedy Resic BSQE",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160753_0097_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160751_0096",
+      "timestamp": "2025-11-11T16:07:51.423722",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 131,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mcomprobante_detalle' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mcomprobante_detalle",
+        "expected_value": "Lista de items"
+      },
+      "extracted_data": {
+        "comprobante": {
+          "tNumero": "7",
+          "tSerie": null,
+          "fEmision": "30 Jul 2025",
+          "nPrecioTotal": 111.1,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 771,
+      "ocr_text_preview": "Giovanni Capacite Aringay (195606)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) POT 8NJ-2500 E9 6M\nApproved\nJuly 17, 2025 16:38:08 (UTC July 17, 2025 23:38:08)\nSigned\nJuly 17, 2025 16:33:33 (UTC July 17, 2025 23:33:33)\nCook, David John\nAringay, Giovanni Capacite\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\n26439-\nREG-240",
+      "ocr_text": "Giovanni Capacite Aringay (195606)\nRun Date: 30 Jul 2025\nPeriod Schedule Overtime Org Code CO PR Office\n07 Jul 2025 - 20 Jul 2025 E (M-S 8 hour Days) POT 8NJ-2500 E9 6M\nApproved\nJuly 17, 2025 16:38:08 (UTC July 17, 2025 23:38:08)\nSigned\nJuly 17, 2025 16:33:33 (UTC July 17, 2025 23:33:33)\nCook, David John\nAringay, Giovanni Capacite\nCharge Code Project Assignment Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\nWorked No.\n7 8 9 10 11 12 13 14 15 16 17 18 19 20\n26439-\nREG-24084PAY 26439712 AAA-43078- 111 10 11 10 10 11 3 10 11 11 10 11 3\nEZ00-YZ-B\nGrand Total 111 10 11 10 10 11 3 10 11 11 10 11 3\nStraight Time 111 10 11 10 10 11 3 10 11 11 10 11 3\nOver Time\nUser Comments\nREG-24084PAY Report. Date\nREG-24084PAY Report Jul 12, 2025\nJul 19, 2025"
+    },
+    {
+      "error_id": "error_20251111_160747_0095",
+      "timestamp": "2025-11-11T16:07:47.691758",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 129,
+      "error_type": "parse_error",
+      "error_message": "could not convert string to float: '131\\n10'",
+      "context": {
+        "exception_type": "ValueError",
+        "exception_message": "could not convert string to float: '131\\n10'"
+      },
+      "extracted_data": {},
+      "ocr_text_length": 0,
+      "ocr_text_preview": null
+    },
+    {
+      "error_id": "error_20251111_160745_0094",
+      "timestamp": "2025-11-11T16:07:45.895174",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 122,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0008",
+          "tSerie": null,
+          "fEmision": "7/6/2025",
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 4923,
+      "ocr_text_preview": "CFAR BAREDS1 - BARS - BSQE LABOR DETAILS\nBSQE Billings For Month of July and Year 2025\nJob: 26442 - YANACOCHA AWTP - OFFSHORE\nSub Job: 223 - BSQE\nBSQE\nBS0008\nEmp Name Invoice Invoice Date Assignment Number Additional Info Bill Code Class Activity Hours Hrly Rate Amount\nBSQE SERVICE CHARGES - BSQE01\nCharles Cook BSQE070625 7/6/2025 26443-220-YZA-MFB0-10001 INSPECTING 10.00 98 REG 980.00\nDonald W George BSQE070625 7/6/2025 26443-220-YZA-MPVE-1A001 SQR INSPECTING 7.00 112 OVT 784.00\nNedy Resic BSQE",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160745_0094_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160745_0093",
+      "timestamp": "2025-11-11T16:07:45.246061",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 119,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0005",
+          "tSerie": null,
+          "fEmision": "7/6/2025",
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 5031,
+      "ocr_text_preview": "CFAR BAREDS1 - BARS - BSQE LABOR DETAILS\nBSQE Billings For Month of July and Year 2025\nJob: 26442 - YANACOCHA AWTP - OFFSHORE\nSub Job: 223 - BSQE\nBSQE\nBS0005\nEmp Name Invoice Invoice Date Assignment Number Additional Info Bill Code Class Activity Hours Hrly Rate Amount\nBSQE SERVICE CHARGES - BSQE01\nCharles Cook BSQE070625 7/6/2025 26443-220-YZA-MFB0-10001 INSPECTING 10.00 98 REG 980.00\nDonald W George BSQE070625 7/6/2025 26443-220-YZA-MPVE-1A001 SQR INSPECTING 7.00 112 OVT 784.00\nNedy Resic BSQE",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160745_0093_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160743_0092",
+      "timestamp": "2025-11-11T16:07:43.814484",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 121,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0007",
+          "tSerie": null,
+          "fEmision": "7/6/2025",
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 4933,
+      "ocr_text_preview": "CFAR BAREDS1 - BARS - BSQE LABOR DETAILS\nBSQE Billings For Month of July and Year 2025\nJob: 26442 - YANACOCHA AWTP - OFFSHORE\nSub Job: 223 - BSQE\nBSQE\nBS0007\nEmp Name Invoice Invoice Date Assignment Number Additional Info Bill Code Class Activity Hours Hrly Rate Amount\nBSQE SERVICE CHARGES - BSQE01\nCharles Cook BSQE070625 7/6/2025 26443-220-YZA-MFB0-10001 INSPECTING 10.00 98 REG 980.00\nDonald W George BSQE070625 7/6/2025 26443-220-YZA-MPVE-1A001 SQR INSPECTING 7.00 112 OVT 784.00\nNedy Resic BSQE",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160743_0092_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160737_0091",
+      "timestamp": "2025-11-11T16:07:37.313023",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 120,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0006",
+          "tSerie": null,
+          "fEmision": "7/6/2025",
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 4923,
+      "ocr_text_preview": "CFAR BAREDS1 - BARS - BSQE LABOR DETAILS\nBSQE Billings For Month of July and Year 2025\nJob: 26442 - YANACOCHA AWTP - OFFSHORE\nSub Job: 223 - BSQE\nBSQE\nBS0006\nEmp Name Invoice Invoice Date Assignment Number Additional Info Bill Code Class Activity Hours Hrly Rate Amount\nBSQE SERVICE CHARGES - BSQE01\nCharles Cook BSQE070625 7/6/2025 26443-220-YZA-MFB0-10001 INSPECTING 10.00 98 REG 980.00\nDonald W George BSQE070625 7/6/2025 26443-220-YZA-MPVE-1A001 SQR INSPECTING 7.00 112 OVT 784.00\nNedy Resic BSQE",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160737_0091_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160731_0090",
+      "timestamp": "2025-11-11T16:07:31.743690",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 126,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS2025",
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 646,
+      "ocr_text_preview": "Invoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nBSQE AUSTRALIA ENTRIES\nEntries in Jun 2025:\nAmount Hours\nE9XL 0000 890 24084 PAY AUD$ (112,592.00)\nE9XL M&M 890 26629 310 AUD$ 2,618.00 17.0\nE9XL M&M 890 26439 712 AUD$ 77,298.00 499.50\nE9XL M&M 890 26711 110 AUD$ 15,736.00 101.50\nE9XL Energy 890 26232 115 AUD$ 16,940.00 110.00\n0.00 728.0\nE9XL M&M 24084 PAY USD$ (2,600.00)\nE9XL M&M 890 26251 140 USD$\n",
+      "ocr_text": "Invoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nBSQE AUSTRALIA ENTRIES\nEntries in Jun 2025:\nAmount Hours\nE9XL 0000 890 24084 PAY AUD$ (112,592.00)\nE9XL M&M 890 26629 310 AUD$ 2,618.00 17.0\nE9XL M&M 890 26439 712 AUD$ 77,298.00 499.50\nE9XL M&M 890 26711 110 AUD$ 15,736.00 101.50\nE9XL Energy 890 26232 115 AUD$ 16,940.00 110.00\n0.00 728.0\nE9XL M&M 24084 PAY USD$ (2,600.00)\nE9XL M&M 890 26251 140 USD$\nE9XL M&M 890 26442 223 USD$ 2,600.00 26.0\n- 26.0\ncost of invoice is recorded to 24084 PAY & EXP when invoice is recorded\nJob charge will autocode."
+    },
+    {
+      "error_id": "error_20251111_160723_0089",
+      "timestamp": "2025-11-11T16:07:23.803650",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 124,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0010",
+          "tNumero": null,
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1104,
+      "ocr_text_preview": "BSQE\nBS0010\nPeriod : JUL-25\nPosted Status : Posted\nPosted Date : 30-JUL-2025\nSource : Spreadsheet\nCategory : Original JVs\nFunct. Curr : AUD\nEntered Curr : USD\nCurrency Type: Corporate\nCurrency Rate: 1.532332209623046\nCurrency Date: 30-JUL-2025\nPrepared By : AMSEMIEN\nApproval Stat: Approved\nApproved By : EMARMSTR\nGL Journal Details\nBatch Name: Web ADI: E9XL-2336732507B0012//USD/30-JUL-2025 Spreadsheet A 4478715 142683\nJournal Name: Original JVs USD Corporate 30-JUL-25 Batch_ID: 10811105\nSource Re",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160723_0089_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160722_0088",
+      "timestamp": "2025-11-11T16:07:22.315691",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 118,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "mcomprobante": [
+          {
+            "_stamp_name": "BSQE",
+            "_sequential_number": "BS0004",
+            "tSerie": null,
+            "tCliente": null
+          }
+        ],
+        "mcomprobante_detalle": [
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "132.00元",
+            "nPrecioUnitario": 132.0,
+            "nPrecioTotal": 132.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "219.00元",
+            "nPrecioUnitario": 219.0,
+            "nPrecioTotal": 219.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "2218.00元",
+            "nPrecioUnitario": 2218.0,
+            "nPrecioTotal": 2218.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "¥491.0元",
+            "nPrecioUnitario": 491.0,
+            "nPrecioTotal": 491.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "火车 491元",
+            "nPrecioUnitario": 491.0,
+            "nPrecioTotal": 491.0
+          }
+        ],
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 1,
+            "tTipo": "Comprobante"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ],
+        "mproveedor": [
+          {
+            "tRazonSocial": "THANJIN PASSENGER"
+          }
+        ]
+      },
+      "ocr_text_length": 1101,
+      "ocr_text_preview": "总计:1060元\nBSQE\nBS0004\n承揽人员差旅费用清单\nINDINSP-SOP-09-05-TJ\n天津家运出租汽车专用发票\nTHANJIN PASSENGER\nTAKA SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060121\nINVOICE CICE\n号码 40458905\nINVOICE\n开票日期: 2025-06-24\nDATE\n清单位:\nSECTION\n黑税号:\n000\n911201011\nTOPFIL N17434188K\n电话:\nTEL\n88908890\nAA.L8161\nREGISTION WARK N\n车号:\n穿起止时间:07:24 08:25\nM\n单价:\nUNIT PRICE\n里程:\nNILOMETRE\n安等候时间:\nWALTING TIME\n附加费:\nABUITIONAL TEE\n三金额:\nAMINT\n卡号:\nCARD No.\n卡原额:\nCARD ORIGINA SUN\n卡余额:\nCARD BALANCE\n3.74元\n36.2km\n00:23.49\n8.00元\n132.00元\n发票代码:132112181210\n发票号码:1760",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160722_0088_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160722_0087",
+      "timestamp": "2025-11-11T16:07:22.314421",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 118,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1101,
+      "ocr_text_preview": "总计:1060元\nBSQE\nBS0004\n承揽人员差旅费用清单\nINDINSP-SOP-09-05-TJ\n天津家运出租汽车专用发票\nTHANJIN PASSENGER\nTAKA SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060121\nINVOICE CICE\n号码 40458905\nINVOICE\n开票日期: 2025-06-24\nDATE\n清单位:\nSECTION\n黑税号:\n000\n911201011\nTOPFIL N17434188K\n电话:\nTEL\n88908890\nAA.L8161\nREGISTION WARK N\n车号:\n穿起止时间:07:24 08:25\nM\n单价:\nUNIT PRICE\n里程:\nNILOMETRE\n安等候时间:\nWALTING TIME\n附加费:\nABUITIONAL TEE\n三金额:\nAMINT\n卡号:\nCARD No.\n卡原额:\nCARD ORIGINA SUN\n卡余额:\nCARD BALANCE\n3.74元\n36.2km\n00:23.49\n8.00元\n132.00元\n发票代码:132112181210\n发票号码:1760",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160722_0087_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160711_0086",
+      "timestamp": "2025-11-11T16:07:11.412826",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 117,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1006,
+      "ocr_text_preview": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Eden Li\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Transportation (USD) Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24 26610-226-YZA-AKBP-6B001 26610-42C 26610-226-YQA-AKBP-6B001 China SQR Taxi+Train ¥623.00 $95.85\n25 26610-226-YZA-AKBP-6B001 26610-42C 26610-226-YQA-AKBP-6B001 China SQR Taxi ¥43",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160711_0086_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160705_0085",
+      "timestamp": "2025-11-11T16:07:05.597468",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 114,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 921,
+      "ocr_text_preview": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Weldon Zhao\nTransportation (USD)\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17 26443-220-YZA-MPVT-1A001 26442-223 26443-220-YQA-MPVT-1A001 China SQR Taxl+Train ¥747.40 $114.98\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $114.98 $0.00 $114.98\n表格说明\nCURRENCY EXCHAN",
+      "ocr_text": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Weldon Zhao\nTransportation (USD)\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17 26443-220-YZA-MPVT-1A001 26442-223 26443-220-YQA-MPVT-1A001 China SQR Taxl+Train ¥747.40 $114.98\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $114.98 $0.00 $114.98\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+    },
+    {
+      "error_id": "error_20251111_160702_0084",
+      "timestamp": "2025-11-11T16:07:02.939860",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 112,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 910,
+      "ocr_text_preview": "SGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nBSQE\nBS0004\nMonth: Jun-25\nSQR/AEX:Mike Chen\nTransportation (USD)\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel Total\n(USD) (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23 26443-220-YZA-MLF0-1C001 26442-223 26443-220-YQA-MLF0-1C001 China SQR Taxl ¥195.00 $30.00\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $30.00 $0.00 $30.00\n表格说明\nCURRENCY EXCHANGE RATE: 1U",
+      "ocr_text": "SGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nBSQE\nBS0004\nMonth: Jun-25\nSQR/AEX:Mike Chen\nTransportation (USD)\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel Total\n(USD) (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23 26443-220-YZA-MLF0-1C001 26442-223 26443-220-YQA-MLF0-1C001 China SQR Taxl ¥195.00 $30.00\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $30.00 $0.00 $30.00\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+    },
+    {
+      "error_id": "error_20251111_160700_0083",
+      "timestamp": "2025-11-11T16:07:00.891554",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 111,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 99,
+            "tTipo": "Desconocido"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ]
+      },
+      "ocr_text_length": 633,
+      "ocr_text_preview": "IN-SH-5801-25P88K\nBSQE\nBS0004\n佛出租汽车机打发票\n修国家税务总局菜\n发 票 联\n发票代码144062170151\n发票号码00150252\n监督电话:\n市物价局 12358\n佛山市汽车运输集園市公司\n26052021种道台[20211009号60万份广东乐住水命\nMASCENDIESTOTA\n机打发票手写无效\n单位: 36289999\n电话: 86333055\n车号: ED28825\n证号:\n日期: 20:25-06-20\n上车: 07:28\n下车: 08:33\n单价: 4.20元\n里程: 46.34km\n等候: 00:14:12\n状态: 1\n金额: ¥177.00元\n卡号:\n车器具全顾地幻不见效\n本文服仅比单使用,指让无效\n广州出租汽华统车票\nGD. GUANGZHOU TAXI RECEIPT\n发票联\n144012370374\n11589303\n监督电话:83600000\n914401017418737614\n发票专用章\n此发票手写无效\n电话 30378997\n车号粤 AD17627\n证号: 319912\n日期: 20:25-06-20\n上车 16:3",
+      "ocr_text": "IN-SH-5801-25P88K\nBSQE\nBS0004\n佛出租汽车机打发票\n修国家税务总局菜\n发 票 联\n发票代码144062170151\n发票号码00150252\n监督电话:\n市物价局 12358\n佛山市汽车运输集園市公司\n26052021种道台[20211009号60万份广东乐住水命\nMASCENDIESTOTA\n机打发票手写无效\n单位: 36289999\n电话: 86333055\n车号: ED28825\n证号:\n日期: 20:25-06-20\n上车: 07:28\n下车: 08:33\n单价: 4.20元\n里程: 46.34km\n等候: 00:14:12\n状态: 1\n金额: ¥177.00元\n卡号:\n车器具全顾地幻不见效\n本文服仅比单使用,指让无效\n广州出租汽华统车票\nGD. GUANGZHOU TAXI RECEIPT\n发票联\n144012370374\n11589303\n监督电话:83600000\n914401017418737614\n发票专用章\n此发票手写无效\n电话 30378997\n车号粤 AD17627\n证号: 319912\n日期: 20:25-06-20\n上车 16:32\n下车 17:35\n单价 3.90元\n里程 48.49km\n候时 00:10:11\n金额 ¥173.00元\n卡号\n批准号:糖海玩自印[2023]006号(300323)人印(3781\n本发需开具合计金额越过万元无效\nTotal: 350./\nPage 1 of 1"
+    },
+    {
+      "error_id": "error_20251111_160658_0082",
+      "timestamp": "2025-11-11T16:06:58.841442",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 110,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 913,
+      "ocr_text_preview": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nSQR/AEX:Huang Gentle\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20 26443-220-YZA-MLF0-1D001 26442-223 26443-220-YQA-MLF0-1D001 China SQR Taxl ¥350.00 $53.85\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $53.85 $0.00 $53.85\n表格说明\nCURRENCY EXCHANGE RATE:",
+      "ocr_text": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nSQR/AEX:Huang Gentle\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20 26443-220-YZA-MLF0-1D001 26442-223 26443-220-YQA-MLF0-1D001 China SQR Taxl ¥350.00 $53.85\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $53.85 $0.00 $53.85\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+    },
+    {
+      "error_id": "error_20251111_160653_0081",
+      "timestamp": "2025-11-11T16:06:53.327400",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 105,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1253,
+      "ocr_text_preview": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nSQR/AEX:Michael-x Xu\nTransportation (USD)\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19 26497-200-318358-PB03-YZ-A 26497-130 26497-200-318358-PB03-YQ-A-014 China SQR Train+Taxi ¥251.50 ¥249.00 $77.00\n20 26497-200-318358-PB03-YZ-A 26497-130 26497-200-318358-PB03-YQ-A-014 Chin",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160653_0081_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160651_0080",
+      "timestamp": "2025-11-11T16:06:51.051645",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 103,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 99,
+            "tTipo": "Desconocido"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ]
+      },
+      "ocr_text_length": 598,
+      "ocr_text_preview": "IN-SH-5801-25P93K\n电子发票(铁路电子客票)\n发票号码:25379166812000866769 开票日期:2025年06月20日\n济南西站 G1244 德州东站\nJinanxi Dezhoudong\n2025年06月20日 07:50开 03车09D号 二等座\n票价:¥46.00\n3707251981****307X 王新民\n电子客票号:6681283086062097910042025 始发改签\n购买方名称:通标标准技术服务(青岛)有限公司 统一社会信用代码:91370212MA3CDTCC8R\n买票请到12306 发货请到95306\n中国铁路祝您旅途愉快\n电子发票(铁路电子客票)\n发票号码:25119166809000193196 开票日期:2025年06月20日\n德州东站 G191 济南西站\nDezhoudong Jinanxi\n2025年06月20日 16:51开 13车150号 二等座\n票价:¥46.00\n3707251981****307X 王新民\n电子客票号:6680962086062193655392025 统一社会信用代码:91370212MA3CD",
+      "ocr_text": "IN-SH-5801-25P93K\n电子发票(铁路电子客票)\n发票号码:25379166812000866769 开票日期:2025年06月20日\n济南西站 G1244 德州东站\nJinanxi Dezhoudong\n2025年06月20日 07:50开 03车09D号 二等座\n票价:¥46.00\n3707251981****307X 王新民\n电子客票号:6681283086062097910042025 始发改签\n购买方名称:通标标准技术服务(青岛)有限公司 统一社会信用代码:91370212MA3CDTCC8R\n买票请到12306 发货请到95306\n中国铁路祝您旅途愉快\n电子发票(铁路电子客票)\n发票号码:25119166809000193196 开票日期:2025年06月20日\n德州东站 G191 济南西站\nDezhoudong Jinanxi\n2025年06月20日 16:51开 13车150号 二等座\n票价:¥46.00\n3707251981****307X 王新民\n电子客票号:6680962086062193655392025 统一社会信用代码:91370212MA3CDTCC8R\n购买方名称:通标标准技术服务(青岛)有限公司\n买票请到12306 发货请到95306\n中国铁路祝您旅途愉快\nTrain Total 92\nPage 1 of 2\nBSQE\nBS0004"
+    },
+    {
+      "error_id": "error_20251111_160649_0079",
+      "timestamp": "2025-11-11T16:06:49.403218",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 99,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "mcomprobante": [
+          {
+            "_stamp_name": "BSQE",
+            "_sequential_number": "BS0004",
+            "tSerie": null,
+            "tCliente": null
+          }
+        ],
+        "mcomprobante_detalle": [
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "出租汽车",
+            "nPrecioUnitario": 110.2,
+            "nPrecioTotal": 110.2
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "出租汽车",
+            "nPrecioUnitario": 104.2,
+            "nPrecioTotal": 104.2
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "里程",
+            "nPrecioUnitario": 146.0,
+            "nPrecioTotal": 146.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "里程",
+            "nPrecioUnitario": 151.0,
+            "nPrecioTotal": 151.0
+          }
+        ],
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 1,
+            "tTipo": "Comprobante"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ]
+      },
+      "ocr_text_length": 1570,
+      "ocr_text_preview": "河北通用机打发票(1)\n出租车卷式\n国家制务总局\n发河北票外联\n发票代码:113002334010\n发票号码:41269710\n识别码:3CH59776×499\n(手写无效)\n出租汽车\n11110000\n0\n公司\n电话:\n车号:冀 J39385\n证号:\n0\n日期:2025年06月26日\n上车:\n08:29\n下午消出 09:53\n单价:\n2.25元\n里程:\n46.5公里\n22.20\n发票专用章\n状态:\n金额:\n0\n110.20元\n河北交通票证印刷厂2023年10月印\n18.69万卷32910001-51600000\n河北通用机打发票(1)\n出租车卷式\n国家利务总局\n发河北票务局胜\n发票代码:113002334010\n发票号码:43979809\n识别码:2973F44FCNXS\n(手写无效)\n出租汽车\n公司\n电话:\n车号:冀J-B5101\n证号:\n11875\n日期: 2025-06-26\n上车(K0660)13:07\n下午出14:13\n单价:\n里只程:\n2.25元\n46.4km\n00:05.22\n候发票专用章\n状态\n金额:\n104.20元\n河北交通票证印刷厂2023年10月印\n18.69万",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160649_0079_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160649_0078",
+      "timestamp": "2025-11-11T16:06:49.401415",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 99,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1570,
+      "ocr_text_preview": "河北通用机打发票(1)\n出租车卷式\n国家制务总局\n发河北票外联\n发票代码:113002334010\n发票号码:41269710\n识别码:3CH59776×499\n(手写无效)\n出租汽车\n11110000\n0\n公司\n电话:\n车号:冀 J39385\n证号:\n0\n日期:2025年06月26日\n上车:\n08:29\n下午消出 09:53\n单价:\n2.25元\n里程:\n46.5公里\n22.20\n发票专用章\n状态:\n金额:\n0\n110.20元\n河北交通票证印刷厂2023年10月印\n18.69万卷32910001-51600000\n河北通用机打发票(1)\n出租车卷式\n国家利务总局\n发河北票务局胜\n发票代码:113002334010\n发票号码:43979809\n识别码:2973F44FCNXS\n(手写无效)\n出租汽车\n公司\n电话:\n车号:冀J-B5101\n证号:\n11875\n日期: 2025-06-26\n上车(K0660)13:07\n下午出14:13\n单价:\n里只程:\n2.25元\n46.4km\n00:05.22\n候发票专用章\n状态\n金额:\n104.20元\n河北交通票证印刷厂2023年10月印\n18.69万",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160649_0078_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160648_0077",
+      "timestamp": "2025-11-11T16:06:48.509009",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 101,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "mcomprobante": [
+          {
+            "_stamp_name": "BSQE",
+            "_sequential_number": "BS0004",
+            "tSerie": null,
+            "tCliente": null
+          }
+        ],
+        "mcomprobante_detalle": [
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "二等座",
+            "nPrecioUnitario": 55.5,
+            "nPrecioTotal": 55.5
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "二等座",
+            "nPrecioUnitario": 57.5,
+            "nPrecioTotal": 57.5
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "金额",
+            "nPrecioUnitario": 189.5,
+            "nPrecioTotal": 189.5
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "金额",
+            "nPrecioUnitario": 124.0,
+            "nPrecioTotal": 124.0
+          }
+        ],
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 1,
+            "tTipo": "Comprobante"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ]
+      },
+      "ocr_text_length": 1063,
+      "ocr_text_preview": "BSQE\nBS0004\nIN-SH-5801-25P87K\nTRAIN\nT075787 检票:A23\n天津西站 G6269 保定东站\nTianjinxi Baodingdong\n2025年06月17日07:01开 09车02C号\n¥55.5元 二等座\n仅供报销使用\n6105261983****3717 原建勋\n报销凭证遗失不补\n退票改签时须交回车站\n225133000406177075787 JM\nT075786\n保定东站 G1712 天津西站\nBaodingdong Tianjinxi\n2025年06月17日 22:27开 03车04B号\n¥57.5元 二等座\n仅供报销使用\n6105261983****3717 原建勋\n报销凭证遗失不补\n退票改签时须交回车站\n22513300040617T075786 JM\nTAXI\n存根 STUB\n河北通用机打发票(I)\n(出租车卷式)\n国家税务总局\n发行北票联\n发票代码:113002134010\n发票号码:08971903\n识别码:98N66U265V24 (手写无效)\n出租汽车: 0001\n公司 00012328\n电话:\n车号:冀F-TV275",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160648_0077_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160648_0076",
+      "timestamp": "2025-11-11T16:06:48.507510",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 101,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tSerie": null,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1063,
+      "ocr_text_preview": "BSQE\nBS0004\nIN-SH-5801-25P87K\nTRAIN\nT075787 检票:A23\n天津西站 G6269 保定东站\nTianjinxi Baodingdong\n2025年06月17日07:01开 09车02C号\n¥55.5元 二等座\n仅供报销使用\n6105261983****3717 原建勋\n报销凭证遗失不补\n退票改签时须交回车站\n225133000406177075787 JM\nT075786\n保定东站 G1712 天津西站\nBaodingdong Tianjinxi\n2025年06月17日 22:27开 03车04B号\n¥57.5元 二等座\n仅供报销使用\n6105261983****3717 原建勋\n报销凭证遗失不补\n退票改签时须交回车站\n22513300040617T075786 JM\nTAXI\n存根 STUB\n河北通用机打发票(I)\n(出租车卷式)\n国家税务总局\n发行北票联\n发票代码:113002134010\n发票号码:08971903\n识别码:98N66U265V24 (手写无效)\n出租汽车: 0001\n公司 00012328\n电话:\n车号:冀F-TV275",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160648_0076_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160647_0075",
+      "timestamp": "2025-11-11T16:06:47.698054",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 104,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 99,
+            "tTipo": "Desconocido"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ]
+      },
+      "ocr_text_length": 492,
+      "ocr_text_preview": "BSQE\nBS0004\nTaxi Total 135\nPage 2 of 2\n山东通用机打发票\n国家根务总局\n发票联\n发票代码137141930001\n发票号码: 00876671\n德州市出租车\n发源专用意\n机打发票 手写光效\n单位代码: 交通集团\n电话: 0000000\n本号:鲁 NT4001\n证号: 000000\n日期: 2025-06-20\n上车: 15:01\n下4: 15:48\n单价: 2.80\n里程: 29.5km\n等候: 00:08.40\n状态:\n金额: 77.00 元\n卡号: **6.00 工厂一億菜\n密码: ¥77\n山东通用机打发票\n国家航务总局\n发票联\n发票代码137012230001\n发票号码31924807\n济南市出租车\n发派专用章\n机打发票手写无效\n单位代码: 康利\n电话: 88874991\n车号:鲁 AF39621\n证号: 000000\n日期: 2025-06-20\n上车: 06:00\n下本: 06:24\n单价: 3.75\n里程: 15.82km\n等候: 0:03.25\n状态:\n金額: 58.00元\n卡号: 16.2 定食、南西\n密码: ¥58",
+      "ocr_text": "BSQE\nBS0004\nTaxi Total 135\nPage 2 of 2\n山东通用机打发票\n国家根务总局\n发票联\n发票代码137141930001\n发票号码: 00876671\n德州市出租车\n发源专用意\n机打发票 手写光效\n单位代码: 交通集团\n电话: 0000000\n本号:鲁 NT4001\n证号: 000000\n日期: 2025-06-20\n上车: 15:01\n下4: 15:48\n单价: 2.80\n里程: 29.5km\n等候: 00:08.40\n状态:\n金额: 77.00 元\n卡号: **6.00 工厂一億菜\n密码: ¥77\n山东通用机打发票\n国家航务总局\n发票联\n发票代码137012230001\n发票号码31924807\n济南市出租车\n发派专用章\n机打发票手写无效\n单位代码: 康利\n电话: 88874991\n车号:鲁 AF39621\n证号: 000000\n日期: 2025-06-20\n上车: 06:00\n下本: 06:24\n单价: 3.75\n里程: 15.82km\n等候: 0:03.25\n状态:\n金額: 58.00元\n卡号: 16.2 定食、南西\n密码: ¥58"
+    },
+    {
+      "error_id": "error_20251111_160641_0074",
+      "timestamp": "2025-11-11T16:06:41.024718",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 102,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 915,
+      "ocr_text_preview": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Sam Wang\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20 26607-220-YZC-AKBP-1B001 26607-120 26607-220-YQC-AKBP-1B002 China SQR Train+Taxi ¥227.00 $34.92\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $34.92 $0.00 $34.92\n表格说明\nCURRENCY EXCHANGE RAT",
+      "ocr_text": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Sam Wang\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20 26607-220-YZC-AKBP-1B001 26607-120 26607-220-YQC-AKBP-1B002 China SQR Train+Taxi ¥227.00 $34.92\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $34.92 $0.00 $34.92\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+    },
+    {
+      "error_id": "error_20251111_160638_0073",
+      "timestamp": "2025-11-11T16:06:38.927199",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 98,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1009,
+      "ocr_text_preview": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nSQR/AEX:Jared Chen\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26 26607-220-YZA-PB02-3A001 26607-120 26607-220-YQA-PB02-3A004 China SQR Taxi ¥214.40 $32.98\n27\n28 25272-003-065052-PV09-YZ-A 25272-003 25272-003-065052-PV09-YQ-A-001 Chin",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160638_0073_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160638_0072",
+      "timestamp": "2025-11-11T16:06:38.892072",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 100,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 925,
+      "ocr_text_preview": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Jock Yuan\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17 26251-140-150187-MCCR-YQ-AC 26251140 26251-140-150187-MCCR-YQ-AC-014 China SQR Taxi+Train ¥426.50 $65.62\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $65.62 $0.00 $65.62\n表格说明\nCURRENCY EX",
+      "ocr_text": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Jock Yuan\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17 26251-140-150187-MCCR-YQ-AC 26251140 26251-140-150187-MCCR-YQ-AC-014 China SQR Taxi+Train ¥426.50 $65.62\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $65.62 $0.00 $65.62\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+    },
+    {
+      "error_id": "error_20251111_160632_0071",
+      "timestamp": "2025-11-11T16:06:32.350159",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 95,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 994,
+      "ocr_text_preview": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Jim Song\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11 26607-220-YZA-PV00-4A001 26607-214 26607-220-YQA-PV00-4A001 China SQR Taxi ¥156.00 ¥250.00 $62.46\n12 26607-220-YZA-PV00-4A001 26607-214 26607-220-YQA-PV00-4A001 China SQR Taxi+Train ¥322.00 $49.54\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n",
+      "ocr_text": "BSQE\nBS0004\nMonth: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nSQR/AEX:Jim Song\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11 26607-220-YZA-PV00-4A001 26607-214 26607-220-YQA-PV00-4A001 China SQR Taxi ¥156.00 ¥250.00 $62.46\n12 26607-220-YZA-PV00-4A001 26607-214 26607-220-YQA-PV00-4A001 China SQR Taxi+Train ¥322.00 $49.54\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $73.54 $38.46 $112.00\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+    },
+    {
+      "error_id": "error_20251111_160622_0070",
+      "timestamp": "2025-11-11T16:06:22.497668",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 88,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1270,
+      "ocr_text_preview": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nSQR/AEX:Dong Zhichao\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Transportation (USD) Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9 26529-000-496021-MEA0-YZ-A 26529-205 26251-140-150187-MCCR-YQ-AC-014 China SQR Train+Taxi+Bus ¥382.00 ¥139.00 $80.15\n10 26529-000-496021-MEA0-YZ-A 26529-205 26251-140-150187-MCCR-YQ-AC-014 China SQR Train+Taxi+Bus ¥48",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160622_0070_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160614_0069",
+      "timestamp": "2025-11-11T16:06:14.655126",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 85,
+      "error_type": "missing_field",
+      "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "tNumero",
+        "expected_value": null
+      },
+      "extracted_data": {
+        "comprobante": {
+          "_stamp_name": "BSQE",
+          "_sequential_number": "BS0004",
+          "tNumero": null,
+          "tSerie": null,
+          "nPrecioTotal": 1.0,
+          "tCliente": null
+        }
+      },
+      "ocr_text_length": 1097,
+      "ocr_text_preview": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nSQR/AEX:Muva Yang\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Amount Hotel (USD) Total (USD)\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10 26251-140-150187-MCCR-YQ-AC 26251140 26251-140-150187-MCCR-YQ-AC-014 China SQR ¥102.00 $15.69\n11\n12 26251-140-150187-MCCR-YQ-AC 26251140 26251-140-150187-MCCR-YQ-AC-014 China SQR ¥199.00 $30.62\n13 26251-140-150187-MCCR-YQ-AC 26251140 2625",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160614_0069_ocr_text.txt"
+    },
+    {
+      "error_id": "error_20251111_160611_0068",
+      "timestamp": "2025-11-11T16:06:11.686521",
+      "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+      "page_number": 80,
+      "error_type": "missing_field",
+      "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+      "context": {
+        "field_name": "mdivisa",
+        "expected_value": "USD, PEN, RM, etc."
+      },
+      "extracted_data": {
+        "mcomprobante": [
+          {
+            "_stamp_name": "BSQE",
+            "_sequential_number": "BS0004",
+            "tSerie": null,
+            "tCliente": null
+          }
+        ],
+        "mcomprobante_detalle": [
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "里程",
+            "nPrecioUnitario": 4.25,
+            "nPrecioTotal": 168.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "里程",
+            "nPrecioUnitario": 4.25,
+            "nPrecioTotal": 168.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "里程",
+            "nPrecioUnitario": 4.25,
+            "nPrecioTotal": 160.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "Treveing to and from Tawiz and TGAME",
+            "nPrecioUnitario": 496.0,
+            "nPrecioTotal": 496.0
+          },
+          {
+            "nCantidad": 1.0,
+            "tDescripcion": "Traveing to and from 2시る.",
+            "nPrecioUnitario": 300.0,
+            "nPrecioTotal": 300.0
+          }
+        ],
+        "midioma": [
+          {
+            "iMIdioma": 5,
+            "tIdioma": "Chino"
+          }
+        ],
+        "mdocumento_tipo": [
+          {
+            "iMDocumentoTipo": 1,
+            "tTipo": "Comprobante"
+          }
+        ],
+        "mnaturaleza": [
+          {
+            "tNaturaleza": "Otro"
+          }
+        ],
+        "mproveedor": [
+          {
+            "tRazonSocial": "PLANTIN PASSENGER"
+          }
+        ]
+      },
+      "ocr_text_length": 2216,
+      "ocr_text_preview": "BSQE\nBS0004\n天津客运出租汽车专用发票\nPLANTIN PASSENGER\nTAXI SPECIAL EVOICE\n发票联\nINVOICE\n代码112001960221,\nINVOICE CODE\n号码 87289152\nINVOICE No.\n开票日期:2025-06-27\nDATE\n单位: 6004\nSECTION\n税号: 911209000\nTAX PAYER'S FILE N000964715\n电话: 88908890\nTEL\n车号:\nREGISTION MARK NO. E-24610\n起止时间7:58 09:03\nTIME\n单价: 4.25元/km\nFINIT PRICE\n里程: 43.8\nKILOMETRE\n等候时间: 00:08:24\nWAITING TIME\n附加费: ¥0.00\nADDITIONAL FEE\n三金额: ¥168.00\nAMERINT\n兰卡号:\nCARD No\n卡原额:\nCARD ORIGINA SUM\n卡余额:\nCARD BALANCE SU\n天津客运出租汽车专用发票\nMANJIN PASSENGER\nTAXI SPECIAL INVOIC",
+      "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160611_0068_ocr_text.txt"
+    }
+  ]
+}

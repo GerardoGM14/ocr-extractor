@@ -1,0 +1,15 @@
+{
+  "error_id": "error_20251112_093305_0067",
+  "timestamp": "2025-11-12T09:33:05.960151",
+  "pdf_name": "fb66148f-8a60-45ab-80db-cf48b297c88c",
+  "page_number": 129,
+  "error_type": "parse_error",
+  "error_message": "could not convert string to float: '131\\n10'",
+  "context": {
+    "exception_type": "ValueError",
+    "exception_message": "could not convert string to float: '131\\n10'"
+  },
+  "extracted_data": {},
+  "ocr_text_length": 0,
+  "ocr_text_preview": null
+}

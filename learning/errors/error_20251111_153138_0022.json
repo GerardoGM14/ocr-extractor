@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251111_153138_0022",
+  "timestamp": "2025-11-11T15:31:38.324834",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 35,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null,
+      "nPrecioTotal": 5.1
+    }
+  },
+  "ocr_text_length": 324,
+  "ocr_text_preview": "BSQE\nBS0003\nMEAL\nM/S\n日期\nDate: 17.6.25\nNo\nNO 摘要 数量 价格 银锁\nPATICULARS QUANTITY UNIT PRICE AMOUNT\nBUTIR-BUTIR KUANTITI HARGA NILAI\n1 20.90\n2\n3\n4\n5\n6\n7\n8\n9\n10 USD5.10\n11\n货物出门,总不迷换\nGood sold are not returnable/Barang yang dijual tidak boleh dikembalikan\nTOTAL/总额 20.90\nJUMLAH\nReceived by /Terima Oleh/收货人\nSignature/Tandatangan/经手人",
+  "ocr_text": "BSQE\nBS0003\nMEAL\nM/S\n日期\nDate: 17.6.25\nNo\nNO 摘要 数量 价格 银锁\nPATICULARS QUANTITY UNIT PRICE AMOUNT\nBUTIR-BUTIR KUANTITI HARGA NILAI\n1 20.90\n2\n3\n4\n5\n6\n7\n8\n9\n10 USD5.10\n11\n货物出门,总不迷换\nGood sold are not returnable/Barang yang dijual tidak boleh dikembalikan\nTOTAL/总额 20.90\nJUMLAH\nReceived by /Terima Oleh/收货人\nSignature/Tandatangan/经手人"
+}

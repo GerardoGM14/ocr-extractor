@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251111_153537_0110",
+  "timestamp": "2025-11-11T15:35:37.578066",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 159,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "OTEM",
+      "_sequential_number": "OE0002",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "10-06-2025",
+      "nPrecioTotal": 20024.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1555,
+  "ocr_text_preview": "R.U.T. 76.077.237-2\nBOLETA ELECTRÓNICA\nN° 0000155103\nS.I.I. SANTIAGO ORIENTE\nFIAB SERVICIOS S.A.\nSERVICIOS DE ALIMENTACIÓN,\nELABORACIÓN, COMERCIALIZACIÓN,\nDISTRIBUCIÓN PRODUCTOS DE\nPASTELERÍA, HELADOS,\nCHOCOLATE, SALÓN DE TÉ,\nSOCIEDAD DE INVERSIONES.\nCasa Matriz AVDA APOQUINDO 4001\nDEPTO. 101, LAS CONDES -\nSANTIAGO.\nFono 2-2245 63 34\nEmail: robespier.hidalgo@gmail.com\nVendedor: jin #ADMINISTRADOR Caja: 1\nMesa. MV10 Garzón: SFPM\nFecha de Emision: 10-06-2025\nFecha Vencimiento: 10-06-2025\nCodigo Pr",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153537_0110_ocr_text.txt"
+}

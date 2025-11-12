@@ -1,0 +1,94 @@
+{
+  "error_id": "error_20251111_153537_0111",
+  "timestamp": "2025-11-11T15:35:37.579375",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 159,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "mcomprobante": [
+      {
+        "_stamp_name": "OTEM",
+        "_sequential_number": "OE0002",
+        "tNumero": null,
+        "tSerie": null,
+        "fEmision": "10-06-2025",
+        "nPrecioTotal": 20024.0,
+        "tCliente": null
+      }
+    ],
+    "mcomprobante_detalle": [
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "Ensalada Prosciutto Un",
+        "nPrecioUnitario": 11590.0,
+        "nPrecioTotal": 11590.0
+      },
+      {
+        "nCantidad": 2.0,
+        "tDescripcion": "Filete Italiano Un",
+        "nPrecioUnitario": 10890.0,
+        "nPrecioTotal": 21780.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "Ens mar salino lamina Un",
+        "nPrecioUnitario": 12490.0,
+        "nPrecioTotal": 12490.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "Salmo Rucula Un",
+        "nPrecioUnitario": 10190.0,
+        "nPrecioTotal": 1190.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "Club Sandwich Un",
+        "nPrecioUnitario": 8390.0,
+        "nPrecioTotal": 8390.0
+      },
+      {
+        "nCantidad": 3.0,
+        "tDescripcion": "Jugo naranja valle las chilcas Un",
+        "nPrecioUnitario": 3990.0,
+        "nPrecioTotal": 11970.0
+      },
+      {
+        "nCantidad": 3.0,
+        "tDescripcion": "A Mineral CG Un",
+        "nPrecioUnitario": 2490.0,
+        "nPrecioTotal": 4333.0
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Alimentación"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "BOLETA ELECTR"
+      }
+    ]
+  },
+  "ocr_text_length": 1555,
+  "ocr_text_preview": "R.U.T. 76.077.237-2\nBOLETA ELECTRÓNICA\nN° 0000155103\nS.I.I. SANTIAGO ORIENTE\nFIAB SERVICIOS S.A.\nSERVICIOS DE ALIMENTACIÓN,\nELABORACIÓN, COMERCIALIZACIÓN,\nDISTRIBUCIÓN PRODUCTOS DE\nPASTELERÍA, HELADOS,\nCHOCOLATE, SALÓN DE TÉ,\nSOCIEDAD DE INVERSIONES.\nCasa Matriz AVDA APOQUINDO 4001\nDEPTO. 101, LAS CONDES -\nSANTIAGO.\nFono 2-2245 63 34\nEmail: robespier.hidalgo@gmail.com\nVendedor: jin #ADMINISTRADOR Caja: 1\nMesa. MV10 Garzón: SFPM\nFecha de Emision: 10-06-2025\nFecha Vencimiento: 10-06-2025\nCodigo Pr",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153537_0111_ocr_text.txt"
+}

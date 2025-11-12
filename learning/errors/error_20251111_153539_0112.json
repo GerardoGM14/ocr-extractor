@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251111_153539_0112",
+  "timestamp": "2025-11-11T15:35:39.222565",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 163,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "OTRE",
+      "_sequential_number": "OR0001",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 49660.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1090,
+  "ocr_text_preview": "Curran, Michael\nOTRE\nOR0001\nFrom: Raucci, Sharon\nSent: Monday, July 21, 2025 10:50 AM\nTo: BARS Input, Glendale\nCc: Atkins, Garrett; May, Robert; Gann, Julie; Gosain, Tarun; Pletcher, Ben\nSubject: BWB2-55600-430 - WATC M&TE Lab - OBARS Upload - Jun 2025\nAttachments: 55600-430 M&TE-Testing-Lab-OBARS-Upload-2025-06-R00.csv; 55600-430 M&TE-Testing-Lab-OBARS-Upload-2025-06-R00.xls;\n06-2025 LAB BILL OUT R_0.xlsx\nBechtel Level 3 - General. Non-Confidential Business Information.\n*** Re-submittal with re",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153539_0112_ocr_text.txt"
+}

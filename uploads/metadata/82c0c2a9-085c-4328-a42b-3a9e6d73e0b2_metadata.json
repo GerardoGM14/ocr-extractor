@@ -1,0 +1,16 @@
+{
+  "file_id": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "filename": "DOCUMENTO_PRUEBA.pdf",
+  "uploaded_at": "2025-11-11T16:00:35.451517",
+  "metadata": {
+    "email": "mariadelosangeles.abanto@newmont.com",
+    "year": 0,
+    "month": "String"
+  },
+  "file_size_bytes": 16144095,
+  "processed": true,
+  "processed_at": "2025-11-11T16:08:33.837537",
+  "zip_filename": "DOCUMENTO_PRUEBA_20251111_160828_39af253a.zip",
+  "download_url": "/public/DOCUMENTO_PRUEBA_20251111_160828_39af253a.zip",
+  "request_id": "39af253a-de32-4941-bde8-c06402d1d75d"
+}

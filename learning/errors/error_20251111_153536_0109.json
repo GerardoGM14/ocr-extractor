@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251111_153536_0109",
+  "timestamp": "2025-11-11T15:35:36.396872",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 161,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "OTRE",
+      "_sequential_number": "OR0001",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "7/22/25",
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 968,
+  "ocr_text_preview": "7/22/25, 8:47 AM\ncusp.oci.becpsn.com/OA_CGI/FNDWRR.exe?temp_id=61389287\nOTRE\nOR0001\nPeriod : JUL-2025\nPosted Status: Posted\nPosted Date :\nSource : OBR\nCategory : Original JVs\nFunct. Curr. : USD\nEntered Curr.: USD\nCurrency Type: Corporate\nCurrency Rate : 1\nCurrency Date: 22-JUL-25\nOBR Journal Details\nPage No. : 1\nRun Date : 22-Jul-2025\nRun Time : 08:07:02\nBatch Name: 49334-072220250839\nJournal Name: JUL-25 Usage Cost USD\nSource Ref : OBARSS2507BWB1\nJournal Desc: OBARS BWATC\nTransaction Date: 22-J",
+  "ocr_text": "7/22/25, 8:47 AM\ncusp.oci.becpsn.com/OA_CGI/FNDWRR.exe?temp_id=61389287\nOTRE\nOR0001\nPeriod : JUL-2025\nPosted Status: Posted\nPosted Date :\nSource : OBR\nCategory : Original JVs\nFunct. Curr. : USD\nEntered Curr.: USD\nCurrency Type: Corporate\nCurrency Rate : 1\nCurrency Date: 22-JUL-25\nOBR Journal Details\nPage No. : 1\nRun Date : 22-Jul-2025\nRun Time : 08:07:02\nBatch Name: 49334-072220250839\nJournal Name: JUL-25 Usage Cost USD\nSource Ref : OBARSS2507BWB1\nJournal Desc: OBARS BWATC\nTransaction Date: 22-JUL-25\nLine Ent- Sub- Nat Sub Perform Entered Entered Funct Equiv Funct Equiv R Sub Emp Bill\nNo. Off Cre Acct Cls Job Job Org Debits Credits Debits Credits O Sub No To Line Description\n1 YD1A 000 0000 080 55600 430 DNT0609 4,410.00 49,660.00 RECOVERY-JOB\n2 YD1A 000 0000 890 26196 530 8NT0309 BWATC-Test Booth/Lab\n3 YD1A 000 0000 890 26442 421 8NT0309 45,250.00 BWATC-Test Booth/Lab\n49,660.00 49,660.00\nhttps://cusp.oci.becpsn.com/OA_CGI/FNDWRR.exe?temp_id=61389287 1/1"
+}

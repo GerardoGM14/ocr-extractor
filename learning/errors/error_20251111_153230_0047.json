@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_153230_0047",
+  "timestamp": "2025-11-11T15:32:30.410906",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 71,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 886,
+  "ocr_text_preview": "BSQE\nBS0004\n天津客运出租汽车专用发票\nTIANJIN PASSENGER\nTAXI SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060121\nINVOICE CODE\n号码 82980309\nINVOICE No. 2025-06-02\n开票日期:\nDATE\n单位:\nSECTION 911984984658\n税号:\nTAX PAYER'S FILE No. 29381633\n电话:\nTEL\n车号: E-DR0670\nREGISTION MARK NO 07:21 08:40\n起止时间:\nTIME\n单价: 3.74元\nUNIT PRICE\n里程: 48.0km\nKILOMETRE\n等候时间: 00:18.34\nWAITING TIME\n附加费: 0.00元\nADDITIONAL FEE 171.00元\n金额:\nAMOUNT\n卡号:\nCARD No.\n卡原额: 天津市客运出租\nCARD ORIGINAL SUM 000000000000000000\n卡余额:\nCARD BALANCE SUM 发票专用章\nINVOICE\n代码112002060121\n",
+  "ocr_text": "BSQE\nBS0004\n天津客运出租汽车专用发票\nTIANJIN PASSENGER\nTAXI SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060121\nINVOICE CODE\n号码 82980309\nINVOICE No. 2025-06-02\n开票日期:\nDATE\n单位:\nSECTION 911984984658\n税号:\nTAX PAYER'S FILE No. 29381633\n电话:\nTEL\n车号: E-DR0670\nREGISTION MARK NO 07:21 08:40\n起止时间:\nTIME\n单价: 3.74元\nUNIT PRICE\n里程: 48.0km\nKILOMETRE\n等候时间: 00:18.34\nWAITING TIME\n附加费: 0.00元\nADDITIONAL FEE 171.00元\n金额:\nAMOUNT\n卡号:\nCARD No.\n卡原额: 天津市客运出租\nCARD ORIGINAL SUM 000000000000000000\n卡余额:\nCARD BALANCE SUM 发票专用章\nINVOICE\n代码112002060121\nINVOICE CODE\n号码 71361055\nINVOICE No. 2025-06-02\n开票日期:\nDAYE\n单位:\nSECTION 911038772966\n税号:\nTAX PAYIK & FILE N 22483452\n电话:\nTEL\n车号: E-DF0206\nREGISTION MASK 8:35 19:49\n起止时间:\nTIME\n单价: 374元\nUNIT PRICE\n里程: 47.2km\nKILOMETRE\n等候时间: 00:16.06\nWAITING TIME\n附加费: 0.00元\nADDITIONAL PER 166.00元\n金额:\nAMOUNT\n卡号:\nCARD PEX\n卡原额: 天津市客运出租\nCARD ORIGINAL SUM 000000\n卡余额:\nCARD BALANCE SUIT\n存根 STUB\n存根ST\nPage 1 of 1"
+}

@@ -1,0 +1,86 @@
+{
+  "error_id": "error_20251111_153254_0056",
+  "timestamp": "2025-11-11T15:32:54.800582",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 75,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "mcomprobante": [
+      {
+        "_stamp_name": "BSQE",
+        "_sequential_number": "BS0004",
+        "tNumero": null,
+        "tSerie": null,
+        "tCliente": null
+      }
+    ],
+    "mcomprobante_detalle": [
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "4.25ft/km 42.0k.m 00:08.00",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "4.25 42.0 00:08:00",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "4.25元/k 42.0km 00:08.00",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "4.25元/km 42.0km 00:08.00",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "4.25 42.0 00:08:00",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "4.25元/km 42.0km 00:08.00",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 5,
+        "tIdioma": "Chino"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "TIANJIN PASSENGER"
+      }
+    ]
+  },
+  "ocr_text_length": 2933,
+  "ocr_text_preview": "BSQE\nBS0004\n天津容运出租汽车专用发票\nTIANJIN PASSENGER\nTAXI SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060221\nINVOICE CODE\n号码 04472887\nINVOICE No.\n开票日期:2025年06月09日\nDATE\n本单位:\nSECTION\n税号:\n911201000\nTAX PAMER'S FILE N000133643\n电话:\nTEL\n车号:\nREGISTION MARK No\nΕ. 12873\n穿起止时间:\nTIME\n单价:\nINIT PRICE\n臺里程:\nKILOMETRE\n等候时间:\nRUTDG THE\n附加费:\n07:56 08:59\nADDITIONAL FEE\n三金额:\nAMEKINT\n兰卡号:\nCARD No.\n多卡原额:\nCARD ORIGINAL SUM\n卡余额:\nCARSI BALANCE Th\n存\n根\n87092616\n4.25ft/km\n42.0k.m\n00:08.00\n0.00元\n160.00元\n天津客运出租汽车专用发票\nMANTIN PASSENGER\nTAXI SPEC",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153254_0056_ocr_text.txt"
+}

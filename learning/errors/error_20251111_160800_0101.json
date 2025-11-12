@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_160800_0101",
+  "timestamp": "2025-11-11T16:08:00.160141",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 138,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "OTEM",
+      "_sequential_number": "OE0001",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 936,
+  "ocr_text_preview": "BECHEXPRPT_792855_4QL9RG\nOTEM\nOE0001\nPage 1 of 3\nPolicy: T&E - Latin America\nBechtel Expense Report\nReport Key : 1292340\nReport Number: 4QL9RG\nEmployee ID : 792855\nEmployee Name : FLORES FUENTES, FANNY LORENA\nOrg Code : HXB0000\nDefault Approver: BALDINI, SERGIO REYNALDO\nFinal Approver: CONCHA ROBLERO, CECILIA PAOLA\nReport Name: Viaje a USA Mayo 2025\nReport Date : May 28, 2025\nReport Purpose: Viaje a USA Mayo 2025\nReport Total: 1,838,816.00 = USD 1,880.05\nBechtel owes Card : 1,838,816.00\nBechtel ",
+  "ocr_text": "BECHEXPRPT_792855_4QL9RG\nOTEM\nOE0001\nPage 1 of 3\nPolicy: T&E - Latin America\nBechtel Expense Report\nReport Key : 1292340\nReport Number: 4QL9RG\nEmployee ID : 792855\nEmployee Name : FLORES FUENTES, FANNY LORENA\nOrg Code : HXB0000\nDefault Approver: BALDINI, SERGIO REYNALDO\nFinal Approver: CONCHA ROBLERO, CECILIA PAOLA\nReport Name: Viaje a USA Mayo 2025\nReport Date : May 28, 2025\nReport Purpose: Viaje a USA Mayo 2025\nReport Total: 1,838,816.00 = USD 1,880.05\nBechtel owes Card : 1,838,816.00\nBechtel owes Employee :\nAMOUNT ENT AMOUNT ENT CURR BILL AMOUNT BILL CURR\n62.38 58,628.00 CLP 59.94 USD\n15.95 14,969.00 CLP 15.30 USD\n798.77 751,010.00 CLP 767.85 USD\n23.92 22,448.00 CLP 22.95 USD\n241.15 226,647.00 CLP 231.73 USD\n75.16 70,544.00 CLP 72.13 USD\n35.00 32,915.00 CLP 33.65 USD\n49.44 46,484.00 CLP 47.53 USD\n575.19 541,605.00 CLP 553.75 USD\n78.38 73,566.00 CLP 75.22 USD\n1,955.34 1,838,816.00 CLP 1,880.05 USD\nJul 8, 2025 11:08:01 AM"
+}

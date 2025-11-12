@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251111_153444_0089",
+  "timestamp": "2025-11-11T15:34:44.699731",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 126,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tSequentialNumber' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tSequentialNumber",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "hoja": {
+      "tJson": "Invoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nBSQE AUSTRALIA ENTRIES\nEntries in Jun 2025:\nAmount Hours\nE9XL 0000 890 24084 PAY AUD$ (112,592.00)\nE9XL M&M 890 26629 310 AUD$ 2,618.00 17.0\nE9XL M&M 890 26439 712 AUD$ 77,298.00 499.50\nE9XL M&M 890 26711 110 AUD$ 15,736.00 101.50\nE9XL Energy 890 26232 115 AUD$ 16,940.00 110.00\n0.00 728.0\nE9XL M&M 24084 PAY USD$ (2,600.00)\nE9XL M&M 890 26251 140 USD$\nE9XL M&M 890 26442 223 USD$ 2,600.00 26.0\n- 26.0\ncost of invoice is recorded to 24084 PAY & EXP when invoice is recorded\nJob charge will autocode.",
+      "tJsonTraducido": null,
+      "lFormato": false,
+      "iMIdioma": 2,
+      "iMDocumentoTipo": 1,
+      "tSequentialNumber": null
+    }
+  },
+  "ocr_text_length": 646,
+  "ocr_text_preview": "Invoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nBSQE AUSTRALIA ENTRIES\nEntries in Jun 2025:\nAmount Hours\nE9XL 0000 890 24084 PAY AUD$ (112,592.00)\nE9XL M&M 890 26629 310 AUD$ 2,618.00 17.0\nE9XL M&M 890 26439 712 AUD$ 77,298.00 499.50\nE9XL M&M 890 26711 110 AUD$ 15,736.00 101.50\nE9XL Energy 890 26232 115 AUD$ 16,940.00 110.00\n0.00 728.0\nE9XL M&M 24084 PAY USD$ (2,600.00)\nE9XL M&M 890 26251 140 USD$\n",
+  "ocr_text": "Invoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nBSQE AUSTRALIA ENTRIES\nEntries in Jun 2025:\nAmount Hours\nE9XL 0000 890 24084 PAY AUD$ (112,592.00)\nE9XL M&M 890 26629 310 AUD$ 2,618.00 17.0\nE9XL M&M 890 26439 712 AUD$ 77,298.00 499.50\nE9XL M&M 890 26711 110 AUD$ 15,736.00 101.50\nE9XL Energy 890 26232 115 AUD$ 16,940.00 110.00\n0.00 728.0\nE9XL M&M 24084 PAY USD$ (2,600.00)\nE9XL M&M 890 26251 140 USD$\nE9XL M&M 890 26442 223 USD$ 2,600.00 26.0\n- 26.0\ncost of invoice is recorded to 24084 PAY & EXP when invoice is recorded\nJob charge will autocode."
+}

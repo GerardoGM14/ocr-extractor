@@ -1,0 +1,15 @@
+{
+  "error_id": "error_20251111_153235_0049",
+  "timestamp": "2025-11-11T15:32:35.034121",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 72,
+  "error_type": "parse_error",
+  "error_message": "could not convert string to float: '26529-000'",
+  "context": {
+    "exception_type": "ValueError",
+    "exception_message": "could not convert string to float: '26529-000'"
+  },
+  "extracted_data": {},
+  "ocr_text_length": 0,
+  "ocr_text_preview": null
+}

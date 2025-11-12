@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_160450_0034",
+  "timestamp": "2025-11-11T16:04:50.096167",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 50,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tSerie": null,
+      "tCliente": null,
+      "nPrecioTotal": 28.6
+    }
+  },
+  "ocr_text_length": 519,
+  "ocr_text_preview": "BSQE\nBS0003\nINVOICE NU: #40110810\nNUMBER OF ITEMS: 2\nDATE: 2025-06-26\nIME: 01:51 PM\nTABLE NO: TAKEAWAY\nTAKEAWAY\nCUSTOMER NAME: NURUL\nQTY ITEM NAME AMOUNT\n1 SET B 13.80\nVARIANT: (CAS PEMBUNGKUSAN\nRMO.50, DADA DAN KEPAK,\nKEPEDASAN: BIASA)\n1 SET C 14.80\nVARIANT: (CAS PEMBUNGKUSAN\nRM0.50, KEPEDASAN :\nPEDAS, PEHA DAN THIGH)\nSUB-TOTAL: RM 28.60\nDISCOUNT: RM 0.00\nTOPUP: USD 6.95 RM 0.00\nTOTAL: RM 28.60\nAMOUNT TO BE PAID: RM 0.00\nThank you for ordering with us. Looking forward\nto having you again.\nPOWER",
+  "ocr_text": "BSQE\nBS0003\nINVOICE NU: #40110810\nNUMBER OF ITEMS: 2\nDATE: 2025-06-26\nIME: 01:51 PM\nTABLE NO: TAKEAWAY\nTAKEAWAY\nCUSTOMER NAME: NURUL\nQTY ITEM NAME AMOUNT\n1 SET B 13.80\nVARIANT: (CAS PEMBUNGKUSAN\nRMO.50, DADA DAN KEPAK,\nKEPEDASAN: BIASA)\n1 SET C 14.80\nVARIANT: (CAS PEMBUNGKUSAN\nRM0.50, KEPEDASAN :\nPEDAS, PEHA DAN THIGH)\nSUB-TOTAL: RM 28.60\nDISCOUNT: RM 0.00\nTOPUP: USD 6.95 RM 0.00\nTOTAL: RM 28.60\nAMOUNT TO BE PAID: RM 0.00\nThank you for ordering with us. Looking forward\nto having you again.\nPOWERED BY - EASYEAT\nмен"
+}

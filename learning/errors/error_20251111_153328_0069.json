@@ -1,0 +1,74 @@
+{
+  "error_id": "error_20251111_153328_0069",
+  "timestamp": "2025-11-11T15:33:28.778595",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 80,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "mcomprobante": [
+      {
+        "_stamp_name": "BSQE",
+        "_sequential_number": "BS0004",
+        "tNumero": null,
+        "tSerie": null,
+        "tCliente": null
+      }
+    ],
+    "mcomprobante_detalle": [
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "Treveing to and from Tawiz and TGAME",
+        "nPrecioUnitario": 168.0,
+        "nPrecioTotal": 168.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "Traveing to and from 2시る.",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "金额",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      },
+      {
+        "nCantidad": 1.0,
+        "tDescripcion": "金额",
+        "nPrecioUnitario": 160.0,
+        "nPrecioTotal": 160.0
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 5,
+        "tIdioma": "Chino"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "PLANTIN PASSENGER"
+      }
+    ]
+  },
+  "ocr_text_length": 2439,
+  "ocr_text_preview": "BSQE\nBS0004\n天津客运出租汽车专用发票\nPLANTIN PASSENGER\nTAXI SPECIAL EVOICE\n发票联\nINVOICE\n天津客运出租汽车专用发票\nMANJIN PASSENGER\nTAXI SPECIAL INVOICE\n发票联\nINVOICE\n天津客运出租汽车专用发票\nTIANJIN PASSENGER\nTAXI SPECIAL INVOICE\n发票联\nINVOICE\n代码112001960221, 代码112002060221 代码112002060221\nINVOICE CODE INVOICE CODE INVOICE CODE\n号码 87289152 号码 04429347 号码 21566046\nINVOICE No. INVOICE No. INVOICE No.\n开票日期:2025-06-27 开票日期:2025年06月27日 开票日期:2025年06月27日\nDATE DATE DATR\n单位: 6004 单位: J001 单位: 05\nSECTION SECTION SECTION\n税号: 911209000 税号: 911204000",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153328_0069_ocr_text.txt"
+}

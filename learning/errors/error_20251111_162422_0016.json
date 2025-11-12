@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251111_162422_0016",
+  "timestamp": "2025-11-11T16:24:22.687316",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 26,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "14/6/2025",
+      "nPrecioTotal": 19.8,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 161,
+  "ocr_text_preview": "BSQE\nBS0003\nCASH BILL\nBIL TUNAI\nNo.:\n日期\nTarikh 14/6/2025\n摘要 数量 价目 银额\nJENIS BARANG-BARANG BANYAK HARGA JUMLAH\n19.80\nUSD 480\n总计 RM 19.80\nJUMLAH\nTandatangan 经手人\nUni",
+  "ocr_text": "BSQE\nBS0003\nCASH BILL\nBIL TUNAI\nNo.:\n日期\nTarikh 14/6/2025\n摘要 数量 价目 银额\nJENIS BARANG-BARANG BANYAK HARGA JUMLAH\n19.80\nUSD 480\n总计 RM 19.80\nJUMLAH\nTandatangan 经手人\nUni"
+}

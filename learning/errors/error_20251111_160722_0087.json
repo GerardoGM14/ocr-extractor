@@ -1,0 +1,23 @@
+{
+  "error_id": "error_20251111_160722_0087",
+  "timestamp": "2025-11-11T16:07:22.314421",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 118,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1101,
+  "ocr_text_preview": "总计:1060元\nBSQE\nBS0004\n承揽人员差旅费用清单\nINDINSP-SOP-09-05-TJ\n天津家运出租汽车专用发票\nTHANJIN PASSENGER\nTAKA SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060121\nINVOICE CICE\n号码 40458905\nINVOICE\n开票日期: 2025-06-24\nDATE\n清单位:\nSECTION\n黑税号:\n000\n911201011\nTOPFIL N17434188K\n电话:\nTEL\n88908890\nAA.L8161\nREGISTION WARK N\n车号:\n穿起止时间:07:24 08:25\nM\n单价:\nUNIT PRICE\n里程:\nNILOMETRE\n安等候时间:\nWALTING TIME\n附加费:\nABUITIONAL TEE\n三金额:\nAMINT\n卡号:\nCARD No.\n卡原额:\nCARD ORIGINA SUN\n卡余额:\nCARD BALANCE\n3.74元\n36.2km\n00:23.49\n8.00元\n132.00元\n发票代码:132112181210\n发票号码:1760",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160722_0087_ocr_text.txt"
+}

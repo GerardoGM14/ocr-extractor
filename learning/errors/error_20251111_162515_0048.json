@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251111_162515_0048",
+  "timestamp": "2025-11-11T16:25:15.243503",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 66,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 2624.2,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 962,
+  "ocr_text_preview": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nSummary of Project Monthly Expense\nInvoice Month: Jun-25\nName Country Type of Activity Transportation Hotel Monthly Total (USD)\nHerbert Fan China SQR $326.31 $884.62 $1,210.92\nNick Hu China SQR $51.85 $0.00 $51.85\nAlex Wu China SQR $1,110.15 $0.00 $1,110.15\nAllen Zhu China SQR $149.23 $0.00 $149.23\nMuva Yang China SQR $0.00 $61.85 $61.85\nDong Zhichao China SQR $266.00 $40.31 $306.31\nJim Song China SQR $73.54 $38.46 $112.00\nJ",
+  "ocr_text": "BSQE\nBS0004\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nSummary of Project Monthly Expense\nInvoice Month: Jun-25\nName Country Type of Activity Transportation Hotel Monthly Total (USD)\nHerbert Fan China SQR $326.31 $884.62 $1,210.92\nNick Hu China SQR $51.85 $0.00 $51.85\nAlex Wu China SQR $1,110.15 $0.00 $1,110.15\nAllen Zhu China SQR $149.23 $0.00 $149.23\nMuva Yang China SQR $0.00 $61.85 $61.85\nDong Zhichao China SQR $266.00 $40.31 $306.31\nJim Song China SQR $73.54 $38.46 $112.00\nJared Chen China SQR $78.68 $0.00 $78.68\nJock Yuan China SQR $65.62 $0.00 $65.62\nSam Wang China SQR $34.92 $0.00 $34.92\nMichael-x Xu China SQR $106.00 $114.92 $220.92\nHuang Gentle China SQR $53.85 $0.00 $53.85\nMike Chen China SQR $30.00 $0.00 $30.00\nWeldon Zhao China SQR $114.98 $0.00 $114.98\nEden Li China SQR $163.08 $0.00 $163.08\nTotal Travel Expense China SQR $2,624.20 $1,140.15 $3,764.35\nSub-Total (USD) $2,624.20 $1,140.15 $3,764.35\nTotal (USD): $3,764.35"
+}

@@ -1,0 +1,23 @@
+{
+  "error_id": "error_20251111_160557_0061",
+  "timestamp": "2025-11-11T16:05:57.048648",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 76,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 2934,
+  "ocr_text_preview": "BSQE\nBS0004\n天津客运出租汽车专用发票\nTHANJIN PASSENGER\nTAXE SPECIAL INVOICE\n发票联\nINVOICE\n代码112002060121\nINVOICE CODE\n号码 86676559\nINVOICE No.\n开票日期:2025年06月12日\nDATE\n单位:\nSECTION\n售税号:\n01\n911207000\nTAX PAYER'S FILE N000711126\n87092616\n电话:\nTEL\n车号:\nREGISTION MARK No.\nΕ. 13010\n07:53 08:56\n冒起止时间:\nTIME\n单价:\nTUNIT PRICE\n里程:\nKILOMETRE\n三等候时间:\n无\nWAITING TIME\n附加费:\nADDITIONAL FEE\n金额:\nAMORINT\n卡号:\nCARD No.\n多卡原额:\n存根\nCARD ORIGINAL SUM\n卡余额:\n4.25元/km\n42.0km\n00:08.00\n0.00元\n160.00元\n天津客运出租汽车专用发票\nMANJIN PASSENGER\nTAXI SPECIAL INVOICE\n",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160557_0061_ocr_text.txt"
+}

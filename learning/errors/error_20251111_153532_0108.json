@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251111_153532_0108",
+  "timestamp": "2025-11-11T15:35:32.124249",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 154,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "OTEM",
+      "_sequential_number": "OE0001",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "05/26/25",
+      "nPrecioTotal": 653.57,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1888,
+  "ocr_text_preview": "HYATT\nPLACE\nINVOICE\nFanny Lore Flores Fuentes\nAddressline\nTampa, FL 33602\nTel: 813-616-1234 OTEM\nhyatt.com/en-US/hotel/florida/hyatt-\nhouse-tampa-downtown/t\nOE0001\nRoom No. 1017\nArrival 05/26/25\nDeparture 05/28/25\nFolio Window 1\nFolio No.\nConfirmation No. 4491884201\nGroup Name\nBooking No. 2191402775\nDate Description Charges Credits\n05/25/25 Deposit Transferred at C/I 575.19\n05/25/25 No Show Room 169.00\n05/25/25 Occupancy Tax 6% 10.14\n05/25/25 Hillsborough Tax 0.85\n05/25/25 Hillsborough County To",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153532_0108_ocr_text.txt"
+}

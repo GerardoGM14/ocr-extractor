@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251111_162437_0026",
+  "timestamp": "2025-11-11T16:24:37.776304",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 38,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "20/06/2025",
+      "tCliente": null,
+      "nPrecioTotal": 86.76
+    }
+  },
+  "ocr_text_length": 489,
+  "ocr_text_preview": "MEM\n20/06/2025 15:02 B530422\nQty Descriptions Amount\n1 Ili Hazelnut-R 16.32\n1 Add Espresso Shot 2.64\nCappuccino 13.01\nSTTL 31.97\n6% Gov Tax 1.92\nTTL 33.89\nRounding Adj. 0.01\n2 TOTAL T-AWAY 33.90\nMNCM: 33.90\nUSD 8.20\nWIFI Password\n9kwmtray\n7hr6a8sc\nPlease get your E-Invoice from,\nhttps://coffeebean.einvoiceportal.\nmy/invoice\nInvoices available only after 24\nhours.Invoices will be unavailable\nfor retrieval after the 3rd day of\nthe following month.\nT-OWAY\nsales1.sisfooter\nTBL\nBSQE\nBS0003",
+  "ocr_text": "MEM\n20/06/2025 15:02 B530422\nQty Descriptions Amount\n1 Ili Hazelnut-R 16.32\n1 Add Espresso Shot 2.64\nCappuccino 13.01\nSTTL 31.97\n6% Gov Tax 1.92\nTTL 33.89\nRounding Adj. 0.01\n2 TOTAL T-AWAY 33.90\nMNCM: 33.90\nUSD 8.20\nWIFI Password\n9kwmtray\n7hr6a8sc\nPlease get your E-Invoice from,\nhttps://coffeebean.einvoiceportal.\nmy/invoice\nInvoices available only after 24\nhours.Invoices will be unavailable\nfor retrieval after the 3rd day of\nthe following month.\nT-OWAY\nsales1.sisfooter\nTBL\nBSQE\nBS0003"
+}

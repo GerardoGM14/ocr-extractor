@@ -1,0 +1,17 @@
+{
+  "folders": {
+    "input_pdf": "onedrive",
+    "processing_results": "processed",
+    "output_json": "output"
+  },
+  "api": {
+    "uploads_folder": "uploads",
+    "public_folder": "public",
+    "base_url": "http://localhost:8000"
+  },
+  "learning": {
+    "enabled": true,
+    "folder": "learning",
+    "auto_analyze": true
+  }
+}

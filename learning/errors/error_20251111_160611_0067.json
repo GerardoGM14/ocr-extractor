@@ -1,0 +1,23 @@
+{
+  "error_id": "error_20251111_160611_0067",
+  "timestamp": "2025-11-11T16:06:11.684309",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 80,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 2216,
+  "ocr_text_preview": "BSQE\nBS0004\n天津客运出租汽车专用发票\nPLANTIN PASSENGER\nTAXI SPECIAL EVOICE\n发票联\nINVOICE\n代码112001960221,\nINVOICE CODE\n号码 87289152\nINVOICE No.\n开票日期:2025-06-27\nDATE\n单位: 6004\nSECTION\n税号: 911209000\nTAX PAYER'S FILE N000964715\n电话: 88908890\nTEL\n车号:\nREGISTION MARK NO. E-24610\n起止时间7:58 09:03\nTIME\n单价: 4.25元/km\nFINIT PRICE\n里程: 43.8\nKILOMETRE\n等候时间: 00:08:24\nWAITING TIME\n附加费: ¥0.00\nADDITIONAL FEE\n三金额: ¥168.00\nAMERINT\n兰卡号:\nCARD No\n卡原额:\nCARD ORIGINA SUM\n卡余额:\nCARD BALANCE SU\n天津客运出租汽车专用发票\nMANJIN PASSENGER\nTAXI SPECIAL INVOIC",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160611_0067_ocr_text.txt"
+}

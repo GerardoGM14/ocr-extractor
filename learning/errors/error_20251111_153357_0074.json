@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_153357_0074",
+  "timestamp": "2025-11-11T15:33:57.191441",
+  "pdf_name": "753a34a5-bcf5-4c58-be55-fb34c28ddf9f",
+  "page_number": 101,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1064,
+  "ocr_text_preview": "BSQE\nBS0004\nIN-SH-5801-25P87K\nTRAIN\nT075787\n检票:A23\n天津西站 G6269 保定东站\nTianjinxi Baodingdong\n2025年06月17日07:01开 09车02C号\n¥55.5元 二等座\n仅供报销使用\n6105261983****3717 原建勋\n报销凭证遗失不补\n退票改签时须交回车站\n225133000406177075787 JM\nT075786\n保定东站 G1712 天津西站\nBaodingdong Tianjinxi\n2025年06月17日 22:27开 03车04B号\n¥57.5元 二等座\n仅供报销使用\n6105261983****3717 原建勋\n报销凭证遗失不补\n退票改签时须交回车站\n22513300040617T075786 JM\nTAXI\n存根 STUB\n河北通用机打发票(I)\n(出租车卷式)\n国家税务总局\n发行北票联\n发票代码:113002134010\n发票号码:08971903\n识别码:98N66U265V24\n(手写无效)\n出租汽车: 0001\n公司: 00012328\n电话:\n车号:冀F-TV27",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_153357_0074_ocr_text.txt"
+}

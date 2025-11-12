@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_160758_0098",
+  "timestamp": "2025-11-11T16:07:58.420339",
+  "pdf_name": "82c0c2a9-085c-4328-a42b-3a9e6d73e0b2",
+  "page_number": 125,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS082156",
+      "tSerie": null,
+      "fEmision": "7/6/2025",
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 5197,
+  "ocr_text_preview": "BSQE AUSTRALIA ENTRIES\nInvoice No. Report/Emp Number Technical Specialist Supplier Supplier PO Country PPE / Date Date Period Charge No/Sub No Units Type Rate Total Curr\nSQR 082156 Obaid Shaikh 26232-115 Australia 7/6/2025 PSQ Support 18.0 Hours 154 2,772.00 AUD\nSOR 082156 Obaid Shaikh 26232-115 Australia 7/20/2025 26231-540-419211-PY21-YZ-B 27.5 Hours 154 4,235.00 AUD\nSQR 082156 Obaid Shaikh 26232-115 Australia 7/20/2025 26231-540-419211-PY21-YZ-B 6.5 Hours 154 1,001.00 AUD\nSQR 082156 Obaid Sha",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_160758_0098_ocr_text.txt"
+}

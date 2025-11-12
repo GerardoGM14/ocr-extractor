@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_162504_0044",
+  "timestamp": "2025-11-11T16:25:04.461160",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 58,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 2606,
+  "ocr_text_preview": "Sharda, Sameeksha\nBSQE\nBS0003\nFrom: Gloria Checcarelli <gloria@hawkpros.com>\nSent: Wednesday, July 9, 2025 5:45 PM\nTo: Bechtel Accounts Payable Invoices\nCc: Semien, Alejandro\nSubject: June 2025 invoices\nAttachments: Bechtel inv 330-25.pdf; Bechtel inv 331-25.pdf; Bechtel inv 332-25.pdf; Bechtel inv\n333-25.pdf; Bechtel inv 334-25.pdf; Bechtel inv 335-25.pdf; Bechtel inv 336-25.pdf;\nBechtel inv 337-25.pdf; Bechtel inv 338-25.pdf; Bechtel inv 339-25.pdf; Bechtel inv\n340-25.pdf; Bechtel inv 341-25.p",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251111_162504_0044_ocr_text.txt"
+}

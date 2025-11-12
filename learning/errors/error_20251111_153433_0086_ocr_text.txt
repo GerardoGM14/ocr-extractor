@@ -1,0 +1,31 @@
+BSQE
+BS0010
+Period : JUL-25
+Posted Status : Posted
+Posted Date : 30-JUL-2025
+Source : Spreadsheet
+Category : Original JVs
+Funct. Curr : AUD
+Entered Curr : USD
+Currency Type: Corporate
+Currency Rate: 1.532332209623046
+Currency Date: 30-JUL-2025
+Prepared By : AMSEMIEN
+Approval Stat: Approved
+Approved By : EMARMSTR
+GL Journal Details
+Batch Name: Web ADI: E9XL-2336732507B0012//USD/30-JUL-2025 Spreadsheet A 4478715 142683
+Journal Name: Original JVs USD Corporate 30-JUL-25 Batch_ID: 10811105
+Source Ref: 2336732507B0012
+Jounal Desc: BSQE JUL25 MAR ENTRIES
+Transaction Date: 30-JUL-25
+Page No.: 1
+Run Date: 05-Aug-2025
+Run Time: 13:08:58
+Report No.: XXOGL_JE_LINES_RPT_XML
+Line Ent Sub Nat Sub Perform Entered Entered Funct Equiv Funct Equiv Reference/ R Sub Emp Org Bill Hours Line Description
+No. Off Cor Acct Cls Job Job Org Debits Credits Debits Credits Invoice Numb O Sub No NC To
+e
+1 E9XL 000 0000 890 26442 223 8NJ2100 2,600.00 0.00 3,984.06 0.00 BSQE JUL25 MAR ENTRIES
+2 E9XL 447 0000 000 24084 PAY 0000000 .00 2,600.00 3.984.06 3,984.06 BSQE JUL25 MAR ENTRIES
+2,600.00 2,600.00 3,984.06 3,984.06

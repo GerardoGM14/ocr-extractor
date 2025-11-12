@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251111_162411_0008",
+  "timestamp": "2025-11-11T16:24:11.057416",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 11,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 676.15,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 925,
+  "ocr_text_preview": "BECHTEL JOBS NO.: 26443\nProject: Yanacocha AWTP Onshore\nDescription MYR USD USD\nDescription MYR USD USD\nItem No Description MYR USD USD\nToll 82.7 20\nToll 82.7 20\n1 Toll 82.7 20\nHotel 2667 646\nHotel 2445 592.25\n2 Hotel 2445 592.25\nMeal 21.9 5.3\nMeal 20.9 5.1\n3 Meal 27.75 6.75\nMeal 23 5.6\nMeal 14 3.4\n4 Meal 32.4 7.85\nMeal 34.5 8.35\nMeal 18.4 4.45\n5 Meal 26 6.3\nMeal 32.8 7.95\nMeal 21 5.1\n6 Meal 23 5.6\nMeal 25.5 6.2\nMeal 18.7 4.55\n7 Meal 28.6 6.95\nMeal 23.1 5.6\nMeal 22.7 5.5\n8 Meal 21.9 5.3\nMeal 20.",
+  "ocr_text": "BECHTEL JOBS NO.: 26443\nProject: Yanacocha AWTP Onshore\nDescription MYR USD USD\nDescription MYR USD USD\nItem No Description MYR USD USD\nToll 82.7 20\nToll 82.7 20\n1 Toll 82.7 20\nHotel 2667 646\nHotel 2445 592.25\n2 Hotel 2445 592.25\nMeal 21.9 5.3\nMeal 20.9 5.1\n3 Meal 27.75 6.75\nMeal 23 5.6\nMeal 14 3.4\n4 Meal 32.4 7.85\nMeal 34.5 8.35\nMeal 18.4 4.45\n5 Meal 26 6.3\nMeal 32.8 7.95\nMeal 21 5.1\n6 Meal 23 5.6\nMeal 25.5 6.2\nMeal 18.7 4.55\n7 Meal 28.6 6.95\nMeal 23.1 5.6\nMeal 22.7 5.5\n8 Meal 21.9 5.3\nMeal 20.65 5\nMeal 33.9 8.2\n9 Meal 22.8 5.55\nMeal 21.3 5.15\nMeal 23.3 5.65\n10 Meal 17.5 4.25\nMeal 22.4 5.45\nMeal 24.5 5.95\n11 Meal 25.2 6.1\nMeal 18.5 4.5\nMeal 18.1 4.4\n12 Meal 18.8 4.8\nMeal 25.9 6.3\nMeal 21.5 5.2\n13 Meal 25.5 6.2\nMeal 20.6 5\nMeal 26.3 6.4\n14 Meal 19.3 4.7\nMeal 19.8 4.8\nMeal 24.8 6\nGrand Total USD 676.15\nGrand Total USD 682.60\nMeal 26.3 6.4\nMeal 22.5 5.45\nGrand Total USD 759.05\nTOTAL EXPENSES $ 2,117.80\nBSQE\nBS0003"
+}

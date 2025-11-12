@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251111_162509_0045",
+  "timestamp": "2025-11-11T16:25:09.309544",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 62,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 974,
+  "ocr_text_preview": "BECHTEL\nInvoice Approval Report\nBSQE\nBS0004\nReport Date - 23-Jul-25\nPage 1 of 2\nSupplier Data\nSupplier Name Supplier Number Operating Unit\nSGS-CSTC STANDARDS TECHNICAL SERVICES SHANGHAI CO., 1000000434 82\nLTD\nInvoice Group Detail\nInvoice Group INV Group ID Invoice Number\nBSQEUSD 751662 SHINSCS2500775B01\nBSQEUSD 751662 SHINSCS2500784B01\nInvoice Data\nInvoice Number PO Number Invoice Date Invoice Amount Invoice Description\nSHINSCS2500784B01 07-JUL-25 3764.35\nLine Line Nat Job Sub Cost Acct Sale Acc",
+  "ocr_text": "BECHTEL\nInvoice Approval Report\nBSQE\nBS0004\nReport Date - 23-Jul-25\nPage 1 of 2\nSupplier Data\nSupplier Name Supplier Number Operating Unit\nSGS-CSTC STANDARDS TECHNICAL SERVICES SHANGHAI CO., 1000000434 82\nLTD\nInvoice Group Detail\nInvoice Group INV Group ID Invoice Number\nBSQEUSD 751662 SHINSCS2500775B01\nBSQEUSD 751662 SHINSCS2500784B01\nInvoice Data\nInvoice Number PO Number Invoice Date Invoice Amount Invoice Description\nSHINSCS2500784B01 07-JUL-25 3764.35\nLine Line Nat Job Sub Cost Acct Sale Acct Sale Acct Sale Red Red Net Inv Comments\nType Amount Class Job Code Tax Rate Tax Basis Tax Amt Type Amount Amount\n1210.92 890 264 223\n42\n51.85 890 265 205\n29\n1110.15 890 265 205\n29\n98.15 890 261 45S\n96\n51.08 890 264 223\n42\n61.85 890 262 140\n51\n306.31 890 265 205\n29\n112 890 266 214\n07\n32.98 890 266 214\n07\n45.69 890 252 004\n72\n65.62 890 262 140\n51\n34.92 890 266 214\n07\n220.92 890 264 130\n97\n53.85 890 264 223\n42\n30 890 264 223\n42\n114.98 890 264 223\n42\n163.08 890 266 42A\n10"
+}

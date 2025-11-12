@@ -1,0 +1,26 @@
+# Core dependencies
+google-generativeai>=0.8.0
+PyPDF2>=3.0.0
+pdf2image>=1.16.3
+pillow>=10.0.0
+python-dotenv>=1.0.0
+
+# Utilities
+pytesseract>=0.3.10
+
+# JSON handling
+orjson>=3.9.10
+
+# Exe packaging
+pyinstaller>=6.0.0
+
+# Additional
+pymupdf>=1.23.0
+requests>=2.31.0
+
+# API Dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+email-validator>=2.1.0
+

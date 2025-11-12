@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251111_162454_0036",
+  "timestamp": "2025-11-11T16:24:54.625813",
+  "pdf_name": "b7d1ccb7-adc8-4afc-b04a-d18aa0020d7c",
+  "page_number": 54,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "28/6/2025",
+      "tCliente": null,
+      "nPrecioTotal": 6.1
+    }
+  },
+  "ocr_text_length": 249,
+  "ocr_text_preview": "BSQE\nBS0003\nM/S\nMEL\nTARIKH 28/6/2025\nNO.\nNO. 数量 KUANTITI 摘要 JENIS BARANG - BARANG 價目 HARGA 銀額 JUMLAH\n1\n2 25-20\n3\n4\n5\n6\n7\n8\n9 USD6.10\n貨物出門,恕不退换。\nBarang yang sudah dijual tidak boleh dikembalikan.\nJUMLAH/總計 25.20\n收貨人 經手人\nDiterima Oleh. Disahkan Oleh..",
+  "ocr_text": "BSQE\nBS0003\nM/S\nMEL\nTARIKH 28/6/2025\nNO.\nNO. 数量 KUANTITI 摘要 JENIS BARANG - BARANG 價目 HARGA 銀額 JUMLAH\n1\n2 25-20\n3\n4\n5\n6\n7\n8\n9 USD6.10\n貨物出門,恕不退换。\nBarang yang sudah dijual tidak boleh dikembalikan.\nJUMLAH/總計 25.20\n收貨人 經手人\nDiterima Oleh. Disahkan Oleh.."
+}
