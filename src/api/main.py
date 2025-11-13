@@ -15,7 +15,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from starlette.requests import Request
 
 from .models import (
@@ -1066,6 +1066,200 @@ async def get_learning_suggestions():
         )
 
 
+@app.get("/api/v1/export-excel/{file_id}", tags=["Export"])
+async def export_structured_to_excel(file_id: str):
+    """
+    Genera un archivo Excel consolidado con todos los JSONs estructurados de un file_id.
+    
+    Consolida todas las tablas de additional_data de todos los JSONs estructurados
+    en un solo archivo Excel, agregando una columna "hoja" con el número de página.
+    
+    Args:
+        file_id: ID del archivo procesado (obtener de /api/v1/uploaded-files)
+        
+    Returns:
+        Archivo Excel para descarga directa
+    """
+    import json
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    
+    upload_manager = get_upload_manager()
+    archive_manager = get_archive_manager()
+    file_manager = get_file_manager()
+    
+    # Validar que el file_id existe
+    if not upload_manager.file_exists(file_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"Archivo con file_id '{file_id}' no encontrado."}
+        )
+    
+    # Obtener metadata del archivo
+    metadata = upload_manager.get_uploaded_metadata(file_id)
+    if not metadata:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"Metadata no encontrada para file_id '{file_id}'"}
+        )
+    
+    # Validar correo autorizado
+    email = metadata.get("metadata", {}).get("email", "")
+    if not is_email_allowed(email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": f"Correo no autorizado: {email}"}
+        )
+    
+    # Obtener nombre del PDF (sin extensión)
+    pdf_filename = metadata.get("filename", "")
+    pdf_name = Path(pdf_filename).stem if pdf_filename else "unknown"
+    
+    # Buscar todos los JSONs estructurados de este archivo
+    base_output = file_manager.get_output_folder() or "./output"
+    structured_folder = Path(base_output) / "api" / "structured"
+    
+    if not structured_folder.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"No se encontraron archivos estructurados para '{pdf_name}'"}
+        )
+    
+    # Buscar todos los JSONs que corresponden a este PDF
+    json_files = sorted(structured_folder.glob(f"{pdf_name}_page_*_structured.json"))
+    
+    if not json_files:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"No se encontraron JSONs estructurados para '{pdf_name}'"}
+        )
+    
+    # Crear workbook de Excel
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Datos Consolidados"
+    
+    # Estilos
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    
+    # Diccionario para almacenar todas las tablas consolidadas
+    all_tables = {}
+    
+    # Procesar cada JSON estructurado
+    for json_file in json_files:
+        try:
+            # Extraer número de página del nombre del archivo
+            # Formato: {pdf_name}_page_{page_num}_structured.json
+            page_match = json_file.stem.split("_page_")
+            if len(page_match) >= 2:
+                page_num_str = page_match[1].replace("_structured", "")
+                try:
+                    page_num = int(page_num_str)
+                except ValueError:
+                    page_num = 0
+            else:
+                page_num = 0
+            
+            # Leer JSON
+            with open(json_file, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+            
+            # Obtener additional_data
+            additional_data = json_data.get("additional_data", {})
+            
+            # Procesar cada tabla en additional_data
+            for table_name, table_data in additional_data.items():
+                if not isinstance(table_data, list):
+                    continue
+                
+                # Inicializar tabla si no existe
+                if table_name not in all_tables:
+                    all_tables[table_name] = []
+                
+                # Agregar columna "hoja" a cada registro
+                for record in table_data:
+                    if isinstance(record, dict):
+                        record_with_hoja = record.copy()
+                        record_with_hoja["hoja"] = f"{pdf_name} - Página {page_num}"
+                        all_tables[table_name].append(record_with_hoja)
+        
+        except Exception as e:
+            logger.warning(f"Error procesando {json_file.name}: {e}")
+            continue
+    
+    # Si no hay datos, devolver error
+    if not all_tables or all(not records for records in all_tables.values()):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"No se encontraron datos para consolidar en '{pdf_name}'"}
+        )
+    
+    # Consolidar todas las tablas en una sola hoja
+    # Primera fila: encabezados
+    row = 1
+    all_columns = set()
+    
+    # Recopilar todas las columnas únicas de todas las tablas
+    for table_name, records in all_tables.items():
+        for record in records:
+            if isinstance(record, dict):
+                all_columns.update(record.keys())
+    
+    # Ordenar columnas: "hoja" primero, luego el resto alfabéticamente
+    sorted_columns = sorted([c for c in all_columns if c != "hoja"])
+    column_order = ["hoja"] + sorted_columns
+    
+    # Escribir encabezados
+    for col_idx, col_name in enumerate(column_order, start=1):
+        cell = ws.cell(row=row, column=col_idx, value=col_name)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_alignment
+    
+    # Escribir datos
+    row = 2
+    for table_name, records in all_tables.items():
+        for record in records:
+            if isinstance(record, dict):
+                for col_idx, col_name in enumerate(column_order, start=1):
+                    value = record.get(col_name, "")
+                    # Convertir None a string vacío
+                    if value is None:
+                        value = ""
+                    ws.cell(row=row, column=col_idx, value=value)
+                row += 1
+    
+    # Ajustar ancho de columnas
+    for col_idx, col_name in enumerate(column_order, start=1):
+        max_length = len(str(col_name))
+        for row_idx in range(2, row):
+            cell_value = ws.cell(row=row_idx, column=col_idx).value
+            if cell_value:
+                max_length = max(max_length, len(str(cell_value)))
+        # Ancho mínimo 10, máximo 50
+        adjusted_width = min(max(max_length + 2, 10), 50)
+        ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
+    
+    # Guardar Excel en carpeta pública
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    excel_filename = f"{pdf_name}_consolidado_{timestamp}_{file_id[:8]}.xlsx"
+    excel_path = archive_manager.public_folder / excel_filename
+    
+    wb.save(excel_path)
+    
+    logger.info(f"Excel consolidado creado: {excel_filename} para file_id: {file_id}")
+    
+    # Devolver archivo para descarga directa
+    return FileResponse(
+        path=str(excel_path),
+        filename=excel_filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
 @app.get("/public/{filename}", tags=["Public"])
 async def serve_public_file(filename: str):
     """
@@ -1089,25 +1283,42 @@ async def serve_public_file(filename: str):
             detail={"error": f"Archivo no encontrado: {filename}"}
         )
     
-    # Verificar que sea un archivo zip
-    if not filename.lower().endswith('.zip'):
+    # Verificar que sea un archivo zip o excel
+    if not (filename.lower().endswith('.zip') or filename.lower().endswith('.xlsx')):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "Solo se permiten archivos .zip"}
+            detail={"error": "Solo se permiten archivos .zip o .xlsx"}
         )
     
-    # Buscar el correo asociado a este ZIP
+    # Buscar el correo asociado a este archivo (ZIP o Excel)
     upload_manager = get_upload_manager()
     processed_tracker = get_processed_tracker()
     
     email_found = None
     
-    # Buscar en archivos procesados desde upload-pdf
-    uploaded_files = upload_manager.list_uploaded_files(processed=True)
-    for f in uploaded_files:
-        if f.get("zip_filename") == filename or f.get("download_url", "").endswith(filename):
-            email_found = f.get("metadata", {}).get("email", "")
-            break
+    # Si es un Excel, extraer file_id del nombre del archivo
+    # Formato: {pdf_name}_consolidado_{timestamp}_{file_id[:8]}.xlsx
+    if filename.lower().endswith('.xlsx'):
+        # Intentar extraer file_id del nombre
+        parts = filename.replace('.xlsx', '').split('_')
+        if len(parts) >= 3:
+            # El file_id está en los últimos caracteres (8 caracteres)
+            potential_file_id_short = parts[-1]
+            # Buscar file_id completo en todos los archivos subidos
+            uploaded_files = upload_manager.list_uploaded_files()
+            for f in uploaded_files:
+                file_id = f.get("file_id", "")
+                if file_id and file_id[:8] == potential_file_id_short:
+                    email_found = f.get("metadata", {}).get("email", "")
+                    break
+    
+    # Buscar en archivos procesados desde upload-pdf (para ZIPs)
+    if not email_found:
+        uploaded_files = upload_manager.list_uploaded_files(processed=True)
+        for f in uploaded_files:
+            if f.get("zip_filename") == filename or f.get("download_url", "").endswith(filename):
+                email_found = f.get("metadata", {}).get("email", "")
+                break
     
     # Si no se encontró, buscar en archivos procesados directamente
     if not email_found:
@@ -1124,10 +1335,16 @@ async def serve_public_file(filename: str):
             detail={"error": f"Acceso denegado. Este archivo no pertenece a un correo autorizado."}
         )
     
+    # Determinar media type según extensión
+    if filename.lower().endswith('.xlsx'):
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        media_type = "application/zip"
+    
     return FileResponse(
         path=str(file_path),
         filename=filename,
-        media_type="application/zip"
+        media_type=media_type
     )
 
 

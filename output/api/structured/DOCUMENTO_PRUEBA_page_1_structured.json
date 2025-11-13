@@ -1,0 +1,219 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "parser": "ExtractorOCR",
+    "extraction_date": "2025-11-12T16:23:22.852575",
+    "type": "structured",
+    "email": "mariadelosangeles.abanto@newmont.com",
+    "year": 0,
+    "month": "String",
+    "request_id": "8847b254-ac5c-4ee3-bd08-03e7a1c72990",
+    "processed_at": "2025-11-12T16:28:06.525915",
+    "api_version": "1.0.0"
+  },
+  "hoja": {
+    "tJson": "Newmont.\nYANACOCHA\n26442-220-G57-GAM-00204\nYANACOCHA WATER TREATMENT\nSUMMARY REIMBURSABLE EXPENDITURE - OFFSHORE 26442\nEDP 5A - July 2025\nBECHTEL\nJob No TYPE Source Reference Source Ref ID Description Total (US$) Stamp Sequential\nName Number\n26442-OFFSHORE Supplier Quality (BSQE) Services 2336732507B0032 JUL-25 BSQE OH RECOVERY BSQE $ 6,369 BSQE BS0001\n1000050793 33325 HAWK INTERNATIONAL SRL BSQE $ 123 BSQE BS0002\n1000050793 33525 HAWK INTERNATIONAL SRL BSQE $ 3,758 BSQE BS0003\n1000000434 SHINSCS2500784801 SGS-CSTC STANDARDS TECHNICAL SERVICES SHANGHAI CO., LTD BSQE $ 1,461 BSQE BS0004\nOBARSS2507BGS5 BSQE Labor BSQE $ 44,868 BSQE BS0005\nOBARSS2507BGS3 BSQE Labor BSQE $ 19,840 BSQE BS0006\nOBARSS2507BGS4 BSQE Labor BSQE $ 1,725 BSQE BS0007\nOBARSS2507BGS1 BSQE Labor BSQE $ 6,664 BSQE BS0008\nOBARSS2507BGS2 BSQE Labor BSQE $ 8,204 BSQE BS0009\n2336732507B0012 BSQE JUL25 MAR ENTRIES BSQE $ 2,600 BSQE BS0010\nSupplier Quality (BSQE) Services $ 95,611\nOther Reimbursables 792855 4QL9RG FLORES FUENTES, FANNY LORENA Other Employee Related Expenses $ 1,880 OTEM OE0001\n905606 U4GQYO TORRES FERREIRA, LORENA VALERIA Other Employee Related Expenses $ 91 OTEM OE0002\nOBARSS2507BWB1 Other Internal Services WATC Testing and Lab. Services $ 45,250 OTRE OR0001\nOther Reimbursables $ 47,221\nTOTAL $ 142,832\nBechtel Level 2-Confidential. Access Restricted to Authorized Individuals and Groups.",
+    "tJsonTraducido": null,
+    "lFormato": true,
+    "iMIdioma": 2,
+    "iMDocumentoTipo": 2,
+    "tSequentialNumber": "BS0001"
+  },
+  "additional_data": {
+    "mresumen": [
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "2336732507B0032",
+        "tsourcerefid": "JUL-25 BSQE",
+        "tdescription": "BSQE",
+        "nImporte": 6369.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0001"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "1000050793",
+        "tsourcerefid": "33325 HAWK",
+        "tdescription": "BSQE",
+        "nImporte": 123.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0002"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "1000050793",
+        "tsourcerefid": "33525 HAWK",
+        "tdescription": "BSQE",
+        "nImporte": 3758.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0003"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "1000000434",
+        "tsourcerefid": "SHINSCS2500784801 SGS-CSTC",
+        "tdescription": "BSQE",
+        "nImporte": 1461.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0004"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "OBARSS2507BGS5",
+        "tsourcerefid": "BSQE Labor",
+        "tdescription": "BSQE",
+        "nImporte": 44868.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0005"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "OBARSS2507BGS3",
+        "tsourcerefid": "BSQE Labor",
+        "tdescription": "BSQE",
+        "nImporte": 19840.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0006"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "OBARSS2507BGS4",
+        "tsourcerefid": "BSQE Labor",
+        "tdescription": "BSQE",
+        "nImporte": 1725.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0007"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "OBARSS2507BGS1",
+        "tsourcerefid": "BSQE Labor",
+        "tdescription": "BSQE",
+        "nImporte": 6664.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0008"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "OBARSS2507BGS2",
+        "tsourcerefid": "BSQE Labor",
+        "tdescription": "BSQE",
+        "nImporte": 8204.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0009"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": "2336732507B0012",
+        "tsourcerefid": "BSQE JUL25",
+        "tdescription": "BSQE",
+        "nImporte": 2600.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0010"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Supplier Quality",
+        "tsourcereference": null,
+        "tsourcerefid": null,
+        "tdescription": "BSQE",
+        "nImporte": 95611.0,
+        "tStampname": "BSQE",
+        "tsequentialnumber": null
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Other Reimbursables",
+        "tsourcereference": null,
+        "tsourcerefid": null,
+        "tdescription": "OTEM",
+        "nImporte": 1880.0,
+        "tStampname": "OTEM",
+        "tsequentialnumber": "OE0001"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Other Reimbursables",
+        "tsourcereference": null,
+        "tsourcerefid": null,
+        "tdescription": "OTEM",
+        "nImporte": 91.0,
+        "tStampname": "OTEM",
+        "tsequentialnumber": "OE0002"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Other Reimbursables",
+        "tsourcereference": "OBARSS2507BWB1",
+        "tsourcerefid": "Other Internal",
+        "tdescription": "OTRE",
+        "nImporte": 45250.0,
+        "tStampname": "OTRE",
+        "tsequentialnumber": "OR0001"
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Other Reimbursables",
+        "tsourcereference": null,
+        "tsourcerefid": null,
+        "tdescription": "Other Reimbursables",
+        "nImporte": 47221.0,
+        "tStampname": null,
+        "tsequentialnumber": null
+      },
+      {
+        "tjobno": "26442-OFFSHORE",
+        "ttype": "Other Reimbursables",
+        "tsourcereference": null,
+        "tsourcerefid": null,
+        "tdescription": "TOTAL",
+        "nImporte": 142832.0,
+        "tStampname": null,
+        "tsequentialnumber": null
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 2,
+        "tTipo": "Resumen"
+      }
+    ],
+    "mdivisa": [
+      {
+        "tDivisa": "USD"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "ECOVERY BSQE"
+      }
+    ],
+    "mcomprobante": [],
+    "mcomprobante_detalle": [],
+    "mjornada": [],
+    "mjornada_empleado": [],
+    "marchivo_tipo": [],
+    "munidad_medida": []
+  }
+}

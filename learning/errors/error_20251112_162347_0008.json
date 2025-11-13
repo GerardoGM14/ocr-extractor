@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251112_162347_0008",
+  "timestamp": "2025-11-12T16:23:47.158887",
+  "pdf_name": "4d48360c-439b-4e55-af0b-470b0430b84d",
+  "page_number": 20,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "11 Jun 25",
+      "nPrecioTotal": 19.5,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 743,
+  "ocr_text_preview": "BSQE\nBS0003\nMEM\nBERJAYA STARBUCKS COFFEE\nCOMPANY SDN BHD (462026-H)\nLot 10-14 Level 10, West, Berjaya Times Square,\nNo, Jalan Imbi, 55100 Kuala Lumpur, Malaysia\nwebsite www.starbucks.com.my\nSri Pinang DT\n1300-80-8989\nSERVICE TAX ID: W10-1808-31025875\nInvoice No: SB199R2-0544560 FOR HERE\nDate: 11 Jun 25 00:28:57 HAIKAL\nICE VANILLA LATT - VWE 1 17.50\nADD ESP SHT 1 2.00\nSub-Total RM 19.50\n6% Service Tax (ST) RM 1.17\nRounding RM -0.02\nTotal Sale (Incl. ST) RM 20.65\nMBBCREDIT RM 20.65\nMBBCHEDIT: 4304",
+  "ocr_text": "BSQE\nBS0003\nMEM\nBERJAYA STARBUCKS COFFEE\nCOMPANY SDN BHD (462026-H)\nLot 10-14 Level 10, West, Berjaya Times Square,\nNo, Jalan Imbi, 55100 Kuala Lumpur, Malaysia\nwebsite www.starbucks.com.my\nSri Pinang DT\n1300-80-8989\nSERVICE TAX ID: W10-1808-31025875\nInvoice No: SB199R2-0544560 FOR HERE\nDate: 11 Jun 25 00:28:57 HAIKAL\nICE VANILLA LATT - VWE 1 17.50\nADD ESP SHT 1 2.00\nSub-Total RM 19.50\n6% Service Tax (ST) RM 1.17\nRounding RM -0.02\nTotal Sale (Incl. ST) RM 20.65\nMBBCREDIT RM 20.65\nMBBCHEDIT: 430455******3976 USD 5,00\nApproval code : 10160\n11 Jun 25 00:29:50-\nYour Next Drink Could Be Free\nWith A Starbucks Card\nTurn Your Visits Into Rewards!\nFree Wifi Code\n2hdtub\nPlease register E-Invoice\nafter 24 hours at\nwww.starbucks.com.my/e-invoice"
+}

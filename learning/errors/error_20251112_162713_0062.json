@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251112_162713_0062",
+  "timestamp": "2025-11-12T16:27:13.413002",
+  "pdf_name": "4d48360c-439b-4e55-af0b-470b0430b84d",
+  "page_number": 120,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0006",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "7/6/2025",
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 4923,
+  "ocr_text_preview": "CFAR BAREDS1 - BARS - BSQE LABOR DETAILS\nBSQE Billings For Month of July and Year 2025\nJob: 26442 - YANACOCHA AWTP - OFFSHORE\nSub Job: 223 - BSQE\nBSQE\nBS0006\nEmp Name Invoice Invoice Date Assignment Number Additional Info Bill Code Class Activity Hours Hrly Rate Amount\nBSQE SERVICE CHARGES - BSQE01\nCharles Cook BSQE070625 7/6/2025 26443-220-YZA-MFB0-10001 INSPECTING 10.00 98 REG 980.00\nDonald W George BSQE070625 7/6/2025 26443-220-YZA-MPVE-1A001 SQR INSPECTING 7.00 112 OVT 784.00\nNedy Resic BSQE",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251112_162713_0062_ocr_text.txt"
+}

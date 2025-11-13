@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251112_162734_0069",
+  "timestamp": "2025-11-12T16:27:34.813558",
+  "pdf_name": "4d48360c-439b-4e55-af0b-470b0430b84d",
+  "page_number": 136,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "30 Jul 2025",
+      "nPrecioTotal": 80.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 659,
+  "ocr_text_preview": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activ",
+  "ocr_text": "David John Cook (196979)\nRun Date: 30 Jul 2025\nPeriod 23 Jun 2025 - 06 Jul 2025\nSchedule E (M-S 8 hour Days)\nOvertime STO\nOrg Code 8NJ-2500\nCO E9\nPR Office 6M\nApproved July 03, 2025 05:46:53 (UTC July 03, 2025 12:46:53)\nSmith, Gilbert Mooche\nSigned July 03, 2025 02:32:30 (UTC July 03, 2025 09:32:30)\nCook, David John\nCharge Code Project Worked Assignment No. Add. Info Total Mon Tue Wed Thu Fri Sat Sun Mon Tue Wed Thu Fri Sat Sun\n23 24 25 26 27 28 29 30 1 2 3 4 5 6\nREG-24084PAY 26711110 BSQE Activities PSQ 6 2 2 1 1\nREG-24084REG 24084REG 71 6 6 8 8 5 7 7 8 8 8\nVacation 3 3\nGrand Total 80 8 8 8 8 8 8 8 8 8 8\nStraight Time 80 8 8 8 8 8 8 8 8 8 8\nOver Time"
+}

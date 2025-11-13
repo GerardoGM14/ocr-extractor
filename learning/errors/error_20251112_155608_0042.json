@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251112_155608_0042",
+  "timestamp": "2025-11-12T15:56:08.193639",
+  "pdf_name": "10cfe040-b5a2-4fd6-a8a7-9fb8d8156437",
+  "page_number": 61,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 3764.35,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1162,
+  "ocr_text_preview": "SGS\nINVOICE\nBSQE\nBS0004\nSGS Order No: SHINSCS2500784B01\nDate: 2025-07-07\nPage: 1/1\nCustomer Number 1055615\nCustomer Name BECHTEL SUPPLIER QUALITY & EXPEDITING INC.\nCustomer Address 3000 POST OAK BLVD. MS75, HOUSTON, TEXAS, 77058, United States\nAttention MONDSHINE\nCurrency USD\nPayment Term Net due in 30 Days BBS ND REVC 10 JUL 2025\nVAT No\nPurchase Order\nReference Order SHINSCS2500784B01\nItem Description Quantity UM Unit Price Net Amount Tax Code Amount\n57738 Inspection Service 1 Ea 3,764.35 3,551",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251112_155608_0042_ocr_text.txt"
+}

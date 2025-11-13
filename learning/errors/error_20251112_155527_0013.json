@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251112_155527_0013",
+  "timestamp": "2025-11-12T15:55:27.783317",
+  "pdf_name": "10cfe040-b5a2-4fd6-a8a7-9fb8d8156437",
+  "page_number": 23,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 18.5,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 354,
+  "ocr_text_preview": "BSQE\nBS0003\nM/S\n日期\nDATE/TARIKH : 12.6.2025\nNO. 號碼\n號碼 摘要 數量 價目 銀額\nNO. PARTICULARS QUANTITY UNIT PRICE AMOUNT\nBUTIR-BUTIR KUANTIT HARGA JUMLAH\n1\n2 18.50\n3\n4\n5\n6\n7\n8\n9\n10 USD 450 450\n貨物出門恕不退换 總計\nGoods sola are not returnable TOTAL 18.50\nBarang yang sudah dijual tidak boleh dikembalikan. JUMLAH\nReceived by / Diterima oleh /收貨人 Signature / Tandatangan / 經手人",
+  "ocr_text": "BSQE\nBS0003\nM/S\n日期\nDATE/TARIKH : 12.6.2025\nNO. 號碼\n號碼 摘要 數量 價目 銀額\nNO. PARTICULARS QUANTITY UNIT PRICE AMOUNT\nBUTIR-BUTIR KUANTIT HARGA JUMLAH\n1\n2 18.50\n3\n4\n5\n6\n7\n8\n9\n10 USD 450 450\n貨物出門恕不退换 總計\nGoods sola are not returnable TOTAL 18.50\nBarang yang sudah dijual tidak boleh dikembalikan. JUMLAH\nReceived by / Diterima oleh /收貨人 Signature / Tandatangan / 經手人"
+}

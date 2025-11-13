@@ -1,0 +1,225 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "parser": "ExtractorOCR",
+    "extraction_date": "2025-11-12T16:23:26.106644",
+    "type": "structured",
+    "email": "mariadelosangeles.abanto@newmont.com",
+    "year": 0,
+    "month": "String",
+    "request_id": "8847b254-ac5c-4ee3-bd08-03e7a1c72990",
+    "processed_at": "2025-11-12T16:28:06.525915",
+    "api_version": "1.0.0"
+  },
+  "hoja": {
+    "tJson": "V52T Bechtel Chile:\nBSQE\nBS0001\nPeriod Jul 2025\nM&M M&M M&M M&M M&M M&M M&M M&M\nYanacocha Yanacocha Yanacocha Yanacocha Yanacocha Yanacocha MLP AD800 Spence\n(Off) (Off) (On) (On) (On) (On)\nConcentrator\n26442-007 26442-223 26443-001 26443-222 26443-223 26443-353 26607-112 26775-138\nEmpl No Full Name Labor PPE (orig) Curr Org Code Total Hours\n168474 Saavedra Oportus, Hector Alejandro 30-Jun-2025 CLP 8NJ2100 4.75 - - - - - - - -\n168474 Saavedra Oportus, Hector Alejandro 31-Jul-2025 CLP 8NJ2100 47.50 - 4.75 - - - - - -\n174618 Paez Cocke, Roberto Alejandro 30-Jun-2025 CLP 8NJ2100 8.25 - 47.50 - - - - - -\n174618 Paez Cocke, Roberto Alejandro 31-Jul-2025 CLP 8NJ2100 5.50 - 8.25 - - - - - -\n175220 Valdes Barrera, Jose Luis 31-Jul-2025 CLP 8NJ2500 28.00 - 5.50 - - - - - -\n188561 Munoz Cortes, Patricio Andres 31-Jul-2025 CLP 8NJ2500 10.00 - 28.00 - - - - - 10.00\n841777 Castro Peralta, Pedro Segundo 31-Jul-2025 CLP 8NJ2500 195.50 195.50 - - - - - - -\n299.50 299.50 195.50 94.00 - - - - - 10.00\ncheck\nPlan OH/hr $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00\n$ 6,589.00 Total $ 6,589.00 $ 4,301.00 $ 2,068.00 $ - $ - $ - $ - $ - $ 220.00\nXYQN Bechtel Peru:\nM&M M&M M&M M&M M&M M&M M&M M&M\nYanacocha Yanacocha Yanacocha Yanacocha Yanacocha Yanacocha MLP AD800 Spence\n(Off) (Off) (On) (On) (On) (On)\nConcentrator\n26442-007 26442-223 26443-001 26443-222 26443-223 26443-353 26607-112 26775-138\nEmpl No Full Name Labor PPE (orig) Curr Org Code Total Hours\n069033 Vera Diaz, Boris Haendel 31-Jul-2025 PEN 8NJ2100 176.00 - - - - - 176.00 - -\n081383 Tovar Arredondo, Jose Carlos 30-Jun-2025 PEN 8NJ2100 - - - - - - - -\n081383 Tovar Arredondo, Jose Carlos 31-Jul-2025 PEN 8NJ2100 176.00 - - - - - 176.00 - -\n352.00 352.00 - - - - - 352.00 - -\ncheck\nPlan OH/hr $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00 $ 22.00\n$ 7,744.00 Total $ 7,744.00 $ - $ - $ - $ - $ 7,744.00 $ - $ -\n$ 14,333.00 Total Amt\n651.50 Total Hrs\n26442-007 26442-223 26443-001 26443-222 26443-223 26443-353 26607-112 26775-138\n2100 418.00 - 66.00 - - - 352.00 - -\n2500 233.50 195.50 28.00 - - - - - 10.00\n651.50 651.50 195.50 94.00 - - - 352.00 - 10.00\nBechtel Level 3 – General. Non-Confidential Business Information.",
+    "tJsonTraducido": null,
+    "lFormato": false,
+    "iMIdioma": 1,
+    "iMDocumentoTipo": 3,
+    "tSequentialNumber": "BS0001"
+  },
+  "additional_data": {
+    "mjornada": [
+      {
+        "fRegistro": "Jul 2025",
+        "nTotalHoras": 168474.0
+      }
+    ],
+    "mjornada_empleado": [
+      {
+        "tNumero": "168474",
+        "tNombre": "Saavedra Oportus, H",
+        "tOrganizacion": "8NJ2100"
+      },
+      {
+        "tNumero": "168474",
+        "tNombre": "Saavedra Oportus, H",
+        "tOrganizacion": "8NJ2100"
+      },
+      {
+        "tNumero": "174618",
+        "tNombre": "Paez Cocke, R",
+        "tOrganizacion": "8NJ2100"
+      },
+      {
+        "tNumero": "174618",
+        "tNombre": "Paez Cocke, R",
+        "tOrganizacion": "8NJ2500"
+      },
+      {
+        "tNumero": "175220",
+        "tNombre": "Valdes Barrera, J",
+        "tOrganizacion": "8NJ2500"
+      },
+      {
+        "tNumero": "188561",
+        "tNombre": "Munoz Cortes, P",
+        "tOrganizacion": "8NJ2500"
+      },
+      {
+        "tNumero": "841777",
+        "tNombre": "Castro Peralta, P",
+        "tOrganizacion": null
+      },
+      {
+        "tNumero": "069033",
+        "tNombre": "Vera Diaz, B",
+        "tOrganizacion": null
+      },
+      {
+        "tNumero": "081383",
+        "tNombre": "Tovar Arredondo, J",
+        "tOrganizacion": "8NJ2100"
+      },
+      {
+        "tNumero": "081383",
+        "tNombre": "Tovar Arredondo, J",
+        "tOrganizacion": null
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 3,
+        "tTipo": "Jornada"
+      }
+    ],
+    "mdivisa": [
+      {
+        "tDivisa": "CLP"
+      },
+      {
+        "tDivisa": "PEN"
+      },
+      {
+        "tDivisa": "USD"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "T Bechtel Chile"
+      }
+    ],
+    "mresumen": [
+      {
+        "tDescripcion": "Valor destacado Columna 1: $6,589.00 (de fila Total)",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 6589.0,
+        "tDivisa": "USD",
+        "_highlighted": true,
+        "_source_line": "$ 6,589.00 Total $ 6,589.00 $ 4,301.00 $ 2,068.00 $ - $ - $ - $ - $ - $ 220.00",
+        "_column_position": 1
+      },
+      {
+        "tDescripcion": "Valor destacado Columna 2: $4,301.00 (de fila Total)",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 4301.0,
+        "tDivisa": "USD",
+        "_highlighted": true,
+        "_source_line": "$ 6,589.00 Total $ 6,589.00 $ 4,301.00 $ 2,068.00 $ - $ - $ - $ - $ - $ 220.00",
+        "_column_position": 2
+      },
+      {
+        "tDescripcion": "Valor destacado Columna 3: $2,068.00 (de fila Total)",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 2068.0,
+        "tDivisa": "USD",
+        "_highlighted": true,
+        "_source_line": "$ 6,589.00 Total $ 6,589.00 $ 4,301.00 $ 2,068.00 $ - $ - $ - $ - $ - $ 220.00",
+        "_column_position": 3
+      },
+      {
+        "tDescripcion": "Valor destacado Columna 4: $220.00 (de fila Total)",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 220.0,
+        "tDivisa": "USD",
+        "_highlighted": true,
+        "_source_line": "$ 6,589.00 Total $ 6,589.00 $ 4,301.00 $ 2,068.00 $ - $ - $ - $ - $ - $ 220.00",
+        "_column_position": 4
+      },
+      {
+        "tDescripcion": "Valor destacado Columna 1: $7,744.00 (de fila Total)",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 7744.0,
+        "tDivisa": "USD",
+        "_highlighted": true,
+        "_source_line": "$ 7,744.00 Total $ 7,744.00 $ - $ - $ - $ - $ 7,744.00 $ - $ -",
+        "_column_position": 1
+      },
+      {
+        "tDescripcion": "Valor destacado Columna 2: $7,744.00 (de fila Total)",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 7744.0,
+        "tDivisa": "USD",
+        "_highlighted": true,
+        "_source_line": "$ 7,744.00 Total $ 7,744.00 $ - $ - $ - $ - $ 7,744.00 $ - $ -",
+        "_column_position": 2
+      },
+      {
+        "tDescripcion": "Total horas destacado Columna 1: 299.5 horas",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 299.5,
+        "tDivisa": null,
+        "_highlighted": true,
+        "_hours_total": true,
+        "_source_line": "299.50 299.50 195.50 94.00 - - - - - 10.00",
+        "_column_position": 1
+      },
+      {
+        "tDescripcion": "Total horas destacado Columna 2: 299.5 horas",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 299.5,
+        "tDivisa": null,
+        "_highlighted": true,
+        "_hours_total": true,
+        "_source_line": "299.50 299.50 195.50 94.00 - - - - - 10.00",
+        "_column_position": 2
+      },
+      {
+        "tDescripcion": "Total horas destacado Columna 1: 352.0 horas",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 352.0,
+        "tDivisa": null,
+        "_highlighted": true,
+        "_hours_total": true,
+        "_source_line": "352.00 352.00 - - - - - 352.00 - -",
+        "_column_position": 1
+      },
+      {
+        "tDescripcion": "Total horas destacado Columna 2: 352.0 horas",
+        "tjobno": null,
+        "ttype": null,
+        "nMonto": 352.0,
+        "tDivisa": null,
+        "_highlighted": true,
+        "_hours_total": true,
+        "_source_line": "352.00 352.00 - - - - - 352.00 - -",
+        "_column_position": 2
+      }
+    ],
+    "mcomprobante": [],
+    "mcomprobante_detalle": [],
+    "marchivo_tipo": [],
+    "munidad_medida": []
+  }
+}

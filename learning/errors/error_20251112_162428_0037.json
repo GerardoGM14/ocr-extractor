@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251112_162428_0037",
+  "timestamp": "2025-11-12T16:24:28.692963",
+  "pdf_name": "4d48360c-439b-4e55-af0b-470b0430b84d",
+  "page_number": 57,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 502,
+  "ocr_text_preview": "BSQE\nBS0003\nMEAL\nNASI KANDAR JAMAL MOHD\nREG.NO.:T876544-V\nJALAN KG BENGGALI,12000\nBUTTERWORTH, PG 0002818.\nTEL:017 5822311,012 4258623\nSERV. TAX NO.:P13180831014597\nPRICE SUB TO SERV TAX\nINVOICE\nTAXNO. :700887\nTABLENO :23\nTRAN NO :813876\nDATE :29/Jun/2025 21:24:56\n1 Teh Panas 1.80 -T\n1 Nasi Kandar 10.00 -T\n1 Mee Goreng 6.00 -T\n1 Air Suam .40 -T\nTOTAL : RM 18.20\nSERV. TAX 6% : RM 1.09 USD\nROUNDING : RM 0.01\nNET TOTAL C: RM 19.30 470\nCASH : RM 50.00\nCHANGE : RM 30.70\nSTAFF:ADMIN\nTHANK YOU COME AGA",
+  "ocr_text": "BSQE\nBS0003\nMEAL\nNASI KANDAR JAMAL MOHD\nREG.NO.:T876544-V\nJALAN KG BENGGALI,12000\nBUTTERWORTH, PG 0002818.\nTEL:017 5822311,012 4258623\nSERV. TAX NO.:P13180831014597\nPRICE SUB TO SERV TAX\nINVOICE\nTAXNO. :700887\nTABLENO :23\nTRAN NO :813876\nDATE :29/Jun/2025 21:24:56\n1 Teh Panas 1.80 -T\n1 Nasi Kandar 10.00 -T\n1 Mee Goreng 6.00 -T\n1 Air Suam .40 -T\nTOTAL : RM 18.20\nSERV. TAX 6% : RM 1.09 USD\nROUNDING : RM 0.01\nNET TOTAL C: RM 19.30 470\nCASH : RM 50.00\nCHANGE : RM 30.70\nSTAFF:ADMIN\nTHANK YOU COME AGAIN"
+}
