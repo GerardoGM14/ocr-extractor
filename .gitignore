@@ -10,7 +10,7 @@ ENV/
 *.egg-info/
 dist/
 build/
-src/learning/errors/
+learning/errors/
 src/uploads/
 
 # Configuración sensible
