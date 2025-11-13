@@ -10,6 +10,8 @@ ENV/
 *.egg-info/
 dist/
 build/
+src/learning/errors/
+src/uploads/
 
 # Configuración sensible
 config/gemini_config.json
