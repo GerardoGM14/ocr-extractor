@@ -27,7 +27,8 @@ class ProcessedTracker:
         self.tracking_file.parent.mkdir(parents=True, exist_ok=True)
     
     def add_processed_file(self, request_id: str, filename: str, zip_filename: str, 
-                          download_url: str, metadata: Dict[str, Any]):
+                          download_url: str, metadata: Dict[str, Any],
+                          excel_filename: Optional[str] = None, excel_download_url: Optional[str] = None):
         """
         Agrega un archivo procesado al tracking.
         
@@ -37,6 +38,8 @@ class ProcessedTracker:
             zip_filename: Nombre del ZIP generado
             download_url: URL de descarga
             metadata: Metadata (email, year, month)
+            excel_filename: Nombre del archivo Excel generado (opcional)
+            excel_download_url: URL de descarga del Excel (opcional)
         """
         tracking_data = self._load_tracking()
         
@@ -48,6 +51,12 @@ class ProcessedTracker:
             "metadata": metadata,
             "processed_at": datetime.now().isoformat()
         }
+        
+        # Agregar información del Excel si existe
+        if excel_filename:
+            entry["excel_filename"] = excel_filename
+        if excel_download_url:
+            entry["excel_download_url"] = excel_download_url
         
         tracking_data[request_id] = entry
         

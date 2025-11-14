@@ -138,30 +138,44 @@ class OCRExtractor:
                 str(img_path)
             )
             
+            # Si el OCR falla, crear un resultado vacío pero válido
             if not ocr_result or not ocr_result.get("success"):
-                print(f"Error en OCR para página {page_num}")
-                return None
+                print(f"Advertencia: OCR falló para página {page_num}, generando JSON vacío")
+                # Crear resultado OCR vacío pero válido
+                ocr_result = {
+                    "success": False,
+                    "text": "",
+                    "model": self.gemini_service.model_name if hasattr(self.gemini_service, 'model_name') else "unknown",
+                    "error": ocr_result.get("error") if ocr_result else "OCR failed"
+                }
             
-            # 2. Crear JSON 1 (Raw)
+            # 2. Crear JSON 1 (Raw) - siempre se crea, aunque esté vacío
             raw_json = self.json_parser.create_raw_json(
                 ocr_result, page_num, pdf_name
             )
             
-            # 3. Mapear a estructura
+            # 3. Mapear a estructura - siempre se mapea, aunque el texto esté vacío
             hoja_data = self.data_mapper.map_to_hoja_structure(ocr_result)
             
-            # 4. Extraer datos estructurados según tipo
+            # 4. Extraer datos estructurados según tipo - siempre retorna dict (puede estar vacío)
             ocr_text = ocr_result.get("text", "")
             document_type = self.data_mapper.identify_document_type(ocr_text)
             additional_data = self.data_mapper.extract_structured_data(ocr_text, document_type)
+            # Asegurar que additional_data nunca sea None
+            if additional_data is None:
+                additional_data = {}
             
             # 5. Traducir si es necesario (solo si NO es español ni inglés)
             language_code = hoja_data.get("_language_code", "en")
             translated_text = None
             
-            if language_code not in ['es', 'en']:
-                translated_text = self.gemini_service.translate_text(ocr_text, language_code)
-                hoja_data["tJsonTraducido"] = translated_text
+            if language_code not in ['es', 'en'] and ocr_text:
+                try:
+                    translated_text = self.gemini_service.translate_text(ocr_text, language_code)
+                    hoja_data["tJsonTraducido"] = translated_text if translated_text else ocr_text
+                except Exception:
+                    # Si falla la traducción, usar texto original
+                    hoja_data["tJsonTraducido"] = ocr_text
             else:
                 # Español e inglés no se traducen, se mantienen igual
                 hoja_data["tJsonTraducido"] = ocr_text
@@ -170,16 +184,19 @@ class OCRExtractor:
             if "_language_code" in hoja_data:
                 del hoja_data["_language_code"]
             
-            # 7. Crear JSON 2 (Structured)
+            # 7. Crear JSON 2 (Structured) - siempre se crea, aunque esté vacío
             structured_json = self.json_parser.create_structured_json(hoja_data, additional_data)
             
             # 8. Validar y registrar errores si learning está activo
             if hasattr(self, '_error_tracker') and self._error_tracker:
-                self._validate_and_record_errors(
-                    pdf_name, page_num, ocr_text, structured_json, additional_data
-                )
+                try:
+                    self._validate_and_record_errors(
+                        pdf_name, page_num, ocr_text, structured_json, additional_data
+                    )
+                except Exception:
+                    pass  # Si falla el registro, continuar normalmente
             
-            # 9. JSON completo por página
+            # 9. JSON completo por página - siempre se retorna
             page_json = self.json_parser.create_page_json(
                 pdf_name, page_num, raw_json, structured_json
             )
@@ -202,7 +219,42 @@ class OCRExtractor:
             except Exception:
                 pass  # Si falla el registro, continuar normalmente
             
-            return None
+            # IMPORTANTE: Aunque haya error, generar JSON vacío en lugar de None
+            try:
+                # Crear resultado OCR vacío para error
+                ocr_result_error = {
+                    "success": False,
+                    "text": "",
+                    "model": self.gemini_service.model_name if hasattr(self.gemini_service, 'model_name') else "unknown",
+                    "error": str(e)
+                }
+                
+                # Crear JSON 1 (Raw) vacío
+                raw_json = self.json_parser.create_raw_json(
+                    ocr_result_error, page_num, pdf_name
+                )
+                
+                # Crear estructura hoja vacía
+                hoja_data = self.data_mapper.map_to_hoja_structure(ocr_result_error)
+                hoja_data["tJsonTraducido"] = ""
+                
+                # Limpiar campo temporal
+                if "_language_code" in hoja_data:
+                    del hoja_data["_language_code"]
+                
+                # Crear JSON 2 (Structured) vacío
+                structured_json = self.json_parser.create_structured_json(hoja_data, {})
+                
+                # Retornar JSON completo (aunque vacío)
+                page_json = self.json_parser.create_page_json(
+                    pdf_name, page_num, raw_json, structured_json
+                )
+                
+                return page_json
+            except Exception as inner_e:
+                # Si incluso la generación de JSON vacío falla, retornar None como último recurso
+                print(f"Error crítico generando JSON vacío para página {page_num}: {inner_e}")
+                return None
     
     def _validate_and_record_errors(self,
                                    pdf_name: str,

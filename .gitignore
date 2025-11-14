@@ -15,6 +15,7 @@ src/uploads/
 
 # Configuración sensible
 config/gemini_config.json
+output/
 .env
 
 # Archivos temporales

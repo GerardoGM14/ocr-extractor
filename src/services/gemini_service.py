@@ -220,11 +220,12 @@ CURRENCY (mdivisa): Look for currency codes near amounts or totals
 - Symbol mapping: $ = USD, ¥ = CNY (Chinese yuan), 元 = CNY
 
 DOCUMENT NUMBERS (tNumero): Extract invoice/boleta/receipt numbers
-- Examples: "N° 0000155103", "Invoice No. 1234", "Folio: 5678", "NO. 2972", "发票号码:25379166812000866769"
-- Location: Usually in header, after "BOLETA ELECTRÓNICA", "INVOICE", "FACTURA", "发票号码"
-- Patterns: "BOLETA ELECTRÓNICA N° 0000155103", "Invoice Number: 1234", "Folio No. 5678"
+- Examples: "N° 0000155103", "Invoice No. 1234", "Folio: 5678", "NO. 2972", "发票号码:25379166812000866769", "Recibo 221"
+- Location: Usually in header, after "BOLETA ELECTRÓNICA", "INVOICE", "FACTURA", "发票号码", "Recibo"
+- Patterns: "BOLETA ELECTRÓNICA N° 0000155103", "Invoice Number: 1234", "Folio No. 5678", "Recibo 221"
+- Spanish receipts: "Recibo" followed by number (e.g., "Recibo 221")
 - Chinese patterns: "发票号码:25379166812000866769", "发票代码:113002334010", "号码 40458905"
-- Key words: "N°", "No.", "NO.", "Number", "Folio", "Invoice", "Factura", "Boleta", "发票号码", "发票代码", "号码"
+- Key words: "N°", "No.", "NO.", "Number", "Folio", "Invoice", "Factura", "Boleta", "Recibo", "发票号码", "发票代码", "号码"
 
 SEQUENTIAL NUMBERS (tSequentialNumber): Extract codes like BSQE1234, OE0001, OR0001
 - Examples: "BSQE1234", "OE0001", "OR0001", "ORU1234"
@@ -258,6 +259,31 @@ TABLE DATA: Item descriptions, quantities, prices, totals
 TOTALS: Subtotal, tax amounts, discounts, grand total
 - Look for "Total", "TOTAL", "Subtotal", "Tax", "Discount", "总计", "JUMLAH"
 - Include currency if present: "Total USD 1,234.56"
+- **CRITICAL: Extract ALL totals from documents**:
+  - **Report Total**: Extract "Report Total:" followed by amount (e.g., "Report Total: 180,000.00")
+  - **Subtotal**: Extract "Subtotal:" followed by amount
+  - **Total for XXX**: Extract "Total for [code]:" followed by amount (e.g., "Total for 611: 180,000.00")
+  - **Amount Less Tax**: Extract "Amount Less Tax:" followed by amount
+  - **Tax**: Extract "Tax:" followed by amount (even if 0)
+  - **Grand Total**: Extract "Grand Total:" followed by amount
+  - **Any other totals**: Extract ANY line that contains "Total" followed by a monetary value
+- **IMPORTANT**: All totals must be extracted and saved, regardless of document type (Concur, Bechtel, Oracle, invoices, etc.)
+
+WEEKLY TOTALS (OnShore): Extract totals by week (WEEK 27, WEEK 28, etc.)
+- Look for lines with multiple large monetary values at the end of tables
+- These are usually weekly totals: "7,816,974.79 305,349.84 6,333,781.02"
+- **CRITICAL**: If you see a line with ONLY numbers (no item descriptions) containing 2+ large values, it's likely weekly totals
+- Extract these values even if they appear after item rows
+- Example: After "Rimac Seguros 655,740.75 18,231.00" you might see "7,816,974.79 305,349.84 6,333,781.02" - these are WEEKLY TOTALS, not items
+
+CASH FLOW VALUES (OnShore): Extract Cash Flow table values
+- **Total Disbursement**: Look for "Total Disbursement" followed by monetary values
+- **Period Balance**: Look for "Period Balance" followed by values (may be in parentheses for negatives)
+- **Cumulative Cash Flow**: Look for "Cumulative Cash Flow" followed by running totals
+- **Opening Balance**: Look for "Opening Balance" values
+- **Total Receipts**: Look for "Total Receipts" values
+- Extract ALL values from Cash Flow tables, including negative values in parentheses
+- Example: "Period Balance (305,350) (6,333,781) (7,080,000)" - extract all values
 
 PAYMENT TERMS: Conditions, notes, payment information
 - Extract payment terms, due dates, payment methods
@@ -277,6 +303,51 @@ EMPLOYEE INFORMATION: Names, IDs, organizations (for time sheets)
 HOURS WORKED: Rates, totals (for time sheets)
 - Extract hours, rates, totals for labor documents
 
+CONCUR EXPENSE REPORT - SPECIFIC FIELDS:
+- **Report Name**: Look for "Concur Expense - [Name]" (e.g., "Concur Expense - Transportes Terrestres")
+- **Job Section**: Look for "Line Item by Job Section" followed by code (e.g., "Line Item by Job Section 26443-331-----")
+- **Transaction Date**: Extract transaction dates (e.g., "Jun 23, 2025", "2025-06-23")
+- **Expense Type**: Look for expense types (e.g., "Leave (Any) Taxi/Ground Trans - LT")
+- **Merchant**: Look for "Merchant:" followed by merchant name (e.g., "Merchant: RV Transportes Ltda.")
+- **Location**: Extract location names (e.g., "Quilpué", "Santiago")
+- **NC Code**: Extract numerical codes (e.g., "611")
+- **Amount**: Extract transaction amounts (e.g., "90,000.00")
+- **Payment Currency**: Extract currency codes (e.g., "CLP", "USD")
+- **Report Total**: Look for "Report Total:" followed by amount (e.g., "Report Total: 180,000.00")
+  - **CRITICAL**: This is the most important total - extract it completely
+- **Subtotal**: Look for "Subtotal:" followed by amount
+- **Total for XXX**: Look for "Total for [code]:" followed by amount (e.g., "Total for 611: 180,000.00")
+- **Amount Less Tax**: Look for "Amount Less Tax:" followed by amount
+- **Tax**: Look for "Tax:" followed by amount (even if 0)
+- **CRITICAL**: Extract ALL totals from Concur Expense Reports - they are essential for financial tracking
+
+BECHTEL EXPENSE REPORT (OnShore) - SPECIFIC FIELDS:
+- **Report Key**: Look for "Report Key:" followed by numbers (e.g., "Report Key : 1312161")
+- **Report Number**: Look for "Report Number:" followed by alphanumeric code (e.g., "Report Number: 0ON74Y")
+- **Employee ID**: Look for "Employee ID :" followed by numbers (e.g., "Employee ID : 063573")
+- **Employee Name**: Look for "Employee Name :" followed by full name (e.g., "Employee Name : AYALA SEHLKE, ANA MARIA")
+- **Org Code**: Look for "Org Code :" followed by code (e.g., "Org Code : HXH0009")
+- **Default Approver**: Look for "Default Approver:" followed by name (e.g., "Default Approver: QUISPE VERASTEGUI, CARLOS ALEJANDRO")
+- **Final Approver**: Look for "Final Approver:" followed by name (e.g., "Final Approver: SHOME, AYON")
+- **Report Name**: Look for "Report Name:" followed by description (e.g., "Report Name: Transportes Terrestres")
+- **Report Date**: Look for "Report Date :" followed by date (e.g., "Report Date : Jul 23, 2025")
+- **Report Purpose**: Look for "Report Purpose:" followed by description (e.g., "Report Purpose: Viaje a turno")
+- **Report Total**: Look for "Report Total:" followed by amount (e.g., "Report Total: 180,000.00")
+  - **CRITICAL**: If "Report Total" appears in a RED BOX or HIGHLIGHTED area, extract the value from that box even if it's not on the same line as "Report Total:"
+  - **CRITICAL**: Values in red boxes or highlighted areas near "Report Total" are PRIORITY - extract them completely
+  - Look for monetary values (with or without commas) near "Report Total" text, especially in colored/highlighted sections
+- **Bechtel owes Card**: Look for "Bechtel owes Card:" followed by amount (may be blank)
+- **Bechtel owes Employee**: Look for "Bechtel owes Employee :" followed by amount (e.g., "Bechtel owes Employee : 180,000.00")
+  - **CRITICAL**: If these values appear in RED BOXES or HIGHLIGHTED areas, extract them with priority
+- **Policy**: Look for "Policy:" followed by policy type (e.g., "Policy: Assignment Long Term")
+- **Document Identifier**: Look for format "BECHEXPRPT_{EmployeeID}_{ReportNumber}" in header (e.g., "BECHEXPRPT_063573_0ON74Y")
+- **Sequential Codes**: Look for codes like "OTHBP", "OE0003", "OR0001" - these are stamp names and sequential numbers
+- **Variants**: Document may also appear as "Expense Report", "Bechtel Expense", or similar variations
+- **HIGHLIGHTED VALUES PRIORITY**: For Expense Reports, values in RED BOXES or HIGHLIGHTED areas are especially important:
+  - Report Total values in red boxes must be extracted completely
+  - Employee information in red boxes (Employee ID, Employee Name) must be captured
+  - Any monetary values in colored/highlighted sections near "Report Total" or "Bechtel owes" fields are critical
+
 HIGHLIGHTED/BOXED SECTIONS (HIGH PRIORITY):
 - Extract ALL text from colored boxes, highlighted areas, or visually emphasized sections
 - These often contain: calculations, validations, summaries, totals, or key information
@@ -289,6 +360,22 @@ GL JOURNAL SPECIFIC FIELDS:
 - Batch Name: May contain document identifiers
 - Journal Name: May contain batch IDs or reference numbers
 - Look for "Source Ref:", "Batch Name:", "Journal Name:" patterns
+
+ORACLE AP (Accounts Payable) - SPECIFIC FIELDS:
+- **Invoice Num**: Look for "Invoice Num:" followed by alphanumeric code (e.g., "Invoice Num F581-06891423")
+- **Invoice Amount**: Look for "Invoice Invoice Amount" or "Invoice Amount" followed by currency and amount (e.g., "Invoice Invoice Amount USD 655740.75")
+- **Tax Amount**: Look for "Tax Amount:" followed by amount (e.g., "Tax Amount 100028.25")
+- **Due Date**: Look for "Due Date:" followed by date (e.g., "Due Date 30-JUN-2025")
+- **Gross Amount**: Look for "Gross Amount:" or "Payment Gross Amount:" followed by amount (e.g., "Gross Amount 655740.75")
+- **Payment Currency**: Look for "Payment Currency:" followed by currency code (e.g., "Payment Currency USD")
+- **Payment Method**: Look for "Method:" followed by payment type (e.g., "Method Wire")
+- **Supplier Num**: Look for "Supplier Num:" followed by number (e.g., "Supplier Num 934001256")
+- **Operating Unit**: Look for "Operating Unit:" followed by unit name (e.g., "Operating Unit PEN - BECHTEL PE")
+- **Supplier Name**: Look for "PO Trading Pa:" or "Supplier Name:" followed by supplier name (e.g., "PO Trading Pa RIMAC SE")
+- **Supplier Site**: Look for "Supplier Site:" followed by site code (e.g., "Supplier Site XYQN-WIRE")
+- **Invoice Date**: Look for "Invoice Date:" followed by date (e.g., "Invoice Date 20-JUN-2025")
+- **CRITICAL**: Extract ALL table data from Oracle AP screens, especially from "Scheduled Payments" tab
+- **CRITICAL**: Extract values from payment tables even if they appear in separate columns
 
 IGNORE TEXT:
 - Do NOT ignore relevant text, but be aware that "OTEM", "OE0001", "OR0001" etc. are part of the document structure

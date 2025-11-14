@@ -35,6 +35,7 @@ class ProcessPDFResponse(BaseModel):
     files_saved: Optional[List[Dict[str, str]]] = None
     processing_time_seconds: float
     download_url: Optional[str] = None
+    excel_download_url: Optional[str] = None  # URL para descargar el Excel consolidado
     error: Optional[str] = None
     
     class Config:
@@ -90,6 +91,7 @@ class UploadedFileInfo(BaseModel):
     processed_at: Optional[str] = None
     download_url: Optional[str] = None
     request_id: Optional[str] = None
+    excel_download_url: Optional[str] = None  # URL para descargar el Excel consolidado
 
 
 class UploadedFilesResponse(BaseModel):

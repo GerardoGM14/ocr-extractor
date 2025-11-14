@@ -149,15 +149,18 @@ class UploadManager:
         pdf_path = self.uploads_folder / f"{file_id}.pdf"
         return pdf_path.exists()
     
-    def mark_as_processed(self, file_id: str, zip_filename: str, download_url: str, request_id: str):
+    def mark_as_processed(self, file_id: str, zip_filename: str, download_url: str, request_id: str, 
+                          excel_filename: Optional[str] = None, excel_download_url: Optional[str] = None):
         """
-        Marca un archivo como procesado y guarda información del ZIP.
+        Marca un archivo como procesado y guarda información del ZIP y Excel.
         
         Args:
             file_id: ID del archivo procesado
             zip_filename: Nombre del archivo ZIP generado
             download_url: URL pública para descargar el ZIP
             request_id: ID de la request de procesamiento
+            excel_filename: Nombre del archivo Excel generado (opcional)
+            excel_download_url: URL pública para descargar el Excel (opcional)
         """
         metadata = self.get_uploaded_metadata(file_id)
         if not metadata:
@@ -169,6 +172,12 @@ class UploadManager:
         metadata["zip_filename"] = zip_filename
         metadata["download_url"] = download_url
         metadata["request_id"] = request_id
+        
+        # Agregar información del Excel si existe
+        if excel_filename:
+            metadata["excel_filename"] = excel_filename
+        if excel_download_url:
+            metadata["excel_download_url"] = excel_download_url
         
         # Guardar metadata actualizada
         metadata_path = self.metadata_folder / f"{file_id}_metadata.json"

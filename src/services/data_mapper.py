@@ -31,11 +31,13 @@ class DataMapper:
         """Inicializa patrones de reconocimiento."""
         return {
             "comprobante": [
-                "invoice", "factura", "boleta", "bill",
+                "invoice", "factura", "boleta", "bill", "recibo",
                 "fattura", "invoice no",
                 # Encabezados comunes en boletas/recibos malayos/chinos
                 "tarikh", "kuantiti", "harga", "jumlah", "no.",
-                "jumlah/", "總計", "总计", "cash / invoice", "cash/invoice"
+                "jumlah/", "總計", "总计", "cash / invoice", "cash/invoice",
+                # Encabezados de tablas en español
+                "cant.", "descripción", "precio unitario", "importe"
             ],
             "resumen": [
                 "summary", "resumen", "consolidado", 
@@ -44,6 +46,12 @@ class DataMapper:
             "jornada": [
                 "empl no", "full name", "labor",
                 "total hours", "employee", "empl"
+            ],
+            "expense_report": [
+                "bechtel expense report", "expense report",
+                "report key", "report number", "report date",
+                "bechexprpt", "report purpose", "bechtel owes",
+                "concur expense", "concur"
             ]
         }
     
@@ -51,7 +59,13 @@ class DataMapper:
         """Identifica el tipo de documento según su contenido."""
         text_lower = ocr_text.lower()
         
-        if any(pattern in text_lower for pattern in self.stamp_patterns["comprobante"]):
+        # Priorizar Expense Report (OnShore) antes de otros tipos
+        # Verificar si es Concur Expense específicamente
+        if "concur expense" in text_lower:
+            return "concur_expense"
+        elif any(pattern in text_lower for pattern in self.stamp_patterns["expense_report"]):
+            return "expense_report"
+        elif any(pattern in text_lower for pattern in self.stamp_patterns["comprobante"]):
             return "comprobante"
         elif any(pattern in text_lower for pattern in self.stamp_patterns["resumen"]):
             return "resumen"
@@ -202,6 +216,8 @@ class DataMapper:
             "comprobante": 1,
             "resumen": 2,
             "jornada": 3,
+            "expense_report": 4,  # Bechtel Expense Report (OnShore)
+            "concur_expense": 4,  # Concur Expense Report (también es tipo Expense Report)
             "unknown": 99
         }
         return type_map.get(doc_type, 99)
@@ -220,7 +236,15 @@ class DataMapper:
         result = {}
         
         # Extraer datos específicos según tipo
-        if doc_type == "resumen":
+        if doc_type == "concur_expense":
+            concur_data = self._extract_concur_expense_data(ocr_text)
+            if concur_data:
+                result.update(concur_data)
+        elif doc_type == "expense_report":
+            expense_report_data = self._extract_expense_report_data(ocr_text)
+            if expense_report_data:
+                result.update(expense_report_data)
+        elif doc_type == "resumen":
             resumen_data = self._extract_resumen_data(ocr_text)
             if resumen_data:
                 result.update(resumen_data)
@@ -265,7 +289,9 @@ class DataMapper:
                 # Agregar a mresumen existente
                 result['mresumen'].extend(highlighted_calculations)
         
-        return result if result else None
+        # IMPORTANTE: Siempre retornar un diccionario, aunque esté vacío
+        # Esto asegura que siempre se genere un JSON estructurado, incluso sin datos
+        return result
     
     def _extract_catalog_data(self, ocr_text: str, doc_type: str = None) -> Dict:
         """Extrae información de tablas ancla/catálogo."""
@@ -288,6 +314,8 @@ class DataMapper:
                 "comprobante": "Comprobante",
                 "resumen": "Resumen",
                 "jornada": "Jornada",
+                "expense_report": "Expense Report",
+                "concur_expense": "Concur Expense Report",
                 "unknown": "Desconocido"
             }
             doc_type_name = doc_type_names.get(doc_type, "Desconocido")
@@ -658,6 +686,10 @@ class DataMapper:
         source_ref_match = re.search(r'Source\s+Ref[:]\s*([A-Z0-9\-]+)', ocr_text, re.IGNORECASE)
         if source_ref_match:
             comprobante['tNumero'] = source_ref_match.group(1).strip()
+        # Patrón 1.5: Oracle AP Invoice Num (formato F581-06891423)
+        elif re.search(r'Invoice\s+Num[:\s]+([A-Z0-9\-]+)', ocr_text, re.IGNORECASE):
+            invoice_num_match = re.search(r'Invoice\s+Num[:\s]+([A-Z0-9\-]+)', ocr_text, re.IGNORECASE)
+            comprobante['tNumero'] = invoice_num_match.group(1).strip()
         # Patrón 2: Invoice Number: formato explícito
         elif re.search(r'Invoice\s+Number[:\s]+(\d+)', ocr_text, re.IGNORECASE):
             invoice_num_match = re.search(r'Invoice\s+Number[:\s]+(\d+)', ocr_text, re.IGNORECASE)
@@ -688,29 +720,34 @@ class DataMapper:
                             if folio_match:
                                 comprobante['tNumero'] = folio_match.group(1)
                             else:
-                                # Patrón 7: INVOICE No. XXXX (evitando "Invoice Numb")
-                                invoice_match = None
-                                for m in re.finditer(r'(?:^|\s)(INVOICE|FATTURA|CASH|CASD|FACTURA|BOLETA)\s+(?:No\.?|NO\.?|N°|#)\s*([A-Z0-9\-]+)', ocr_text, re.IGNORECASE):
-                                    if 'Numb' not in m.group(0):
-                                        invoice_match = m
-                                        break
-                                if invoice_match:
-                                    comprobante['tNumero'] = invoice_match.group(2).strip()
+                                # Patrón 6.5: Recibo XXX (formato español)
+                                recibo_match = re.search(r'Recibo\s+(\d+)', ocr_text, re.IGNORECASE)
+                                if recibo_match:
+                                    comprobante['tNumero'] = recibo_match.group(1)
                                 else:
-                                    # Patrón 8: NO. seguido de número cerca de TOTAL
-                                    no_total_match = re.search(r'NO\.\s+(\d{3,})\s+(?:总计|JUMLAH|TOTAL|Total)', ocr_text, re.IGNORECASE)
-                                    if no_total_match:
-                                        comprobante['tNumero'] = no_total_match.group(1)
+                                    # Patrón 7: INVOICE No. XXXX (evitando "Invoice Numb")
+                                    invoice_match = None
+                                    for m in re.finditer(r'(?:^|\s)(INVOICE|FATTURA|CASH|CASD|FACTURA|BOLETA|RECIBO)\s+(?:No\.?|NO\.?|N°|#)?\s*([A-Z0-9\-]+)', ocr_text, re.IGNORECASE):
+                                        if 'Numb' not in m.group(0):
+                                            invoice_match = m
+                                            break
+                                    if invoice_match:
+                                        comprobante['tNumero'] = invoice_match.group(2).strip()
                                     else:
-                                        # Patrón 9: Palabras clave chinas con números (号码)
-                                        chinese_num_match = re.search(r'(?:号码|发票号码|发票代码)[:：]?\s*(\d{8,})', ocr_text)
-                                        if chinese_num_match:
-                                            comprobante['tNumero'] = chinese_num_match.group(1)
+                                        # Patrón 8: NO. seguido de número cerca de TOTAL
+                                        no_total_match = re.search(r'NO\.\s+(\d{3,})\s+(?:总计|JUMLAH|TOTAL|Total)', ocr_text, re.IGNORECASE)
+                                        if no_total_match:
+                                            comprobante['tNumero'] = no_total_match.group(1)
                                         else:
-                                            # Patrón 10: Patrones genéricos con palabras clave
-                                            generic_match = re.search(r'(?:总计|JUMLAH|No\.|NO\.|#)\s*([A-Z0-9\-]{4,})', ocr_text, re.IGNORECASE)
-                                            if generic_match and re.search(r'\d', generic_match.group(1)):
-                                                invoice_num = generic_match.group(1).strip()
+                                            # Patrón 9: Palabras clave chinas con números (号码)
+                                            chinese_num_match = re.search(r'(?:号码|发票号码|发票代码)[:：]?\s*(\d{8,})', ocr_text)
+                                            if chinese_num_match:
+                                                comprobante['tNumero'] = chinese_num_match.group(1)
+                                            else:
+                                                # Patrón 10: Patrones genéricos con palabras clave
+                                                generic_match = re.search(r'(?:总计|JUMLAH|No\.|NO\.|#)\s*([A-Z0-9\-]{4,})', ocr_text, re.IGNORECASE)
+                                                if generic_match and re.search(r'\d', generic_match.group(1)):
+                                                    invoice_num = generic_match.group(1).strip()
                                                 if ' ' in invoice_num:
                                                     invoice_num = invoice_num.split()[0]
                                                 comprobante['tNumero'] = invoice_num
@@ -747,9 +784,17 @@ class DataMapper:
         if total_match and ' ' in total_match.group(1):
             g = total_match.group(1).replace(',', '').strip()
             g = re.sub(r'\s', '.', g) if re.match(r'^\d+\s\d{2}$', g.replace(',', '')) else g
-        # Priorizar "Invoice Amount" para Invoice Approval Reports
+        # Patrón para "Total $XXX" o "Total $XXX,XXX" (formato español)
         if not total_match:
-            total_match = re.search(r'Invoice\s+Amount\s+([\d,]+[\.\-]?\d*)', ocr_text, re.IGNORECASE)
+            total_match = re.search(r'Total\s+\$?\s*([\d,]+)', ocr_text, re.IGNORECASE)
+        # Priorizar "Invoice Amount" para Invoice Approval Reports y Oracle AP
+        if not total_match:
+            # Oracle AP: "Invoice Invoice Amount USD 655740.75" o "Invoice Amount USD 655740.75"
+            oracle_amount_match = re.search(r'Invoice\s+(?:Invoice\s+)?Amount\s+(?:USD|PEN|EUR)\s+([\d,]+[\.\-]?\d*)', ocr_text, re.IGNORECASE)
+            if oracle_amount_match:
+                total_match = oracle_amount_match
+            else:
+                total_match = re.search(r'Invoice\s+Amount\s+([\d,]+[\.\-]?\d*)', ocr_text, re.IGNORECASE)
         if not total_match:
             # Buscar "总计" o "JUMLAH RM" seguido de número (para documentos chinos/malayos)
             total_match = re.search(r'(?:总计|JUMLAH)\s*(?:RM\s+)?([\d,]+[\.\-]?\d{2})', ocr_text, re.IGNORECASE)
@@ -782,6 +827,59 @@ class DataMapper:
         
         # Extraer detalles del comprobante (items/productos)
         detalles = self._extract_comprobante_detalle(ocr_text)
+        
+        # Extraer datos específicos de Oracle AP si es un documento de Oracle
+        oracle_ap_data = self._extract_oracle_ap_data(ocr_text)
+        if oracle_ap_data:
+            # Agregar datos de Oracle AP a mcomprobante
+            if comprobante_items:
+                comprobante_items[0].update(oracle_ap_data.get('comprobante_fields', {}))
+                
+                # Si no se encontró nPrecioTotal pero hay Invoice Amount, usarlo
+                if 'nPrecioTotal' not in comprobante_items[0] or not comprobante_items[0].get('nPrecioTotal'):
+                    invoice_amount = oracle_ap_data.get('comprobante_fields', {}).get('_oracle_invoice_amount')
+                    if invoice_amount:
+                        comprobante_items[0]['nPrecioTotal'] = invoice_amount
+                
+                # Si no se encontró tNumero pero hay Invoice Num, usarlo
+                if not comprobante_items[0].get('tNumero'):
+                    invoice_num = oracle_ap_data.get('comprobante_fields', {}).get('_oracle_invoice_num')
+                    if invoice_num:
+                        comprobante_items[0]['tNumero'] = invoice_num
+            
+            # Agregar detalles de pago a mcomprobante_detalle
+            if oracle_ap_data.get('payment_details'):
+                if not detalles:
+                    detalles = []
+                detalles.extend(oracle_ap_data['payment_details'])
+            
+            # Agregar proveedor de Oracle AP a result si existe
+            if oracle_ap_data.get('comprobante_fields', {}).get('_oracle_supplier_name'):
+                # Agregar proveedor a catálogos si no existe
+                if 'mproveedor' not in result:
+                    result['mproveedor'] = []
+                # Verificar que no esté duplicado
+                supplier_name = oracle_ap_data['comprobante_fields']['_oracle_supplier_name']
+                if not any(p.get('tRazonSocial') == supplier_name for p in result.get('mproveedor', [])):
+                    result['mproveedor'].append({
+                        "tRazonSocial": supplier_name
+                    })
+        
+        # Detectar y corregir totales semanales mal clasificados (WEEK 27, WEEK 28, etc.)
+        weekly_totals = self._extract_weekly_totals(ocr_text)
+        if weekly_totals:
+            # Si hay totales semanales, agregarlos a mresumen
+            if 'mresumen' not in result:
+                result['mresumen'] = []
+            result['mresumen'].extend(weekly_totals)
+        
+        # Extraer valores de Cash Flow (Total Disbursement, Period Balance, etc.)
+        cash_flow_values = self._extract_cash_flow_values(ocr_text)
+        if cash_flow_values:
+            if 'mresumen' not in result:
+                result['mresumen'] = []
+            result['mresumen'].extend(cash_flow_values)
+        
         if detalles:
             result["mcomprobante_detalle"] = detalles
             # Si no se detectó total del comprobante, usar suma de detalles
@@ -926,8 +1024,48 @@ class DataMapper:
                 detalles[last_item_index]["tDescripcion"] += f" - {line}"
                 continue
             # Omitir encabezados de tabla y líneas administrativas
-            if line.upper().startswith('QTY ') or ' ITEM NAME ' in line or line.upper().startswith('TOPUP'):
+            if (line.upper().startswith('QTY ') or ' ITEM NAME ' in line or line.upper().startswith('TOPUP') or
+                line.upper().startswith('CANT.') or 'DESCRIPCIÓN' in line.upper() or 
+                'PRECIO UNITARIO' in line.upper() or 'IMPORTE' in line.upper()):
+                # Si encontramos encabezados de tabla en español, activar detección de items
+                if 'CANT.' in line.upper() or 'DESCRIPCIÓN' in line.upper():
+                    in_items_section = True
                 continue
+            
+            # Detectar formato español de tabla: "1 7 de julio 2025 90,000 90,000"
+            # Patrón: cantidad (1-2 dígitos), descripción (texto), precio unitario (con comas), importe (con comas)
+            spanish_table_match = re.search(r'^(\d{1,2})\s+([A-Za-záéíóúñÁÉÍÓÚÑ0-9\s\-\/]+?)\s+([\d,]+)\s+([\d,]+)$', line)
+            if spanish_table_match:
+                cantidad = float(spanish_table_match.group(1))
+                descripcion = spanish_table_match.group(2).strip()
+                precio_unitario_str = spanish_table_match.group(3).replace(',', '')
+                importe_str = spanish_table_match.group(4).replace(',', '')
+                
+                try:
+                    precio_unitario = float(precio_unitario_str)
+                    importe = float(importe_str)
+                    
+                    # Verificar que la descripción no sea solo números o totales
+                    if (descripcion and len(descripcion) > 3 and 
+                        'total' not in descripcion.lower() and 
+                        'subtotal' not in descripcion.lower()):
+                        # Buscar si la siguiente línea tiene más descripción
+                        if i + 1 < len(lines):
+                            next_line = lines[i + 1].strip()
+                            # Si la siguiente línea no tiene números al inicio, probablemente es continuación de descripción
+                            if not re.match(r'^\d', next_line) and not re.match(r'^Total|^Subtotal', next_line, re.IGNORECASE):
+                                descripcion += " " + next_line
+                        
+                        detalles.append({
+                            "nCantidad": cantidad,
+                            "tDescripcion": descripcion,
+                            "nPrecioUnitario": precio_unitario,
+                            "nPrecioTotal": importe  # Usar el importe calculado
+                        })
+                        last_item_index = len(detalles) - 1
+                        continue
+                except ValueError:
+                    pass
             
             # Detectar líneas que parecen items
             # Patrón 1: Número de línea seguido de divisa y monto (ej: "9 USD6.20", "9 RM25.50")
@@ -1179,6 +1317,984 @@ class DataMapper:
             result["mjornada"] = jornada_data
         if empleados:
             result["mjornada_empleado"] = empleados
+        
+        return result if result else None
+    
+    def _extract_expense_report_data(self, ocr_text: str) -> Dict[str, List[Dict]]:
+        """
+        Extrae datos de Bechtel Expense Report (OnShore).
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Diccionario con datos estructurados en formato mresumen
+        """
+        expense_reports = []
+        
+        # Extraer campos específicos del Expense Report
+        report_key_match = re.search(r'Report\s+Key\s*:\s*(\d+)', ocr_text, re.IGNORECASE)
+        report_key = report_key_match.group(1) if report_key_match else None
+        
+        report_number_match = re.search(r'Report\s+Number\s*:\s*([A-Z0-9]+)', ocr_text, re.IGNORECASE)
+        report_number = report_number_match.group(1) if report_number_match else None
+        
+        employee_id_match = re.search(r'Employee\s+ID\s*:\s*(\d+)', ocr_text, re.IGNORECASE)
+        employee_id = employee_id_match.group(1) if employee_id_match else None
+        
+        employee_name_match = re.search(r'Employee\s+Name\s*:\s*([A-Z][^:\n]+)', ocr_text, re.IGNORECASE)
+        employee_name = employee_name_match.group(1).strip() if employee_name_match else None
+        
+        org_code_match = re.search(r'Org\s+Code\s*:\s*([A-Z0-9]+)', ocr_text, re.IGNORECASE)
+        org_code = org_code_match.group(1) if org_code_match else None
+        
+        default_approver_match = re.search(r'Default\s+Approver\s*:\s*([A-Z][^:\n]+)', ocr_text, re.IGNORECASE)
+        default_approver = default_approver_match.group(1).strip() if default_approver_match else None
+        
+        final_approver_match = re.search(r'Final\s+Approver\s*:\s*([A-Z][^:\n]+)', ocr_text, re.IGNORECASE)
+        final_approver = final_approver_match.group(1).strip() if final_approver_match else None
+        
+        report_name_match = re.search(r'Report\s+Name\s*:\s*([^:\n]+)', ocr_text, re.IGNORECASE)
+        report_name = report_name_match.group(1).strip() if report_name_match else None
+        
+        report_date_match = re.search(r'Report\s+Date\s*:\s*([^:\n]+)', ocr_text, re.IGNORECASE)
+        report_date = report_date_match.group(1).strip() if report_date_match else None
+        
+        report_purpose_match = re.search(r'Report\s+Purpose\s*:\s*([^:\n]+)', ocr_text, re.IGNORECASE)
+        report_purpose = report_purpose_match.group(1).strip() if report_purpose_match else None
+        
+        # Extraer montos (pueden tener comas como separadores de miles)
+        # Primero intentar extraer del texto normal
+        report_total_match = re.search(r'Report\s+Total\s*:\s*([\d,]+\.?\d*)', ocr_text, re.IGNORECASE)
+        report_total = None
+        if report_total_match:
+            try:
+                report_total = float(report_total_match.group(1).replace(',', ''))
+            except ValueError:
+                pass
+        
+        # Si no se encontró, buscar valores destacados (en rojo/boxed) cerca de "Report Total"
+        if not report_total:
+            # Buscar líneas que contengan "Report Total" y valores monetarios destacados
+            lines = ocr_text.split('\n')
+            for i, line in enumerate(lines):
+                if 'report total' in line.lower():
+                    # Buscar en la misma línea o líneas cercanas valores monetarios
+                    search_lines = lines[max(0, i-1):min(len(lines), i+3)]
+                    for search_line in search_lines:
+                        # Buscar valores con formato: 180,000.00 o 180000.00
+                        monetary_values = re.findall(r'([\d,]+\.\d{2})', search_line)
+                        if monetary_values:
+                            try:
+                                # Tomar el último valor (generalmente es el total)
+                                report_total = float(monetary_values[-1].replace(',', ''))
+                                break
+                            except ValueError:
+                                continue
+                    if report_total:
+                        break
+        
+        bechtel_owes_card_match = re.search(r'Bechtel\s+owes\s+Card\s*:\s*([\d,]+\.?\d*)', ocr_text, re.IGNORECASE)
+        bechtel_owes_card = None
+        if bechtel_owes_card_match:
+            try:
+                bechtel_owes_card = float(bechtel_owes_card_match.group(1).replace(',', ''))
+            except ValueError:
+                pass
+        
+        bechtel_owes_employee_match = re.search(r'Bechtel\s+owes\s+Employee\s*:\s*([\d,]+\.?\d*)', ocr_text, re.IGNORECASE)
+        bechtel_owes_employee = None
+        if bechtel_owes_employee_match:
+            try:
+                bechtel_owes_employee = float(bechtel_owes_employee_match.group(1).replace(',', ''))
+            except ValueError:
+                pass
+        
+        policy_match = re.search(r'Policy\s*:\s*([^:\n]+)', ocr_text, re.IGNORECASE)
+        policy = policy_match.group(1).strip() if policy_match else None
+        
+        # Extraer stamp name y sequential number (OTHBP, OE0003, etc.)
+        stamp_info = self.extract_stamp_info(ocr_text)
+        stamp_name = stamp_info.get("stamp_name")
+        sequential_number = stamp_info.get("sequential_number")
+        
+        # Construir descripción completa con todos los campos
+        description_parts = []
+        if report_name:
+            description_parts.append(f"Report: {report_name}")
+        if report_purpose:
+            description_parts.append(f"Purpose: {report_purpose}")
+        if employee_name:
+            description_parts.append(f"Employee: {employee_name}")
+        if org_code:
+            description_parts.append(f"Org: {org_code}")
+        if policy:
+            description_parts.append(f"Policy: {policy}")
+        description = " | ".join(description_parts) if description_parts else "Bechtel Expense Report"
+        
+        # Crear registro principal en mresumen
+        # Usar report_number como tsourcereference y report_key como tsourcerefid
+        expense_reports.append({
+            "tjobno": org_code,  # Org Code como Job No
+            "ttype": "Expense Report",  # Tipo fijo para Expense Reports
+            "tsourcereference": report_number,  # Report Number
+            "tsourcerefid": f"Key:{report_key}" if report_key else None,  # Report Key
+            "tdescription": description,
+            "nImporte": report_total,  # Report Total como importe principal
+            "tStampname": stamp_name,
+            "tsequentialnumber": sequential_number,
+            # Campos adicionales específicos de Expense Report (se guardarán pero no en BD)
+            "_expense_report_data": {
+                "report_key": report_key,
+                "report_number": report_number,
+                "employee_id": employee_id,
+                "employee_name": employee_name,
+                "org_code": org_code,
+                "default_approver": default_approver,
+                "final_approver": final_approver,
+                "report_name": report_name,
+                "report_date": report_date,
+                "report_purpose": report_purpose,
+                "report_total": report_total,
+                "bechtel_owes_card": bechtel_owes_card,
+                "bechtel_owes_employee": bechtel_owes_employee,
+                "policy": policy
+            }
+        })
+        
+        # Si hay bechtel_owes_employee diferente al report_total, crear registro adicional
+        if bechtel_owes_employee and bechtel_owes_employee != report_total:
+            expense_reports.append({
+                "tjobno": org_code,
+                "ttype": "Expense Report - Employee Owed",
+                "tsourcereference": report_number,
+                "tsourcerefid": f"Key:{report_key}" if report_key else None,
+                "tdescription": f"Bechtel owes Employee: {employee_name or 'N/A'}",
+                "nImporte": bechtel_owes_employee,
+                "tStampname": stamp_name,
+                "tsequentialnumber": sequential_number
+            })
+        
+        # Extraer valores destacados (en rojo/boxed) específicos de Expense Reports
+        highlighted_values = self._extract_expense_report_highlighted_values(ocr_text, report_number, org_code, stamp_name, sequential_number)
+        if highlighted_values:
+            expense_reports.extend(highlighted_values)
+        
+        result = {}
+        if expense_reports:
+            result["mresumen"] = expense_reports
+        
+        return result if result else None
+    
+    def _extract_expense_report_highlighted_values(self, ocr_text: str, report_number: str = None, 
+                                                   org_code: str = None, stamp_name: str = None, 
+                                                   sequential_number: str = None) -> List[Dict]:
+        """
+        Extrae valores destacados (en rojo/boxed) de Bechtel Expense Reports.
+        
+        Busca específicamente valores destacados cerca de "Report Total" y otros campos importantes.
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            report_number: Número de reporte (para asociar)
+            org_code: Código de organización (para asociar)
+            stamp_name: Nombre del stamp (para asociar)
+            sequential_number: Número secuencial (para asociar)
+            
+        Returns:
+            Lista de diccionarios con valores destacados en formato mresumen
+        """
+        highlights = []
+        
+        # Buscar valores destacados cerca de "Report Total"
+        lines = ocr_text.split('\n')
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            # Buscar líneas que contengan "Report Total" o valores destacados cerca
+            if 'report total' in line_lower:
+                # Buscar valores monetarios en la misma línea o líneas cercanas
+                search_range = lines[max(0, i-2):min(len(lines), i+3)]
+                for search_line in search_range:
+                    # Buscar valores con formato monetario: 180,000.00, 180000.00, etc.
+                    # También buscar valores sin decimales: 180000
+                    monetary_patterns = [
+                        r'([\d,]+\.\d{2})',  # Formato con decimales: 180,000.00
+                        r'([\d,]+)',  # Formato sin decimales: 180,000
+                    ]
+                    
+                    for pattern in monetary_patterns:
+                        monetary_values = re.findall(pattern, search_line)
+                        for val_str in monetary_values:
+                            try:
+                                # Limpiar el valor (quitar comas)
+                                clean_val = val_str.replace(',', '')
+                                val = float(clean_val)
+                                
+                                # Filtrar valores muy pequeños (probablemente no son totales)
+                                if val >= 1.0:
+                                    # Verificar si este valor ya está en los highlights
+                                    if not any(h.get("nImporte") == val for h in highlights):
+                                        highlights.append({
+                                            "tjobno": org_code,
+                                            "ttype": "Expense Report - Highlighted Value",
+                                            "tsourcereference": report_number,
+                                            "tsourcerefid": None,
+                                            "tdescription": f"Valor destacado (Report Total): {val:,.2f}",
+                                            "nImporte": val,
+                                            "tStampname": stamp_name,
+                                            "tsequentialnumber": sequential_number,
+                                            "_highlighted": True,
+                                            "_source_field": "Report Total",
+                                            "_source_line": search_line.strip()
+                                        })
+                            except ValueError:
+                                continue
+            
+            # También buscar otros valores destacados cerca de campos importantes
+            # como "Bechtel owes Employee", "Bechtel owes Card", etc.
+            if 'bechtel owes' in line_lower:
+                search_range = lines[max(0, i-1):min(len(lines), i+2)]
+                for search_line in search_range:
+                    monetary_values = re.findall(r'([\d,]+\.?\d*)', search_line)
+                    for val_str in monetary_values:
+                        try:
+                            clean_val = val_str.replace(',', '')
+                            val = float(clean_val)
+                            if val >= 1.0:
+                                field_name = "Bechtel owes Employee" if "employee" in line_lower else "Bechtel owes Card"
+                                if not any(h.get("nImporte") == val and h.get("_source_field") == field_name for h in highlights):
+                                    highlights.append({
+                                        "tjobno": org_code,
+                                        "ttype": "Expense Report - Highlighted Value",
+                                        "tsourcereference": report_number,
+                                        "tsourcerefid": None,
+                                        "tdescription": f"Valor destacado ({field_name}): {val:,.2f}",
+                                        "nImporte": val,
+                                        "tStampname": stamp_name,
+                                        "tsequentialnumber": sequential_number,
+                                        "_highlighted": True,
+                                        "_source_field": field_name,
+                                        "_source_line": search_line.strip()
+                                    })
+                        except ValueError:
+                            continue
+        
+        return highlights
+    
+    def _extract_weekly_totals(self, ocr_text: str) -> List[Dict]:
+        """
+        Extrae totales semanales de tablas (WEEK 27, WEEK 28, etc.).
+        
+        Detecta líneas que contienen múltiples valores monetarios al final de tablas,
+        que generalmente son totales por semana.
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Lista de diccionarios con totales semanales en formato mresumen
+        """
+        totals = []
+        lines = ocr_text.split('\n')
+        
+        # Buscar patrones de semanas (WEEK 27, WEEK 28, etc.)
+        week_pattern = re.compile(r'WEEK\s+(\d+)', re.IGNORECASE)
+        weeks_found = []
+        
+        # Primero identificar qué semanas están en el documento
+        for line in lines:
+            week_matches = week_pattern.findall(line)
+            for week_num in week_matches:
+                if week_num not in weeks_found:
+                    weeks_found.append(week_num)
+        
+        # Buscar líneas que contengan múltiples valores monetarios grandes
+        # Estas suelen ser los totales al final de las tablas
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Buscar líneas con 2 o más valores monetarios grandes (probablemente totales)
+            # Patrón mejorado: solo números y comas/puntos (sin texto descriptivo)
+            line_clean = re.sub(r'[^\d,.\s]', '', line).strip()
+            monetary_values = re.findall(r'([\d,]+\.\d{2})', line_clean)
+            
+            # Si hay múltiples valores y son grandes (probablemente totales)
+            if len(monetary_values) >= 2:
+                # Verificar que los valores sean grandes (más de 1000)
+                large_values = []
+                for val_str in monetary_values:
+                    try:
+                        val = float(val_str.replace(',', ''))
+                        if val >= 1000:  # Filtrar valores pequeños
+                            large_values.append((val_str, val))
+                    except ValueError:
+                        continue
+                
+                # Si hay al menos 2 valores grandes, probablemente son totales semanales
+                if len(large_values) >= 2:
+                    # Verificar que la línea NO tenga descripciones de items (solo números)
+                    # Si la línea tiene menos de 10 caracteres no numéricos, probablemente es totales
+                    non_numeric_chars = len(re.sub(r'[\d,.\s]', '', line))
+                    
+                    # Verificar contexto: líneas anteriores/siguientes
+                    context_lines = lines[max(0, i-3):min(len(lines), i+4)]
+                    has_item_descriptions = any(
+                        any(keyword in ctx.lower() for keyword in [
+                            'cajamarca', 'oficina', 'vigilancia', 'bancarios', 
+                            'proveedor', 'rimac', 'seguros', 'cbp', 'travel',
+                            'remodelacion', 'alquiler', 'servicio', 'gastos'
+                        ])
+                        for ctx in context_lines
+                    )
+                    
+                    # Si la línea tiene pocos caracteres no numéricos Y no tiene descripciones de items
+                    # Y está después de una línea con items, probablemente es totales
+                    is_after_items = False
+                    if i > 0:
+                        prev_lines = lines[max(0, i-5):i]
+                        is_after_items = any(
+                            any(keyword in prev.lower() for keyword in [
+                                'cajamarca', 'oficina', 'vigilancia', 'bancarios', 
+                                'proveedor', 'rimac', 'seguros', 'cbp', 'travel'
+                            ])
+                            for prev in prev_lines
+                        )
+                    
+                    # Si cumple las condiciones, es una línea de totales
+                    if (non_numeric_chars < 10 and not has_item_descriptions) or (is_after_items and non_numeric_chars < 20):
+                        # Asociar cada valor con su semana correspondiente
+                        # Ordenar semanas encontradas para asociar correctamente
+                        weeks_sorted = sorted(weeks_found, key=int)
+                        for j, (val_str, val) in enumerate(large_values):
+                            if j < len(weeks_sorted):
+                                week_num = weeks_sorted[j]
+                                totals.append({
+                                    "tjobno": None,
+                                    "ttype": f"Week {week_num} Total",
+                                    "tsourcereference": None,
+                                    "tsourcerefid": f"Week {week_num}",
+                                    "tdescription": f"Total Week {week_num}",
+                                    "nImporte": val,
+                                    "tStampname": None,
+                                    "tsequentialnumber": None,
+                                    "_weekly_total": True,
+                                    "_week_number": week_num
+                                })
+        
+        return totals
+    
+    def _extract_cash_flow_values(self, ocr_text: str) -> List[Dict]:
+        """
+        Extrae valores de Cash Flow (Total Disbursement, Period Balance, Cumulative Cash Flow).
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Lista de diccionarios con valores de Cash Flow en formato mresumen
+        """
+        cash_flow_items = []
+        lines = ocr_text.split('\n')
+        
+        # Buscar "Total Disbursement"
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            if 'total disbursement' in line_lower:
+                # Buscar valores monetarios en esta línea o líneas siguientes
+                search_lines = lines[i:min(len(lines), i+2)]
+                for search_line in search_lines:
+                    monetary_values = re.findall(r'([\d,]+\.?\d*)', search_line)
+                    for val_str in monetary_values:
+                        try:
+                            val = float(val_str.replace(',', ''))
+                            if val >= 1.0:
+                                cash_flow_items.append({
+                                    "tjobno": None,
+                                    "ttype": "Cash Flow - Total Disbursement",
+                                    "tsourcereference": None,
+                                    "tsourcerefid": None,
+                                    "tdescription": f"Total Disbursement: {val:,.2f}",
+                                    "nImporte": val,
+                                    "tStampname": None,
+                                    "tsequentialnumber": None,
+                                    "_cash_flow": True,
+                                    "_cash_flow_type": "Total Disbursement"
+                                })
+                        except ValueError:
+                            continue
+            
+            # Buscar "Period Balance"
+            if 'period balance' in line_lower:
+                # Buscar valores entre paréntesis (valores negativos) o valores normales
+                search_lines = lines[i:min(len(lines), i+2)]
+                for search_line in search_lines:
+                    # Buscar valores entre paréntesis: (305,350)
+                    negative_values = re.findall(r'\(([\d,]+\.?\d*)\)', search_line)
+                    for val_str in negative_values:
+                        try:
+                            val = float(val_str.replace(',', ''))
+                            if val >= 1.0:
+                                cash_flow_items.append({
+                                    "tjobno": None,
+                                    "ttype": "Cash Flow - Period Balance",
+                                    "tsourcereference": None,
+                                    "tsourcerefid": None,
+                                    "tdescription": f"Period Balance: ({val:,.2f})",
+                                    "nImporte": -val,  # Negativo porque está entre paréntesis
+                                    "tStampname": None,
+                                    "tsequentialnumber": None,
+                                    "_cash_flow": True,
+                                    "_cash_flow_type": "Period Balance"
+                                })
+                        except ValueError:
+                            continue
+                    
+                    # También buscar valores positivos sin paréntesis
+                    positive_values = re.findall(r'(?<!\()([\d,]+\.\d{2})(?!\))', search_line)
+                    for val_str in positive_values:
+                        try:
+                            val = float(val_str.replace(',', ''))
+                            if val >= 1000:  # Filtrar valores pequeños
+                                cash_flow_items.append({
+                                    "tjobno": None,
+                                    "ttype": "Cash Flow - Period Balance",
+                                    "tsourcereference": None,
+                                    "tsourcerefid": None,
+                                    "tdescription": f"Period Balance: {val:,.2f}",
+                                    "nImporte": val,
+                                    "tStampname": None,
+                                    "tsequentialnumber": None,
+                                    "_cash_flow": True,
+                                    "_cash_flow_type": "Period Balance"
+                                })
+                        except ValueError:
+                            continue
+            
+            # Buscar "Cumulative Cash Flow"
+            if 'cumulative cash flow' in line_lower:
+                search_lines = lines[i:min(len(lines), i+2)]
+                for search_line in search_lines:
+                    monetary_values = re.findall(r'([\d,]+\.\d{2})', search_line)
+                    for val_str in monetary_values:
+                        try:
+                            val = float(val_str.replace(',', ''))
+                            # Incluir valores negativos también
+                            if abs(val) >= 1.0:
+                                cash_flow_items.append({
+                                    "tjobno": None,
+                                    "ttype": "Cash Flow - Cumulative",
+                                    "tsourcereference": None,
+                                    "tsourcerefid": None,
+                                    "tdescription": f"Cumulative Cash Flow: {val:,.2f}",
+                                    "nImporte": val,
+                                    "tStampname": None,
+                                    "tsequentialnumber": None,
+                                    "_cash_flow": True,
+                                    "_cash_flow_type": "Cumulative Cash Flow"
+                                })
+                        except ValueError:
+                            continue
+            
+            # Buscar valores mencionados en el texto (ej: "305,349.84 USD" en Week 28)
+            week_amount_match = re.search(r'Week\s+(\d+).*?([\d,]+\.\d{2})\s*USD', ocr_text, re.IGNORECASE)
+            if week_amount_match:
+                week_num = week_amount_match.group(1)
+                amount_str = week_amount_match.group(2)
+                try:
+                    amount = float(amount_str.replace(',', ''))
+                    if amount >= 1.0:
+                        cash_flow_items.append({
+                            "tjobno": None,
+                            "ttype": f"Cash Flow - Week {week_num}",
+                            "tsourcereference": None,
+                            "tsourcerefid": f"Week {week_num}",
+                            "tdescription": f"Amount Week {week_num}: {amount:,.2f} USD",
+                            "nImporte": amount,
+                            "tStampname": None,
+                            "tsequentialnumber": None,
+                            "_cash_flow": True,
+                            "_cash_flow_type": f"Week {week_num} Amount"
+                        })
+                except ValueError:
+                    pass
+        
+        return cash_flow_items
+    
+    def _extract_oracle_ap_data(self, ocr_text: str) -> Optional[Dict]:
+        """
+        Extrae datos específicos de documentos Oracle AP (Accounts Payable).
+        
+        Detecta campos como Invoice Num, Invoice Amount, Tax Amount, Due Date,
+        Gross Amount, Payment Method, Supplier information, etc.
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Diccionario con datos de Oracle AP o None si no es un documento Oracle
+        """
+        # Verificar si es un documento Oracle AP
+        if not any(keyword in ocr_text for keyword in ['Operating Unit', 'Invoice Num', 'Scheduled Payments', 'Oracle']):
+            return None
+        
+        oracle_data = {
+            'comprobante_fields': {},
+            'payment_details': []
+        }
+        
+        # Extraer datos de tabla Oracle AP (headers en una línea, valores en la siguiente)
+        lines = ocr_text.split('\n')
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            # Buscar línea con headers de Oracle AP
+            if 'operating unit' in line_lower and 'invoice num' in line_lower:
+                # La siguiente línea debería tener los valores
+                if i + 1 < len(lines):
+                    values_line = lines[i + 1].strip()
+                    # Extraer valores de la línea (están separados por espacios)
+                    # Formato: "PEN - BECHTEL PE Standard RIMAC SE 934001256 XYQN-WIRE 20-JUN-2025 F581-06891423 USD 655740.75 100028.25"
+                    parts = values_line.split()
+                    
+                    # Buscar Operating Unit (primeros elementos hasta encontrar "Standard" o similar)
+                    if 'Standard' in values_line or 'PEN' in values_line or 'USD' in values_line:
+                        # Buscar "PEN - BECHTEL PE" o similar
+                        operating_unit_match = re.search(r'([A-Z]{3}\s*-\s*[A-Z\s]+)', values_line)
+                        if operating_unit_match:
+                            oracle_data['comprobante_fields']['_oracle_operating_unit'] = operating_unit_match.group(1).strip()
+                    
+                    # Buscar Supplier Name (después de "Standard", generalmente "RIMAC SE")
+                    supplier_match = re.search(r'Standard\s+([A-Z][A-Z\s]+(?:SE|S\.A\.|SRL|LLC|INC|LTD)?)', values_line, re.IGNORECASE)
+                    if supplier_match:
+                        supplier_name = supplier_match.group(1).strip()
+                        supplier_name = ' '.join(supplier_name.split())
+                        if len(supplier_name) <= 100:
+                            oracle_data['comprobante_fields']['_oracle_supplier_name'] = supplier_name
+                    
+                    # Buscar Supplier Num (número de 9 dígitos)
+                    supplier_num_match = re.search(r'\b(\d{9})\b', values_line)
+                    if supplier_num_match:
+                        oracle_data['comprobante_fields']['_oracle_supplier_num'] = supplier_num_match.group(1)
+                    
+                    # Buscar Supplier Site (formato XYQN-WIRE)
+                    supplier_site_match = re.search(r'([A-Z0-9]+-[A-Z]+)', values_line)
+                    if supplier_site_match:
+                        oracle_data['comprobante_fields']['_oracle_supplier_site'] = supplier_site_match.group(1)
+                    
+                    # Buscar Invoice Date (formato 20-JUN-2025)
+                    invoice_date_match = re.search(r'(\d{1,2}-[A-Z]{3}-\d{4})', values_line)
+                    if invoice_date_match:
+                        oracle_data['comprobante_fields']['_oracle_invoice_date'] = invoice_date_match.group(1)
+                    
+                    # Buscar Invoice Num (formato F581-06891423)
+                    invoice_num_match = re.search(r'([A-Z]\d+-\d+)', values_line)
+                    if invoice_num_match:
+                        oracle_data['comprobante_fields']['_oracle_invoice_num'] = invoice_num_match.group(1)
+                    
+                    # Buscar Invoice Amount (USD seguido de número grande)
+                    invoice_amount_match = re.search(r'USD\s+([\d,]+\.?\d*)', values_line, re.IGNORECASE)
+                    if invoice_amount_match:
+                        try:
+                            amount = float(invoice_amount_match.group(1).replace(',', ''))
+                            oracle_data['comprobante_fields']['_oracle_invoice_amount'] = amount
+                        except ValueError:
+                            pass
+                    
+                    # Buscar Tax Amount (número después del Invoice Amount)
+                    # Generalmente está después del Invoice Amount
+                    tax_amount_match = re.search(r'USD\s+[\d,]+\.?\d*\s+([\d,]+\.?\d*)', values_line, re.IGNORECASE)
+                    if tax_amount_match:
+                        try:
+                            tax = float(tax_amount_match.group(1).replace(',', ''))
+                            oracle_data['comprobante_fields']['_oracle_tax_amount'] = tax
+                        except ValueError:
+                            pass
+                    break
+        
+        # Extraer datos de la tabla "Scheduled Payments"
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            # Buscar línea con headers de Scheduled Payments
+            if 'scheduled payments' in line_lower or ('due date' in line_lower and 'gross amount' in line_lower):
+                # Buscar valores en líneas siguientes
+                for j in range(i + 1, min(len(lines), i + 5)):
+                    payment_line = lines[j].strip()
+                    if not payment_line:
+                        continue
+                    
+                    # Buscar Due Date (formato 30-JUN-2025)
+                    due_date_match = re.search(r'(\d{1,2}-[A-Z]{3}-\d{4})', payment_line)
+                    if due_date_match:
+                        oracle_data['comprobante_fields']['_oracle_due_date'] = due_date_match.group(1)
+                    
+                    # Buscar Gross Amount (número grande, generalmente sin comas en Oracle)
+                    gross_amount_match = re.search(r'(\d{6,}\.?\d*)', payment_line)
+                    if gross_amount_match:
+                        try:
+                            gross = float(gross_amount_match.group(1).replace(',', ''))
+                            if gross >= 1000:  # Filtrar valores pequeños
+                                if not oracle_data['comprobante_fields'].get('_oracle_gross_amount'):
+                                    oracle_data['comprobante_fields']['_oracle_gross_amount'] = gross
+                        except ValueError:
+                            pass
+                    
+                    # Buscar Payment Currency (USD, PEN, EUR)
+                    payment_currency_match = re.search(r'\b(USD|PEN|EUR)\b', payment_line, re.IGNORECASE)
+                    if payment_currency_match:
+                        oracle_data['comprobante_fields']['_oracle_payment_currency'] = payment_currency_match.group(1).upper()
+                    
+                    # Buscar Payment Method (Wire, Check, etc.)
+                    if 'wire' in payment_line.lower():
+                        oracle_data['comprobante_fields']['_oracle_payment_method'] = 'Wire'
+                    elif 'check' in payment_line.lower():
+                        oracle_data['comprobante_fields']['_oracle_payment_method'] = 'Check'
+                    elif 'transfer' in payment_line.lower():
+                        oracle_data['comprobante_fields']['_oracle_payment_method'] = 'Transfer'
+                    
+                    # Si encontramos al menos un campo, continuar buscando en esta sección
+                    if any(key in oracle_data['comprobante_fields'] for key in ['_oracle_due_date', '_oracle_gross_amount', '_oracle_payment_currency']):
+                        continue
+                    else:
+                        break
+        
+        # Extraer Invoice Num (ya se extrae arriba, pero lo verificamos también con regex general)
+        if not oracle_data['comprobante_fields'].get('_oracle_invoice_num'):
+            invoice_num_match = re.search(r'Invoice\s+Num[:\s]+([A-Z0-9\-]+)', ocr_text, re.IGNORECASE)
+            if invoice_num_match:
+                oracle_data['comprobante_fields']['_oracle_invoice_num'] = invoice_num_match.group(1).strip()
+        
+        # Extraer Invoice Amount
+        # Patrón 1: "Invoice Invoice Amount USD 655740.75"
+        invoice_amount_match = re.search(r'Invoice\s+(?:Invoice\s+)?Amount\s+(?:USD|PEN|EUR)\s+([\d,]+\.?\d*)', ocr_text, re.IGNORECASE)
+        if not invoice_amount_match:
+            # Patrón 2: "Invoice Amount" seguido de currency y amount en líneas cercanas
+            lines = ocr_text.split('\n')
+            for i, line in enumerate(lines):
+                if 'invoice amount' in line.lower():
+                    # Buscar en la misma línea o líneas siguientes
+                    search_lines = lines[i:min(len(lines), i+2)]
+                    for search_line in search_lines:
+                        # Buscar patrón: "USD 655740.75" o "655740.75 USD"
+                        amount_match = re.search(r'(?:USD|PEN|EUR)\s+([\d,]+\.?\d*)|([\d,]+\.?\d*)\s+(?:USD|PEN|EUR)', search_line, re.IGNORECASE)
+                        if amount_match:
+                            amount_str = amount_match.group(1) or amount_match.group(2)
+                            try:
+                                amount = float(amount_str.replace(',', ''))
+                                oracle_data['comprobante_fields']['_oracle_invoice_amount'] = amount
+                                break
+                            except ValueError:
+                                continue
+                    if oracle_data['comprobante_fields'].get('_oracle_invoice_amount'):
+                        break
+        else:
+            try:
+                amount = float(invoice_amount_match.group(1).replace(',', ''))
+                oracle_data['comprobante_fields']['_oracle_invoice_amount'] = amount
+            except ValueError:
+                pass
+        
+        # Extraer Tax Amount
+        tax_amount_match = re.search(r'Tax\s+Amount[:\s]+([\d,]+\.?\d*)', ocr_text, re.IGNORECASE)
+        if tax_amount_match:
+            try:
+                tax = float(tax_amount_match.group(1).replace(',', ''))
+                oracle_data['comprobante_fields']['_oracle_tax_amount'] = tax
+            except ValueError:
+                pass
+        
+        # Extraer Invoice Date
+        invoice_date_match = re.search(r'Invoice\s+Date[:\s]+([\d]{1,2}[-/][A-Z]{3}[-/][\d]{4})', ocr_text, re.IGNORECASE)
+        if invoice_date_match:
+            oracle_data['comprobante_fields']['_oracle_invoice_date'] = invoice_date_match.group(1).strip()
+        
+        # Extraer Due Date
+        due_date_match = re.search(r'Due\s+Date[:\s]+([\d]{1,2}[-/][A-Z]{3}[-/][\d]{4})', ocr_text, re.IGNORECASE)
+        if due_date_match:
+            oracle_data['comprobante_fields']['_oracle_due_date'] = due_date_match.group(1).strip()
+        
+        # Extraer Gross Amount (Payment Gross Amount)
+        gross_amount_match = re.search(r'Gross\s+Amount[:\s]+([\d,]+\.?\d*)', ocr_text, re.IGNORECASE)
+        if gross_amount_match:
+            try:
+                gross = float(gross_amount_match.group(1).replace(',', ''))
+                oracle_data['comprobante_fields']['_oracle_gross_amount'] = gross
+            except ValueError:
+                pass
+        
+        # Extraer Payment Currency
+        payment_currency_match = re.search(r'Payment[:\s]+Currency[:\s]+([A-Z]{3})', ocr_text, re.IGNORECASE)
+        if payment_currency_match:
+            oracle_data['comprobante_fields']['_oracle_payment_currency'] = payment_currency_match.group(1).strip()
+        
+        # Extraer Payment Method
+        payment_method_match = re.search(r'Method[:\s]+([A-Za-z]+)', ocr_text, re.IGNORECASE)
+        if payment_method_match:
+            oracle_data['comprobante_fields']['_oracle_payment_method'] = payment_method_match.group(1).strip()
+        
+        # Extraer Supplier Num
+        supplier_num_match = re.search(r'Supplier\s+Num[:\s]+([\d]+)', ocr_text, re.IGNORECASE)
+        if supplier_num_match:
+            oracle_data['comprobante_fields']['_oracle_supplier_num'] = supplier_num_match.group(1).strip()
+        
+        # Extraer Operating Unit
+        operating_unit_match = re.search(r'Operating\s+Unit[:\s]+([^:\n]+)', ocr_text, re.IGNORECASE)
+        if operating_unit_match:
+            oracle_data['comprobante_fields']['_oracle_operating_unit'] = operating_unit_match.group(1).strip()
+        
+        # Extraer Supplier Name (PO Trading Pa o Supplier Name)
+        # Buscar en líneas específicas para evitar capturar texto incorrecto
+        lines = ocr_text.split('\n')
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            # Buscar "PO Trading Pa" o "Supplier Name" en la línea
+            if 'po trading pa' in line_lower or 'supplier name' in line_lower:
+                # Buscar el valor en la misma línea o línea siguiente
+                # Patrón: "PO Trading Pa RIMAC SE" o "Supplier Name: RIMAC SE"
+                supplier_match = re.search(r'(?:PO\s+Trading\s+Pa|Supplier\s+Name)[:\s]+([A-Z][A-Z\s]+(?:SE|S\.A\.|SRL|LLC|INC|LTD)?)', line, re.IGNORECASE)
+                if supplier_match:
+                    supplier_name = supplier_match.group(1).strip()
+                    # Limpiar espacios múltiples
+                    supplier_name = ' '.join(supplier_name.split())
+                    # Limitar longitud
+                    if len(supplier_name) > 100:
+                        supplier_name = supplier_name[:100]
+                    oracle_data['comprobante_fields']['_oracle_supplier_name'] = supplier_name
+                    break
+                # Si no se encontró en la misma línea, buscar en la siguiente
+                elif i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    # Buscar nombre de proveedor (generalmente en mayúsculas)
+                    supplier_match_next = re.search(r'^([A-Z][A-Z\s]+(?:SE|S\.A\.|SRL|LLC|INC|LTD)?)', next_line)
+                    if supplier_match_next:
+                        supplier_name = supplier_match_next.group(1).strip()
+                        supplier_name = ' '.join(supplier_name.split())
+                        if len(supplier_name) > 100:
+                            supplier_name = supplier_name[:100]
+                        oracle_data['comprobante_fields']['_oracle_supplier_name'] = supplier_name
+                        break
+        
+        # Extraer Supplier Site
+        supplier_site_match = re.search(r'Supplier\s+Site[:\s]+([A-Z0-9\-]+)', ocr_text, re.IGNORECASE)
+        if supplier_site_match:
+            oracle_data['comprobante_fields']['_oracle_supplier_site'] = supplier_site_match.group(1).strip()
+        
+        # Crear detalles de pago programado
+        if oracle_data['comprobante_fields'].get('_oracle_gross_amount'):
+            payment_detail = {
+                "nCantidad": 1.0,
+                "tDescripcion": f"Oracle AP Payment - {oracle_data['comprobante_fields'].get('_oracle_payment_method', 'N/A')}",
+                "nPrecioUnitario": oracle_data['comprobante_fields']['_oracle_gross_amount'],
+                "nPrecioTotal": oracle_data['comprobante_fields']['_oracle_gross_amount'],
+                "_oracle_payment": True,
+                "_oracle_due_date": oracle_data['comprobante_fields'].get('_oracle_due_date'),
+                "_oracle_payment_method": oracle_data['comprobante_fields'].get('_oracle_payment_method'),
+                "_oracle_payment_currency": oracle_data['comprobante_fields'].get('_oracle_payment_currency')
+            }
+            oracle_data['payment_details'].append(payment_detail)
+        
+        # Si hay Tax Amount, agregarlo como detalle separado
+        if oracle_data['comprobante_fields'].get('_oracle_tax_amount'):
+            tax_detail = {
+                "nCantidad": 1.0,
+                "tDescripcion": "Oracle AP Tax Amount",
+                "nPrecioUnitario": oracle_data['comprobante_fields']['_oracle_tax_amount'],
+                "nPrecioTotal": oracle_data['comprobante_fields']['_oracle_tax_amount'],
+                "_oracle_tax": True
+            }
+            oracle_data['payment_details'].append(tax_detail)
+        
+        return oracle_data if oracle_data['comprobante_fields'] or oracle_data['payment_details'] else None
+    
+    def _extract_concur_expense_data(self, ocr_text: str) -> Dict[str, List[Dict]]:
+        """
+        Extrae datos de Concur Expense Reports.
+        
+        Captura:
+        - Report Total
+        - Subtotal
+        - Total for XXX (totales por código)
+        - Amount Less Tax
+        - Tax
+        - Transacciones individuales
+        - Job Section
+        - Expense Type
+        - Merchant information
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Diccionario con datos estructurados en formato mresumen y mcomprobante_detalle
+        """
+        result = {}
+        resumen_items = []
+        detalle_items = []
+        
+        # Extraer Stamp Name y Sequential Number
+        stamp_info = self.extract_stamp_info(ocr_text)
+        stamp_name = stamp_info.get("stamp_name")
+        sequential_number = stamp_info.get("sequential_number")
+        
+        # Extraer Job Section (ej: "26443-331-----")
+        job_section_match = re.search(r'Line\s+Item\s+by\s+Job\s+Section\s+([\d\-]+)', ocr_text, re.IGNORECASE)
+        job_section = job_section_match.group(1).strip() if job_section_match else None
+        
+        # Extraer Report Name (ej: "Concur Expense - Transportes Terrestres")
+        report_name_match = re.search(r'Concur\s+Expense\s*-\s*([^\n]+)', ocr_text, re.IGNORECASE)
+        report_name = report_name_match.group(1).strip() if report_name_match else None
+        
+        lines = ocr_text.split('\n')
+        
+        # Extraer TODOS los totales (Report Total, Subtotal, Total for XXX, Amount Less Tax, Tax)
+        totals_found = {}
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            
+            # Report Total
+            if 'report total' in line_lower:
+                total_match = re.search(r'Report\s+Total[:\s]+([\d,]+\.?\d*)', line, re.IGNORECASE)
+                if total_match:
+                    try:
+                        amount = float(total_match.group(1).replace(',', ''))
+                        totals_found['report_total'] = amount
+                    except ValueError:
+                        pass
+            
+            # Subtotal
+            if 'subtotal' in line_lower and 'report total' not in line_lower:
+                subtotal_match = re.search(r'Subtotal[:\s]+([\d,]+\.?\d*)', line, re.IGNORECASE)
+                if subtotal_match:
+                    try:
+                        amount = float(subtotal_match.group(1).replace(',', ''))
+                        totals_found['subtotal'] = amount
+                    except ValueError:
+                        pass
+            
+            # Total for XXX (ej: "Total for 611")
+            total_for_match = re.search(r'Total\s+for\s+(\d+)[:\s]+([\d,]+\.?\d*)', line, re.IGNORECASE)
+            if total_for_match:
+                code = total_for_match.group(1)
+                try:
+                    amount = float(total_for_match.group(2).replace(',', ''))
+                    totals_found[f'total_for_{code}'] = amount
+                except ValueError:
+                    pass
+            
+            # Amount Less Tax
+            if 'amount less tax' in line_lower:
+                amount_less_tax_match = re.search(r'Amount\s+Less\s+Tax[:\s]+([\d,]+\.?\d*)', line, re.IGNORECASE)
+                if amount_less_tax_match:
+                    try:
+                        amount = float(amount_less_tax_match.group(1).replace(',', ''))
+                        totals_found['amount_less_tax'] = amount
+                    except ValueError:
+                        pass
+            
+            # Tax
+            if 'tax' in line_lower and 'amount less tax' not in line_lower and 'taxi' not in line_lower:
+                tax_match = re.search(r'Tax[:\s]+([\d,]+\.?\d*)', line, re.IGNORECASE)
+                if tax_match:
+                    try:
+                        amount = float(tax_match.group(1).replace(',', ''))
+                        totals_found['tax'] = amount
+                    except ValueError:
+                        pass
+        
+        # Agregar todos los totales a mresumen
+        for total_name, amount in totals_found.items():
+            resumen_items.append({
+                "tjobno": job_section,
+                "ttype": f"Concur Expense - {total_name.replace('_', ' ').title()}",
+                "tsourcereference": sequential_number,
+                "tsourcerefid": None,
+                "tdescription": f"{total_name.replace('_', ' ').title()}: {amount:,.2f}",
+                "nImporte": amount,
+                "tStampname": stamp_name,
+                "tsequentialnumber": sequential_number,
+                "_concur_total": True,
+                "_total_type": total_name,
+                "_report_name": report_name
+            })
+        
+        # Extraer transacciones individuales (items de la tabla)
+        # Buscar líneas con fechas y montos
+        for i, line in enumerate(lines):
+            # Buscar líneas con formato de fecha (Jun 23, 2025 o 2025-06-23)
+            date_match = re.search(r'([A-Z][a-z]+\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2})', line)
+            if date_match:
+                # Buscar monto en la línea (formato 90,000.00)
+                amount_match = re.search(r'([\d,]+\.\d{2})', line)
+                if amount_match:
+                    try:
+                        amount = float(amount_match.group(1).replace(',', ''))
+                        # Buscar Expense Type en líneas cercanas
+                        expense_type = None
+                        for j in range(max(0, i-2), min(len(lines), i+3)):
+                            if 'taxi' in lines[j].lower() or 'ground trans' in lines[j].lower():
+                                expense_type_match = re.search(r'([A-Z][^0-9]+(?:Taxi|Ground|Trans)[^0-9]*)', lines[j], re.IGNORECASE)
+                                if expense_type_match:
+                                    expense_type = expense_type_match.group(1).strip()
+                                    break
+                        
+                        # Buscar Merchant
+                        merchant = None
+                        for j in range(i, min(len(lines), i+5)):
+                            if 'merchant:' in lines[j].lower():
+                                merchant_match = re.search(r'Merchant:\s*([^\n]+)', lines[j], re.IGNORECASE)
+                                if merchant_match:
+                                    merchant = merchant_match.group(1).strip()
+                                    break
+                        
+                        # Buscar Location
+                        location = None
+                        location_match = re.search(r'\b(Quilpué|Santiago|Lima|Arequipa|Cusco)\b', line, re.IGNORECASE)
+                        if location_match:
+                            location = location_match.group(1)
+                        
+                        # Buscar NC (código numérico)
+                        nc_match = re.search(r'\b(\d{3})\b', line)
+                        nc_code = nc_match.group(1) if nc_match else None
+                        
+                        detalle_items.append({
+                            "nCantidad": 1.0,
+                            "tDescripcion": f"{expense_type or 'Expense'} - {merchant or 'N/A'} - {location or 'N/A'}",
+                            "nPrecioUnitario": amount,
+                            "nPrecioTotal": amount,
+                            "_concur_transaction": True,
+                            "_transaction_date": date_match.group(1),
+                            "_expense_type": expense_type,
+                            "_merchant": merchant,
+                            "_location": location,
+                            "_nc_code": nc_code,
+                            "_job_section": job_section
+                        })
+                    except ValueError:
+                        continue
+        
+        # Crear comprobante principal con Report Total
+        if totals_found.get('report_total'):
+            comprobante_items = [{
+                "tNumero": sequential_number,
+                "tSerie": None,
+                "nPrecioTotal": totals_found['report_total'],
+                "_stamp_name": stamp_name,
+                "_sequential_number": sequential_number,
+                "_concur_expense": True,
+                "_report_name": report_name,
+                "_job_section": job_section
+            }]
+            result["mcomprobante"] = comprobante_items
+        
+        if resumen_items:
+            result["mresumen"] = resumen_items
+        
+        if detalle_items:
+            result["mcomprobante_detalle"] = detalle_items
         
         return result if result else None
     
