@@ -306,7 +306,17 @@ class DataMapper:
         
         # Extracción general de valores monetarios (para cualquier tipo de documento)
         # Esto captura TODOS los valores económicos, sin importar el formato
-        general_monetary_values = self._extract_all_monetary_values(ocr_text)
+        # EXCEPCIÓN: Para documentos jornada o comprobante con valores destacados (rectángulo rojo),
+        # NO extraer todos los valores, solo usar los destacados que ya están en mresumen
+        general_monetary_values = []
+        has_highlighted_total = any(calc.get("_total_highlighted", False) or calc.get("_highlighted", False) for calc in highlighted_calculations)
+        
+        if (doc_type == "jornada" and highlighted_calculations) or (doc_type == "comprobante" and has_highlighted_total):
+            # Si es jornada/comprobante y hay valores destacados, NO extraer todos los valores
+            # Solo usar los valores destacados que ya están en mresumen
+            pass  # No ejecutar _extract_all_monetary_values
+        else:
+            general_monetary_values = self._extract_all_monetary_values(ocr_text)
         if general_monetary_values:
             # Si no hay mcomprobante_detalle, crear uno con los valores encontrados
             if 'mcomprobante_detalle' not in result or not result.get('mcomprobante_detalle'):
@@ -1000,47 +1010,86 @@ class DataMapper:
         return result if result else None
 
     def _extract_journal_details_items(self, ocr_text: str) -> List[Dict]:
-        """Extrae líneas con montos de GL Journal Details como items."""
+        """
+        Extrae líneas con montos de GL Journal Details como items.
+        Solo extrae nPrecioUnitario (Entered Debits en USD), NO nPrecioTotal.
+        """
         detalles: List[Dict] = []
         lines = [l.strip() for l in ocr_text.split('\n') if l.strip()]
         in_table = False
-        for line in lines:
-            # detectar inicio de tabla por encabezados típicos
+        header_line_found = False
+        
+        for i, line in enumerate(lines):
+            # Detectar inicio de tabla por encabezados típicos
             if not in_table and ('GL Journal Details' in line or ('Line' in line and 'Entered' in line and 'Debits' in line)):
                 in_table = True
+                header_line_found = True
                 continue
+            
             if not in_table:
                 continue
-            # Saltar separadores/footers
-            if re.search(r'^(Page No\.|Run Date|USD\s+\d|TOTAL|^[-\s\.]{5,}$)', line, re.IGNORECASE):
+            
+            # Detectar línea de encabezados de columna (después de "GL Journal Details")
+            if header_line_found and ('Line' in line and 'Entered' in line and 'Debits' in line):
+                header_line_found = False
                 continue
-            # Buscar monto en la columna Entered Debits con formato 4,301.00
-            money = re.findall(r'(\d{1,3}(?:,\d{3})*\.\d{2})', line)
-            if not money:
+            
+            # Saltar separadores/footers/totales
+            if re.search(r'^(Page No\.|Run Date|Report No\.|^[-\s\.]{5,}$)', line, re.IGNORECASE):
                 continue
-            # Heurística: último monto suele ser el de Debits si no hay Credits
-            amount_str = money[-1].replace(',', '')
+            
+            # Detectar totales (líneas que solo tienen números grandes al final)
+            if re.search(r'^\d{1,2}\s+[VA-Z0-9\s]+\s+(\d{1,3}(?:,\d{3})*\.\d{2}\s+){3,}', line):
+                # Probablemente es una línea de totales, saltarla
+                continue
+            
+            # Detectar cálculos destacados (el cuadro rojo) - NO extraer como item
+            if re.search(r'USD\s+\d{1,3}(?:,\d{3})*\.\d{2}\s*\+\s*USD', line, re.IGNORECASE):
+                continue
+            
+            # Buscar patrón de línea de datos: número de línea + códigos + montos
+            # Formato típico: "1 V52T 000 0000 890 26442 007 8NJ2500 4,301.00 0.00 ..."
+            line_match = re.match(r'^(\d{1,2})\s+([VA-Z0-9\s]+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})', line)
+            if not line_match:
+                continue
+            
+            line_no = line_match.group(1)
+            codes_part = line_match.group(2).strip()
+            entered_debits_str = line_match.group(3).replace(',', '')
+            
             try:
-                amount = float(amount_str)
-            except Exception:
+                entered_debits = float(entered_debits_str)
+            except (ValueError, AttributeError):
                 continue
-            # Descripción: tomar texto al final de la línea después del último número grande, o última frase significativa
+            
+            # Solo extraer si el monto de Entered Debits es > 0
+            if entered_debits <= 0:
+                continue
+            
+            # Extraer descripción: buscar al final de la línea (después de los números)
+            # Buscar patrones como "JUL-25 BSQE OH RECOVERY" o similar
             desc = None
-            m_desc = re.search(r'(JUL|AUG|SEP|OCT|NOV|DEC|BSQE|OH\s+RECOVERY|RECOVERY|Labor)[A-Z\s\-]*$', line, re.IGNORECASE)
-            if m_desc:
-                desc = m_desc.group(0).strip()
-            if not desc:
-                # fallback: quitar columnas numéricas y códigos
+            desc_match = re.search(r'(JUL|AUG|SEP|OCT|NOV|DEC|JAN|FEB|MAR|APR|MAY|JUN)[\-\s]+(?:25|24|23|26)\s+(BSQE|OH\s+RECOVERY|RECOVERY|Labor)[A-Z\s\-]*', line, re.IGNORECASE)
+            if desc_match:
+                desc = desc_match.group(0).strip()
+            else:
+                # Fallback: tomar texto después del último monto grande
+                # Remover todos los números y códigos, dejar solo texto descriptivo
                 desc = re.sub(r'\b[VA-Z0-9]{3,}\b', '', line)
                 desc = re.sub(r'(\d{1,3}(?:,\d{3})*\.\d{2})', '', desc)
                 desc = re.sub(r'\s{2,}', ' ', desc).strip()
-            if amount > 0:
-                detalles.append({
-                    'nCantidad': 1.0,
-                    'tDescripcion': desc or 'GL Journal Line',
-                    'nPrecioUnitario': amount,
-                    'nPrecioTotal': amount
-                })
+                # Si la descripción es muy corta o solo espacios, usar default
+                if len(desc) < 3:
+                    desc = 'GL Journal Line'
+            
+            # Agregar item SOLO con nPrecioUnitario (NO nPrecioTotal)
+            detalles.append({
+                'nCantidad': 1.0,
+                'tDescripcion': desc or 'GL Journal Line',
+                'nPrecioUnitario': entered_debits
+                # NO incluir nPrecioTotal
+            })
+        
         return detalles
     
     def _extract_comprobante_detalle(self, ocr_text: str) -> List[Dict]:
@@ -1343,6 +1392,8 @@ class DataMapper:
         Estos cálculos suelen estar en secciones destacadas y contienen operaciones
         matemáticas con monedas, como: "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00"
         
+        También detecta valores TOTAL destacados en rectángulos rojos, como: "TOTAL $ 122.94"
+        
         Args:
             ocr_text: Texto extraído del OCR
             
@@ -1407,6 +1458,113 @@ class DataMapper:
                             })
                         except ValueError:
                             continue
+        
+        # NUEVO: Detectar valores TOTAL destacados (rectángulos rojos en comprobantes)
+        # Patrón 1: "TOTAL $ 122.94" o "TOTAL $122.94" o "TOTAL USD 122.94"
+        # Estos suelen estar en rectángulos rojos y son el valor final destacado
+        total_highlighted_pattern = r'TOTAL\s+(?:\$|USD|PEN|EUR|RM|MYR|CLP|GBP|JPY|CNY|COP|MXN|ARS|BRL)\s*([\d,]+\.\d{2})'
+        total_matches = re.finditer(total_highlighted_pattern, ocr_text, re.IGNORECASE)
+        for match in total_matches:
+            try:
+                total_amount = float(match.group(1).replace(',', ''))
+                # Detectar moneda en la línea
+                line_with_total = ocr_text[max(0, match.start()-50):match.end()+50]
+                currency_match = re.search(r'\b(USD|PEN|EUR|RM|MYR|CLP|GBP|JPY|CNY|COP|MXN|ARS|BRL)\b', line_with_total, re.IGNORECASE)
+                currency = currency_match.group(1).upper() if currency_match else "USD"
+                
+                # Verificar que no sea un duplicado de un cálculo ya encontrado
+                is_duplicate = False
+                for calc in calculations:
+                    if abs(calc.get("nMonto", 0) - total_amount) < 0.01:
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    calculations.append({
+                        "tDescripcion": f"TOTAL destacado: ${total_amount:,.2f}",
+                        "tjobno": None,
+                        "ttype": None,
+                        "nMonto": total_amount,
+                        "tDivisa": currency,
+                        "_highlighted": True,
+                        "_total_highlighted": True,
+                        "_source_line": match.group(0)
+                    })
+            except (ValueError, AttributeError):
+                continue
+        
+        # Patrón 2: "TOTAL AMOUNT IN US$" con valores destacados
+        # Ejemplo: "TOTAL AMOUNT IN US$ 22 180 $ - $ - $ 120.60 $ 120.60"
+        # El último valor es el total destacado
+        total_amount_pattern = r'TOTAL\s+AMOUNT\s+IN\s+US\$\s+.*?\$\s*([\d,]+\.\d{2})\s*$'
+        total_amount_matches = re.finditer(total_amount_pattern, ocr_text, re.IGNORECASE | re.MULTILINE)
+        for match in total_amount_matches:
+            try:
+                total_amount = float(match.group(1).replace(',', ''))
+                
+                # Verificar que no sea un duplicado
+                is_duplicate = False
+                for calc in calculations:
+                    if abs(calc.get("nMonto", 0) - total_amount) < 0.01:
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    calculations.append({
+                        "tDescripcion": f"TOTAL AMOUNT destacado: ${total_amount:,.2f}",
+                        "tjobno": None,
+                        "ttype": None,
+                        "nMonto": total_amount,
+                        "tDivisa": "USD",
+                        "_highlighted": True,
+                        "_total_highlighted": True,
+                        "_source_line": match.group(0)
+                    })
+            except (ValueError, AttributeError):
+                continue
+        
+        # Patrón 3: Detectar valores de columna "Total Amount" destacados en tablas
+        # Cuando hay "ATTACHMENT TO INVOICE" y una tabla con columna "Total Amount"
+        # Los valores de esa columna están en el rectángulo rojo
+        if 'ATTACHMENT TO INVOICE' in ocr_text.upper() and 'Total Amount' in ocr_text:
+            # Buscar líneas que contengan valores en la columna "Total Amount"
+            # Formato típico: "... $ 60.30" o "... $ 120.60" al final de líneas de datos
+            lines = ocr_text.split('\n')
+            for line in lines:
+                line = line.strip()
+                # Buscar patrón: texto seguido de "$ XX.XX" al final (valores de Total Amount)
+                # Evitar líneas que son totales o headers
+                if 'TOTAL AMOUNT' in line.upper() or 'Total Amount' in line:
+                    continue
+                
+                # Buscar valores "$ XX.XX" al final de líneas que parecen filas de datos
+                # Patrón: texto con información (nombres, códigos) seguido de "$ XX.XX" al final
+                amount_at_end = re.search(r'\$\s*([\d,]+\.\d{2})\s*$', line)
+                if amount_at_end:
+                    try:
+                        amount = float(amount_at_end.group(1).replace(',', ''))
+                        # Solo valores razonables (evitar valores muy pequeños o muy grandes)
+                        if 1.0 <= amount <= 1000000.0:
+                            # Verificar que no sea un duplicado
+                            is_duplicate = False
+                            for calc in calculations:
+                                if abs(calc.get("nMonto", 0) - amount) < 0.01:
+                                    is_duplicate = True
+                                    break
+                            
+                            if not is_duplicate:
+                                calculations.append({
+                                    "tDescripcion": f"Total Amount destacado: ${amount:,.2f}",
+                                    "tjobno": None,
+                                    "ttype": None,
+                                    "nMonto": amount,
+                                    "tDivisa": "USD",
+                                    "_highlighted": True,
+                                    "_column_total_amount": True,
+                                    "_source_line": line
+                                })
+                    except (ValueError, AttributeError):
+                        continue
         
         return calculations
     

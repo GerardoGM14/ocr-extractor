@@ -26,43 +26,33 @@ class PageResult(BaseModel):
 
 
 class ProcessPDFResponse(BaseModel):
-    """Respuesta del endpoint de procesamiento."""
+    """Respuesta del endpoint de procesamiento (ahora asíncrono)."""
     success: bool
     request_id: str
-    metadata: Dict[str, Any]
-    pdf_info: Dict[str, Any]
-    results: List[PageResult]
+    status: str  # "queued" | "processing" | "completed" | "failed"
+    message: str
+    metadata: Optional[Dict[str, Any]] = None
+    pdf_info: Optional[Dict[str, Any]] = None
+    results: Optional[List[PageResult]] = None  # Solo disponible cuando status="completed"
     files_saved: Optional[List[Dict[str, str]]] = None
-    processing_time_seconds: float
+    processing_time_seconds: Optional[float] = None
     download_url: Optional[str] = None
-    excel_download_url: Optional[str] = None  # URL para descargar el Excel consolidado
+    excel_download_url: Optional[str] = None
     error: Optional[str] = None
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "success": True,
-                "request_id": "abc123-def456-ghi789",
-                "metadata": {
-                    "email": "usuario@ejemplo.com",
-                    "year": 2024,
-                    "month": "Marzo",
-                    "processed_at": "2024-01-15T10:30:00Z"
-                },
-                "pdf_info": {
-                    "filename": "documento.pdf",
-                    "total_pages": 5,
-                    "pages_processed": 5
-                },
-                "results": [],
-                "files_saved": [
-                    {"type": "raw", "path": "output/api/documento_page_1_raw.json"},
-                    {"type": "structured", "path": "output/api/documento_page_1_structured.json"}
-                ],
-                "processing_time_seconds": 45.2,
-                "download_url": "/public/documento_20240115_103000_abc12345.zip"
-            }
-        }
+
+
+class ProcessStatusResponse(BaseModel):
+    """Respuesta del estado de procesamiento."""
+    success: bool
+    request_id: str
+    status: str  # "queued" | "processing" | "completed" | "failed"
+    progress: int  # 0-100
+    message: str
+    pages_processed: Optional[int] = None
+    processing_time: Optional[float] = None
+    download_url: Optional[str] = None
+    excel_download_url: Optional[str] = None
+    error: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):
@@ -269,7 +259,8 @@ class PeriodoResponse(BaseModel):
 class PeriodosListResponse(BaseModel):
     """Lista de periodos."""
     success: bool
-    total: int
+    totalPeriodos: int  # Total de periodos (sin paginación)
+    paginas: int  # Total de páginas
     periodos: List[PeriodoInfo]
 
 

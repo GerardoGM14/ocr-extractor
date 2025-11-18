@@ -21,6 +21,7 @@ from starlette.requests import Request
 
 from .models import (
     ProcessPDFResponse,
+    ProcessStatusResponse,
     ErrorResponse,
     HealthResponse,
     PageResult,
@@ -65,6 +66,7 @@ from .dependencies import (
     get_periodo_manager,
     get_database_service
 )
+from .processing_worker import get_worker_manager, ProcessingJob
 from .middleware import AuthMiddleware
 
 # Configurar logging
@@ -86,10 +88,15 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS middleware (permitir todos los orígenes por ahora)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar orígenes reales
+    allow_origins=[
+        "https://newmont-pdf.netlify.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8080",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -255,10 +262,13 @@ async def process_pdf(
     periodo_id: Optional[str] = Form(default=None, description="ID del periodo para asociar el archivo procesado")
 ):
     """
-    Procesa un PDF que fue previamente subido con upload-pdf.
+    Procesa un PDF que fue previamente subido con upload-pdf (ASÍNCRONO).
     
     Primero debes subir el PDF con POST /api/v1/upload-pdf y obtener el file_id.
     Luego usa ese file_id aquí para procesarlo.
+    
+    Este endpoint ahora es ASÍNCRONO: responde inmediatamente con un request_id.
+    Usa GET /api/v1/process-status/{request_id} para consultar el estado del procesamiento.
     
     Para ver la lista de archivos disponibles, usa GET /api/v1/uploaded-files.
     
@@ -269,10 +279,9 @@ async def process_pdf(
         periodo_id: ID del periodo para asociar el archivo procesado (opcional)
         
     Returns:
-        ProcessPDFResponse con resultados del procesamiento
+        ProcessPDFResponse con request_id y status inicial (queued/processing)
     """
     request_id = str(uuid.uuid4())
-    start_time = time.time()
     
     upload_manager = get_upload_manager()
     
@@ -294,7 +303,6 @@ async def process_pdf(
         )
     
     # Obtener datos del PDF subido
-    temp_pdf_path = pdf_path
     pdf_filename = metadata["filename"]
     email = metadata["metadata"]["email"]
     year = metadata["metadata"]["year"]
@@ -307,485 +315,145 @@ async def process_pdf(
             detail={"error": f"Correo no autorizado: {email}. Acceso denegado para procesar este archivo."}
         )
     
-    logger.info(f"[{request_id}] Procesando PDF subido - file_id: {file_id}")
+    logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento - file_id: {file_id}")
     logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
     
-    # Continuar con el procesamiento (ambos modos convergen aquí)
-    try:
-        
-        # Obtener servicios
-        ocr_extractor = get_ocr_extractor()
-        file_manager = get_file_manager()
-        
-        # Crear callback para mostrar progreso detallado en consola (como batch)
-        total_pages_estimate = None
-        pages_processed = 0
-        start_processing_time = time.time()
-        
-        def progress_callback(message: str, percentage: Optional[int]):
-            """Callback que imprime progreso en consola como batch_processor."""
-            nonlocal pages_processed, total_pages_estimate
-            
-            if "dividido en" in message.lower() and "página" in message.lower():
-                # Extraer número de páginas del mensaje
-                import re
-                match = re.search(r'(\d+)', message)
-                if match:
-                    total_pages_estimate = int(match.group(1))
-                    print(f"\n[{request_id[:8]}] PDF dividido en {total_pages_estimate} página(s)")
-                    logger.info(f"[{request_id}] PDF dividido en {total_pages_estimate} páginas")
-            
-            if percentage is not None and total_pages_estimate:
-                elapsed = time.time() - start_processing_time
-                
-                # Mostrar barra de progreso como en batch
-                bar_length = 40
-                filled = int(bar_length * percentage / 100)
-                bar = "=" * filled + "-" * (bar_length - filled)
-                
-                if pages_processed > 0:
-                    avg_time_per_page = elapsed / pages_processed
-                    remaining_pages = total_pages_estimate - pages_processed
-                    estimated_remaining = avg_time_per_page * remaining_pages
-                    print(f"\r[{bar}] {percentage}% - {message} - Tiempo restante: {estimated_remaining:.1f}s", end="", flush=True)
-                else:
-                    print(f"\r[{bar}] {percentage}% - {message}", end="", flush=True)
-                
-                if "completada" in message.lower():
-                    pages_processed += 1
-            else:
-                # Mensajes sin porcentaje
-                if message:
-                    print(f"  → {message}")
-        
-        # Mostrar inicio del procesamiento
-        pdf_name = Path(pdf_filename).stem if pdf_filename else "unknown"
-        print(f"\n[{request_id[:8]}] Procesando: {pdf_name}")
-        print(f"[{request_id[:8]}] Iniciando procesamiento OCR...")
-        logger.info(f"[{request_id}] Iniciando procesamiento OCR para: {pdf_name}")
-        
-        # Crear wrapper de stdout que filtra mensajes de error pero permite progreso
-        import sys
-        from io import StringIO
-        
-        class FilteredOutput:
-            """Filtra mensajes de error y warnings pero permite progreso."""
-            def __init__(self, original_stdout):
-                self.original_stdout = original_stdout
-                self.buffer = StringIO()
-            
-            def write(self, text):
-                text_lower = text.lower()
-                
-                # Filtrar TODOS los mensajes de error (sin excepciones)
-                # Incluye: "Error procesando", "Error en OCR", "Error X"
-                is_error = (
-                    "error" in text_lower or
-                    "could not convert" in text_lower or
-                    "valueerror" in text_lower or
-                    "exception" in text_lower
-                )
-                
-                # Filtrar warnings de archivos temporales
-                is_warning_file = (
-                    "warning" in text_lower and 
-                    ("archivo temporal" in text_lower or "no se pudo eliminar" in text_lower)
-                )
-                
-                # Permitir solo mensajes de progreso y completado
-                is_allowed = (
-                    any(allowed in text_lower for allowed in [
-                        "procesando:", "iniciando", "dividido en", "página", 
-                        "completada", "procesamiento completado", "procesado exitosamente",
-                        "[", "%", "tiempo restante", "tiempo:", "páginas procesadas"
-                    ]) or
-                    "=" in text or  # Barra de progreso
-                    text.strip().startswith("→")  # Mensajes con flecha
-                )
-                
-                # Si NO es error/warning Y es un mensaje permitido, mostrar
-                if not is_error and not is_warning_file and (is_allowed or not text.strip()):
-                    self.original_stdout.write(text)
-                    self.original_stdout.flush()
-                # Los mensajes de error/warning se descartan
-                self.buffer.write(text)
-            
-            def flush(self):
-                self.original_stdout.flush()
-                self.buffer.flush()
-        
-        # Procesar PDF capturando errores pero no mostrándolos
-        # Solo mostraremos error si no se procesaron todas las páginas
-        filtered_stdout = FilteredOutput(sys.stdout)
-        original_stdout = sys.stdout
-        
-        try:
-            # Redirigir stdout y stderr temporalmente para filtrar errores
-            sys.stdout = filtered_stdout
-            sys.stderr = filtered_stdout  # También capturar stderr
-            results = ocr_extractor.process_pdf(
-                str(temp_pdf_path),
-                progress_callback=progress_callback,
-                max_pages=None  # Procesar todas las páginas
-            )
-        except Exception as e:
-            # Capturar excepción pero no mostrar error todavía
-            # Solo verificaremos si se procesaron todas las páginas
-            results = []
-            # El error se registra pero no se muestra al usuario
-            logger.warning(f"[{request_id}] Excepción durante procesamiento (ocultada): {type(e).__name__}")
-        finally:
-            # Restaurar stdout y stderr originales
-            sys.stdout = original_stdout
-            sys.stderr = sys.__stderr__  # Restaurar stderr original
-        
-        # Verificar páginas faltantes - mostrar en consola pero siempre retornar éxito en HTTP
-        results_count = len(results) if results else 0
-        
-        # Mostrar error en CONSOLA si faltan páginas (pero NO retornar error HTTP)
-        if total_pages_estimate is not None and results_count < total_pages_estimate:
-            # Mostrar en consola
-            print(f"\n[{request_id[:8]}] ✗ [ERROR] Solo se procesaron {results_count}/{total_pages_estimate} páginas")
-            logger.error(f"[{request_id}] Error: Solo se procesaron {results_count}/{total_pages_estimate} páginas")
-        
-        # Si no hay resultados, mostrar mensaje en consola pero seguir retornando éxito
-        if not results or results_count == 0:
-            print(f"\n[{request_id[:8]}] ✗ [ERROR] No se procesaron páginas")
-            logger.error(f"[{request_id}] Error: No se procesaron páginas")
-            results = []  # Asegurar lista vacía
-        
-        # Mostrar mensaje de éxito/proceso en consola
-        if results:
-            print(f"\n[{request_id[:8]}] ✓ PDF procesado: {pdf_name}")
-            print(f"[{request_id[:8]}]   Páginas procesadas: {len(results)}")
-            elapsed_processing = time.time() - start_processing_time
-            print(f"[{request_id[:8]}]   Tiempo: {elapsed_processing:.2f} segundos")
-        else:
-            # Si no hay resultados, mostrar mensaje genérico
-            print(f"\n[{request_id[:8]}] ✓ Procesamiento completado: {pdf_name}")
-            elapsed_processing = time.time() - start_processing_time
-            print(f"[{request_id[:8]}]   Tiempo: {elapsed_processing:.2f} segundos")
-        
-        # Preparar metadata para incluir en JSONs
-        api_metadata = {
+    # Crear job y agregarlo a la cola
+    worker_manager = get_worker_manager()
+    
+    job = ProcessingJob(
+        request_id=request_id,
+        file_id=file_id,
+        pdf_path=Path(pdf_path),
+        metadata={
+            "filename": pdf_filename,
             "email": email,
             "year": year,
-            "month": normalized_month,
-            "request_id": request_id,
-            "processed_at": datetime.now().isoformat(),
-            "api_version": "1.0.0"
-        }
+            "month": normalized_month
+        },
+        save_files=save_files,
+        output_folder=output_folder,
+        periodo_id=periodo_id
+    )
+    
+    # Agregar job a la cola
+    worker_manager.add_job(job)
+    
+    # Determinar estado inicial (puede ser "queued" o "processing" si hay workers disponibles)
+    initial_status = "queued"
+    if worker_manager.get_active_jobs_count() < worker_manager.max_workers:
+        initial_status = "processing"
+        job.status = "processing"
+        job.message = "Iniciando procesamiento..."
+    
+    # Retornar respuesta inmediata
+    return ProcessPDFResponse(
+        success=True,
+        request_id=request_id,
+        status=initial_status,
+        message="PDF agregado a cola de procesamiento. Usa GET /api/v1/process-status/{request_id} para consultar el estado."
+    )
+
+
+@app.get("/api/v1/process-status/{request_id}", response_model=ProcessStatusResponse, tags=["Processing"])
+async def get_process_status(request_id: str):
+    """
+    Consulta el estado de un procesamiento de PDF.
+    
+    Args:
+        request_id: ID del request de procesamiento (obtenido de POST /api/v1/process-pdf)
         
-        # Si se proporcionó periodo_id, agregarlo a la metadata y asociar al periodo
-        if periodo_id:
-            api_metadata["periodo_id"] = periodo_id
-            try:
-                periodo_manager = get_periodo_manager()
-                # Verificar que el periodo existe
-                periodo = periodo_manager.get_periodo(periodo_id)
-                if periodo:
-                    # Asociar el request_id al periodo
-                    periodo_manager.add_archivo_to_periodo(periodo_id, request_id)
-                    logger.info(f"[{request_id}] Archivo asociado al periodo {periodo_id}")
-                else:
-                    logger.warning(f"[{request_id}] Periodo {periodo_id} no encontrado, no se asoció el archivo")
-            except Exception as e:
-                logger.error(f"[{request_id}] Error asociando archivo al periodo: {e}")
-                # No fallar el procesamiento si hay error al asociar al periodo
-        
-        # Agregar metadata a los JSONs procesados
-        processed_results = []
-        files_saved = []
-        
-        for page_result in results:
-            page_num = page_result.get("page_number")
-            
-            # Agregar metadata a json_1_raw
-            if "json_1_raw" in page_result:
-                page_result["json_1_raw"]["metadata"].update(api_metadata)
-            
-            # Agregar metadata a json_2_structured
-            if "json_2_structured" in page_result:
-                if "metadata" not in page_result["json_2_structured"]:
-                    page_result["json_2_structured"]["metadata"] = {}
-                page_result["json_2_structured"]["metadata"].update(api_metadata)
-            
-            # Guardar archivos si está habilitado
-            if save_files:
-                # Determinar carpeta de salida
-                base_output = file_manager.get_output_folder() or "./output"
-                api_output_folder = Path(base_output) / output_folder
-                api_output_folder.mkdir(parents=True, exist_ok=True)
-                
-                # Guardar JSON 1 (raw)
-                raw_subfolder = api_output_folder / "raw"
-                raw_subfolder.mkdir(parents=True, exist_ok=True)
-                raw_filename = f"{pdf_name}_page_{page_num}_raw.json"
-                raw_path = raw_subfolder / raw_filename
-                
-                import json
-                with open(raw_path, 'w', encoding='utf-8') as f:
-                    json.dump(page_result["json_1_raw"], f, ensure_ascii=False, indent=2)
-                
-                files_saved.append({
-                    "type": "raw",
-                    "path": str(raw_path),
-                    "page": page_num
-                })
-                
-                # Guardar JSON 2 (structured)
-                struct_subfolder = api_output_folder / "structured"
-                struct_subfolder.mkdir(parents=True, exist_ok=True)
-                struct_filename = f"{pdf_name}_page_{page_num}_structured.json"
-                struct_path = struct_subfolder / struct_filename
-                
-                with open(struct_path, 'w', encoding='utf-8') as f:
-                    json.dump(page_result["json_2_structured"], f, ensure_ascii=False, indent=2)
-                
-                files_saved.append({
-                    "type": "structured",
-                    "path": str(struct_path),
-                    "page": page_num
-                })
-            
-            # Crear PageResult para respuesta
-            processed_results.append(
-                PageResult(
-                    page_number=page_num,
-                    json_1_raw=page_result["json_1_raw"],
-                    json_2_structured=page_result["json_2_structured"]
-                )
-            )
-        
-        processing_time = time.time() - start_time
-        
-        logger.info(
-            f"[{request_id}] Procesamiento completado: "
-            f"{len(processed_results)} páginas en {processing_time:.2f}s"
+    Returns:
+        ProcessStatusResponse con estado actual del procesamiento
+    """
+    worker_manager = get_worker_manager()
+    job = worker_manager.get_job_status(request_id)
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"Request ID '{request_id}' no encontrado. Verifica que el ID sea correcto."}
         )
+    
+    return ProcessStatusResponse(
+        success=True,
+        request_id=job.request_id,
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        pages_processed=job.pages_processed,
+        processing_time=job.processing_time,
+        download_url=job.download_url,
+        excel_download_url=job.excel_download_url,
+        error=job.error
+    )
+
+
+@app.get("/api/v1/uploaded-files", response_model=UploadedFilesResponse, tags=["Files"])
+async def get_uploaded_files():
+    """
+    Obtiene lista de archivos subidos que NO han sido procesados.
+    Solo muestra archivos de correos autorizados.
+    
+    Returns:
+        Lista de archivos subidos sin procesar (solo correos autorizados)
+    """
+    upload_manager = get_upload_manager()
+    files = upload_manager.list_uploaded_files(processed=False)
+    
+    # Filtrar solo archivos de correos autorizados
+    file_info_list = [
+        UploadedFileInfo(
+            file_id=f["file_id"],
+            filename=f["filename"],
+            uploaded_at=f["uploaded_at"],
+            file_size_bytes=f["file_size_bytes"],
+            metadata=f["metadata"],
+            processed=f.get("processed", False)
+        )
+        for f in files
+        if is_email_allowed(f.get("metadata", {}).get("email", ""))
+    ]
+    
+    return UploadedFilesResponse(
+        success=True,
+        total=len(file_info_list),
+        files=file_info_list
+    )
+
+
+@app.get("/api/v1/process-status/{request_id}", response_model=ProcessStatusResponse, tags=["Processing"])
+async def get_process_status(request_id: str):
+    """
+    Consulta el estado de un procesamiento de PDF.
+    
+    Args:
+        request_id: ID del request de procesamiento (obtenido de POST /api/v1/process-pdf)
         
-        # Zipear carpeta api y generar URL pública
-        # El ZIP se guarda en public/ y se genera el enlace de descarga
-        download_url = None
-        zip_filename = None
-        excel_download_url = None
-        if save_files:
-            try:
-                archive_manager = get_archive_manager()
-                file_manager = get_file_manager()
-                
-                # Obtener carpeta output/api
-                base_output = file_manager.get_output_folder() or "./output"
-                api_folder = Path(base_output) / output_folder
-                
-                # Verificar que la carpeta existe y tiene archivos JSON
-                json_files = list(api_folder.rglob("*.json")) if api_folder.exists() else []
-                
-                if json_files:
-                    # ============================================================
-                    # PASO 1: Guardar en Base de Datos ANTES de crear ZIP/Excel
-                    # ============================================================
-                    db_service = get_database_service()
-                    db_saved_successfully = False
-                    
-                    # Obtener solo los JSONs structured (no los raw)
-                    structured_folder = api_folder / "structured"
-                    structured_json_files = []
-                    if structured_folder.exists():
-                        structured_json_files = list(structured_folder.glob("*_structured.json"))
-                    
-                    if structured_json_files:
-                        try:
-                            logger.info(f"[{request_id}] Guardando {len(structured_json_files)} archivos en BD...")
-                            db_saved_successfully = db_service.save_structured_data(
-                                request_id=request_id,
-                                json_files=structured_json_files
-                            )
-                            
-                            if not db_saved_successfully:
-                                logger.warning(
-                                    f"[{request_id}] ⚠ No se guardó en BD correctamente. "
-                                    "Los JSONs NO se eliminarán por seguridad."
-                                )
-                                print(f"[{request_id[:8]}] ⚠ Advertencia: No se guardó en BD. JSONs conservados.")
-                        except Exception as e:
-                            logger.error(f"[{request_id}] Error guardando en BD: {e}")
-                            print(f"[{request_id[:8]}] ✗ Error guardando en BD: {e}")
-                            # No continuar si falla el guardado en BD
-                            db_saved_successfully = False
-                    else:
-                        # Si no hay JSONs structured, considerar como "guardado" (no hay nada que guardar)
-                        logger.info(f"[{request_id}] No hay JSONs structured para guardar en BD")
-                        db_saved_successfully = True
-                    
-                    # ============================================================
-                    # PASO 2: Crear ZIP y Excel (solo si BD fue exitoso o está deshabilitado)
-                    # ============================================================
-                    if db_saved_successfully or not db_service.is_enabled():
-                        # Crear nombre único para el zip
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        zip_filename = f"{pdf_name}_{timestamp}_{request_id[:8]}.zip"
-                        
-                        # Zipear carpeta (se guarda en public/)
-                        zip_path = archive_manager.zip_folder(api_folder, zip_filename)
-                        
-                        # Verificar que el ZIP se creó correctamente en public/
-                        if zip_path.exists():
-                            # Generar URL pública para descargar desde public/
-                            download_url = archive_manager.get_public_url(zip_path)
-                            
-                            # Generar Excel consolidado (igual que el ZIP)
-                            excel_filename = None
-                            excel_download_url = None
-                            try:
-                                logger.info(f"[{request_id}] Iniciando generación de Excel...")
-                                excel_filename, excel_download_url = await _generate_excel_for_request(
-                                    request_id=request_id,
-                                    pdf_name=pdf_name,
-                                    timestamp=timestamp,
-                                    archive_manager=archive_manager,
-                                    file_manager=file_manager
-                                )
-                                if excel_filename:
-                                    logger.info(f"[{request_id}] Excel creado en public/: {excel_filename}")
-                                    print(f"[{request_id[:8]}] ✓ Archivo Excel creado: {excel_filename}")
-                                    if excel_download_url:
-                                        print(f"[{request_id[:8]}] ✓ URL de descarga Excel: {excel_download_url}")
-                                else:
-                                    logger.warning(f"[{request_id}] Excel no se generó (retornó None)")
-                                    print(f"[{request_id[:8]}] ⚠ Advertencia: Excel no se generó")
-                            except Exception as e:
-                                # No fallar si hay error al generar Excel, solo log
-                                logger.error(f"[{request_id}] Error creando Excel: {e}")
-                                import traceback
-                                logger.debug(f"[{request_id}] Traceback Excel: {traceback.format_exc()}")
-                                print(f"[{request_id[:8]}] ✗ Error generando Excel: {e}")
-                            
-                            # Guardar relación file_id -> zip y excel
-                            upload_manager = get_upload_manager()
-                            upload_manager.mark_as_processed(file_id, zip_filename, download_url, request_id, excel_filename, excel_download_url)
-                            
-                            logger.info(f"[{request_id}] ZIP creado en public/: {zip_path.name}")
-                            logger.info(f"[{request_id}] URL de descarga: {download_url}")
-                            print(f"[{request_id[:8]}] ✓ Archivo ZIP creado: {zip_path.name}")
-                            print(f"[{request_id[:8]}] ✓ URL de descarga: {download_url}")
-                            
-                            # ============================================================
-                            # PASO 3: Limpiar archivos JSON SOLO si BD fue exitoso
-                            # ============================================================
-                            if db_saved_successfully:
-                                try:
-                                    raw_folder = api_folder / "raw"
-                                    structured_folder = api_folder / "structured"
-                                    
-                                    deleted_count = 0
-                                    
-                                    # Eliminar archivos en raw/
-                                    if raw_folder.exists():
-                                        for json_file in raw_folder.glob("*.json"):
-                                            try:
-                                                json_file.unlink()
-                                                deleted_count += 1
-                                            except Exception as e:
-                                                logger.warning(f"[{request_id}] No se pudo eliminar {json_file}: {e}")
-                                    
-                                    # Eliminar archivos en structured/
-                                    if structured_folder.exists():
-                                        for json_file in structured_folder.glob("*.json"):
-                                            try:
-                                                json_file.unlink()
-                                                deleted_count += 1
-                                            except Exception as e:
-                                                logger.warning(f"[{request_id}] No se pudo eliminar {json_file}: {e}")
-                                    
-                                    if deleted_count > 0:
-                                        logger.info(f"[{request_id}] Archivos JSON eliminados: {deleted_count} archivos")
-                                        print(f"[{request_id[:8]}] ✓ Archivos JSON eliminados: {deleted_count} archivos")
-                                except Exception as e:
-                                    # No fallar si hay error al limpiar, solo log
-                                    logger.warning(f"[{request_id}] Error limpiando archivos JSON: {e}")
-                            else:
-                                logger.warning(
-                                    f"[{request_id}] ⚠ JSONs NO eliminados porque no se guardó en BD correctamente"
-                                )
-                                print(f"[{request_id[:8]}] ⚠ JSONs conservados (no se guardó en BD)")
-                        else:
-                            logger.error(f"[{request_id}] ZIP no se creó correctamente: {zip_path}")
-                    else:
-                        logger.error(
-                            f"[{request_id}] ✗ No se crearon ZIP/Excel porque falló el guardado en BD. "
-                            "Los JSONs se conservan por seguridad."
-                        )
-                        print(f"[{request_id[:8]}] ✗ Error: No se guardó en BD. ZIP/Excel no creados.")
-                else:
-                    logger.warning(f"[{request_id}] No se encontraron archivos JSON en {api_folder} para zipear")
-            except Exception as e:
-                # No fallar si hay error al zipear, solo log
-                logger.error(f"[{request_id}] Error creando ZIP: {e}")
-                import traceback
-                logger.debug(f"[{request_id}] Traceback: {traceback.format_exc()}")
-        
-        # Preparar respuesta
-        response_data = {
-            "success": True,
-            "request_id": request_id,
-            "metadata": {
-                "email": email,
-                "year": year,
-                "month": normalized_month,
-                "processed_at": datetime.now().isoformat()
-            },
-            "pdf_info": {
-                "filename": pdf_filename if pdf_filename else "unknown",
-                "total_pages": total_pages_estimate if total_pages_estimate else len(processed_results),
-                "pages_processed": len(processed_results)
-            },
-            "results": processed_results,
-            "files_saved": files_saved if save_files else None,
-            "processing_time_seconds": round(processing_time, 2),
-            "download_url": download_url,
-            "excel_download_url": excel_download_url
-        }
-        
-        response = ProcessPDFResponse(**response_data)
-        
-        return response
-        
-    except HTTPException:
-        # Solo re-lanzar HTTPException si es de validación (400) o similar
-        # NO lanzar error 500 por excepciones de procesamiento
-        raise
-    except Exception as e:
-        # NO mostrar error en consola NI en respuesta HTTP
-        # Log interno solo y retornar éxito con lista vacía
-        logger.warning(f"[{request_id}] Excepción durante procesamiento (ocultada): {type(e).__name__}: {e}")
-        
-        # Retornar respuesta de éxito con lista vacía en lugar de error
-        processing_time = time.time() - start_time
-        
-        return ProcessPDFResponse(
+    Returns:
+        ProcessStatusResponse con estado actual del procesamiento
+    """
+    worker_manager = get_worker_manager()
+    job = worker_manager.get_job_status(request_id)
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"Request ID '{request_id}' no encontrado. Verifica que el ID sea correcto."}
+        )
+    
+    return ProcessStatusResponse(
             success=True,
-            request_id=request_id,
-            metadata={
-                "email": email if email else "unknown",
-                "year": year if year else 0,
-                "month": normalized_month if normalized_month else "unknown",
-                "processed_at": datetime.now().isoformat()
-            },
-            pdf_info={
-                "filename": pdf_filename if pdf_filename else "unknown",
-                "total_pages": 0,
-                "pages_processed": 0
-            },
-            results=[],
-            files_saved=None,
-            processing_time_seconds=round(processing_time, 2),
-            download_url=None
-        )
-    finally:
-        # No eliminar el PDF subido, solo se procesa
-        # El PDF queda en uploads/ para futuras referencias
-        pass
+        request_id=job.request_id,
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        pages_processed=job.pages_processed,
+        processing_time=job.processing_time,
+        download_url=job.download_url,
+        excel_download_url=job.excel_download_url,
+        error=job.error
+    )
 
 
 @app.get("/api/v1/uploaded-files", response_model=UploadedFilesResponse, tags=["Files"])
@@ -1280,198 +948,8 @@ async def get_learning_suggestions():
         )
 
 
-async def _generate_excel_for_request(
-    request_id: str,
-    pdf_name: str,
-    timestamp: str,
-    archive_manager,
-    file_manager
-) -> tuple[Optional[str], Optional[str]]:
-    """
-    Genera un archivo Excel consolidado para un request_id.
-    SIEMPRE genera el Excel, incluso si no hay datos (solo con encabezados).
-    
-    Args:
-        request_id: ID del procesamiento
-        pdf_name: Nombre del PDF
-        timestamp: Timestamp para el nombre del archivo
-        archive_manager: Instancia de ArchiveManager
-        file_manager: Instancia de FileManager
-        
-    Returns:
-        Tupla (excel_filename, excel_download_url) o (None, None) solo si hay error crítico
-    """
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment
-        from openpyxl.utils import get_column_letter
-        
-        # Buscar todos los JSONs estructurados que tengan este request_id
-        base_output = file_manager.get_output_folder() or "./output"
-        structured_folder = Path(base_output) / "api" / "structured"
-        
-        # Crear workbook de Excel (siempre se crea)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Datos Consolidados"
-        
-        # Estilos
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF", size=11)
-        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        
-        # Diccionario para almacenar todas las tablas consolidadas
-        all_tables = {}
-        all_columns = set()
-        
-        # Lista de campos estándar conocidos (por si no hay JSONs o están vacíos)
-        standard_fields = {
-            "hoja",  # Siempre presente
-            # Campos comunes de mcomprobante
-            "tNumero", "nPrecioTotal", "tFecha", "tRazonSocial",
-            # Campos comunes de mcomprobante_detalle
-            "tDescripcion", "nCantidad", "nPrecioUnitario", "nImporte",
-            # Campos comunes de mresumen
-            "tConcepto", "nMonto", "tMoneda",
-            # Campos comunes de mproveedor
-            "tRazonSocial", "tRUC", "tDireccion",
-            # Campos comunes de mjornada
-            "tEmpleado", "nHoras", "tFechaTrabajo"
-        }
-        
-        # Buscar JSONs con este request_id (si la carpeta existe)
-        json_files = []
-        if structured_folder.exists():
-            all_json_files = sorted(structured_folder.glob("*_structured.json"))
-            
-            for json_file in all_json_files:
-                try:
-                    with open(json_file, 'r', encoding='utf-8') as f:
-                        json_data = json.load(f)
-                    metadata = json_data.get("metadata", {})
-                    if metadata.get("request_id") == request_id:
-                        json_files.append(json_file)
-                except Exception:
-                    continue
-        
-        # Procesar cada JSON estructurado (si existen)
-        for json_file in json_files:
-            try:
-                # Extraer número de página
-                page_match = json_file.stem.split("_page_")
-                if len(page_match) >= 2:
-                    page_num_str = page_match[1].replace("_structured", "")
-                    try:
-                        page_num = int(page_num_str)
-                    except ValueError:
-                        page_num = 0
-                else:
-                    page_num = 0
-                
-                # Leer JSON
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
-                
-                # Obtener additional_data
-                additional_data = json_data.get("additional_data", {})
-                
-                # Procesar cada tabla
-                for table_name, table_data in additional_data.items():
-                    if not isinstance(table_data, list):
-                        continue
-                    
-                    if table_name not in all_tables:
-                        all_tables[table_name] = []
-                    
-                    for record in table_data:
-                        if isinstance(record, dict):
-                            record_with_hoja = {}
-                            
-                            for key, value in record.items():
-                                if isinstance(value, (list, tuple)):
-                                    record_with_hoja[key] = ", ".join(str(v) for v in value) if value else ""
-                                elif isinstance(value, dict):
-                                    record_with_hoja[key] = json.dumps(value, ensure_ascii=False)
-                                else:
-                                    record_with_hoja[key] = value
-                            
-                            record_with_hoja["hoja"] = f"{pdf_name} - Página {page_num}"
-                            all_tables[table_name].append(record_with_hoja)
-                            
-                            # Agregar todas las columnas encontradas
-                            all_columns.update(record_with_hoja.keys())
-            except Exception:
-                continue
-        
-        # Si no hay columnas de datos, usar campos estándar conocidos
-        if not all_columns:
-            all_columns = standard_fields
-        
-        # Consolidar todas las tablas en una sola lista
-        all_records = []
-        for table_name, records in all_tables.items():
-            all_records.extend(records)
-        
-        # Ordenar columnas (hoja siempre primero)
-        sorted_columns = sorted([c for c in all_columns if c != "hoja"])
-        column_order = ["hoja"] + sorted_columns
-        
-        # Escribir encabezados (siempre se escriben, aunque no haya datos)
-        row = 1
-        for col_idx, col_name in enumerate(column_order, start=1):
-            cell = ws.cell(row=row, column=col_idx, value=col_name)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = header_alignment
-        
-        # Escribir datos (si hay)
-        row = 2
-        for record in all_records:
-            if isinstance(record, dict):
-                for col_idx, col_name in enumerate(column_order, start=1):
-                    value = record.get(col_name, "")
-                    if value is None:
-                        value = ""
-                    ws.cell(row=row, column=col_idx, value=value)
-                row += 1
-        
-        # Ajustar ancho de columnas
-        for col_idx, col_name in enumerate(column_order, start=1):
-            max_length = len(str(col_name))
-            if row > 2:  # Solo si hay datos
-                for row_idx in range(2, row):
-                    cell_value = ws.cell(row=row_idx, column=col_idx).value
-                    if cell_value:
-                        max_length = max(max_length, len(str(cell_value)))
-            adjusted_width = min(max(max_length + 2, 10), 50)
-            ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
-        
-        # Guardar Excel en carpeta pública (SIEMPRE se guarda, aunque esté vacío)
-        excel_filename = f"{pdf_name}_consolidado_{timestamp}_{request_id[:8]}.xlsx"
-        excel_path = archive_manager.public_folder / excel_filename
-        
-        # Asegurar que la carpeta pública existe
-        excel_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Guardar el Excel
-        wb.save(excel_path)
-        
-        # Verificar que se guardó correctamente
-        if not excel_path.exists():
-            logger.error(f"Excel no se guardó correctamente: {excel_path}")
-            return None, None
-        
-        # Generar URL pública
-        excel_download_url = archive_manager.get_public_url(excel_path)
-        
-        logger.info(f"[{request_id}] Excel generado exitosamente: {excel_filename} ({len(all_records)} registros, {len(column_order)} columnas)")
-        
-        return excel_filename, excel_download_url
-    except Exception as e:
-        logger.error(f"Error generando Excel para request_id {request_id}: {e}")
-        import traceback
-        logger.debug(f"Traceback Excel: {traceback.format_exc()}")
-        return None, None
+# Función movida a excel_generator.py para evitar problemas de imports
+from .excel_generator import generate_excel_for_request as _generate_excel_for_request
 
 
 @app.get("/api/v1/export-excel/{request_id}", tags=["Export"])
@@ -2025,14 +1503,25 @@ async def create_periodo(request: CreatePeriodoRequest):
         
         periodo_data = periodo_manager.create_periodo(request.periodo, request.tipo)
         
+        # Función helper para formatear fechas
+        def format_date(date_str: Optional[str]) -> Optional[str]:
+            """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
+            if not date_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                return dt.strftime("%d/%m/%Y, %H:%M")
+            except Exception:
+                return date_str  # Si falla, retornar original
+        
         periodo_info = PeriodoInfo(
             periodo_id=periodo_data["periodo_id"],
             periodo=periodo_data["periodo"],
             tipo=periodo_data["tipo"],
             estado=periodo_data["estado"],
             registros=periodo_data["registros"],
-            ultimo_procesamiento=periodo_data.get("ultimo_procesamiento"),
-            created_at=periodo_data["created_at"]
+            ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
+            created_at=format_date(periodo_data.get("created_at"))
         )
         
         return PeriodoResponse(success=True, periodo=periodo_info)
@@ -2055,22 +1544,46 @@ async def list_periodos(
     tipo: Optional[str] = Query(None, description="Filtrar por tipo (onshore/offshore)"),
     estado: Optional[str] = Query(None, description="Filtrar por estado"),
     search: Optional[str] = Query(None, description="Buscar en periodo"),
-    limit: int = Query(15, ge=1, le=100, description="Límite de resultados"),
-    offset: int = Query(0, ge=0, description="Offset para paginación")
+    limit: int = Query(15, ge=1, le=100, description="Límite de resultados por página"),
+    page: int = Query(1, ge=1, description="Número de página (empieza desde 1)")
 ):
     """
-    Lista periodos con filtros opcionales.
+    Lista periodos con filtros opcionales y paginación.
+    
+    Args:
+        tipo: Filtrar por tipo (onshore/offshore)
+        estado: Filtrar por estado
+        search: Buscar en periodo
+        limit: Límite de resultados por página (default: 15)
+        page: Número de página, empieza desde 1 (default: 1)
     
     Returns:
-        Lista de periodos
+        Lista de periodos con información de paginación
     """
     try:
+        import math
+        
         periodo_manager = get_periodo_manager()
         periodos_data = periodo_manager.list_periodos(tipo=tipo, estado=estado, search=search)
         
-        # Paginación
-        total = len(periodos_data)
+        # Calcular paginación (page empieza desde 1)
+        total_periodos = len(periodos_data)
+        offset = (page - 1) * limit
+        paginas = math.ceil(total_periodos / limit) if total_periodos > 0 else 1
+        
+        # Aplicar paginación
         periodos_data = periodos_data[offset:offset + limit]
+        
+        # Función helper para formatear fechas
+        def format_date(date_str: Optional[str]) -> Optional[str]:
+            """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
+            if not date_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                return dt.strftime("%d/%m/%Y, %H:%M")
+            except Exception:
+                return date_str  # Si falla, retornar original
         
         periodos = [
             PeriodoInfo(
@@ -2079,15 +1592,16 @@ async def list_periodos(
                 tipo=p["tipo"],
                 estado=p["estado"],
                 registros=p["registros"],
-                ultimo_procesamiento=p.get("ultimo_procesamiento"),
-                created_at=p["created_at"]
+                ultimo_procesamiento=format_date(p.get("ultimo_procesamiento")),
+                created_at=format_date(p.get("created_at"))
             )
             for p in periodos_data
         ]
         
         return PeriodosListResponse(
             success=True,
-            total=total,
+            totalPeriodos=total_periodos,
+            paginas=paginas,
             periodos=periodos
         )
     
@@ -2156,14 +1670,25 @@ async def get_periodo_detail(periodo_id: str):
             if archivo_info:
                 archivos.append(archivo_info)
         
+        # Función helper para formatear fechas
+        def format_date(date_str: Optional[str]) -> Optional[str]:
+            """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
+            if not date_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                return dt.strftime("%d/%m/%Y, %H:%M")
+            except Exception:
+                return date_str  # Si falla, retornar original
+        
         periodo_info = PeriodoInfo(
             periodo_id=periodo_data["periodo_id"],
             periodo=periodo_data["periodo"],
             tipo=periodo_data["tipo"],
             estado=periodo_data["estado"],
             registros=periodo_data["registros"],
-            ultimo_procesamiento=periodo_data.get("ultimo_procesamiento"),
-            created_at=periodo_data["created_at"]
+            ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
+            created_at=format_date(periodo_data.get("created_at"))
         )
         
         return PeriodoDetailResponse(
@@ -2205,14 +1730,25 @@ async def update_periodo(periodo_id: str, updates: Dict[str, Any]):
                 detail=f"Periodo {periodo_id} no encontrado"
             )
         
+        # Función helper para formatear fechas
+        def format_date(date_str: Optional[str]) -> Optional[str]:
+            """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
+            if not date_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                return dt.strftime("%d/%m/%Y, %H:%M")
+            except Exception:
+                return date_str  # Si falla, retornar original
+        
         periodo_info = PeriodoInfo(
             periodo_id=periodo_data["periodo_id"],
             periodo=periodo_data["periodo"],
             tipo=periodo_data["tipo"],
             estado=periodo_data["estado"],
             registros=periodo_data["registros"],
-            ultimo_procesamiento=periodo_data.get("ultimo_procesamiento"),
-            created_at=periodo_data["created_at"]
+            ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
+            created_at=format_date(periodo_data.get("created_at"))
         )
         
         return PeriodoResponse(success=True, periodo=periodo_info)
@@ -2349,7 +1885,7 @@ async def bloquear_periodo(periodo_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al bloquear periodo: {str(e)}"
-        )
+    )
 
 
 @app.exception_handler(Exception)

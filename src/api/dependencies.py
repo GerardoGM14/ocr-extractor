@@ -272,11 +272,11 @@ def get_archive_manager() -> ArchiveManager:
             # Obtener carpeta pública y URL base desde config
             api_config = config.get("api", {})
             public_folder = api_config.get("public_folder", "public")
-            base_url = api_config.get("base_url", "http://localhost:8000")
+            base_url = api_config.get("base_url", "https://localhost:8000")
         except Exception:
             # Si hay error, usar defaults
             public_folder = "public"
-            base_url = "http://localhost:8000"
+            base_url = "https://localhost:8000"
         
         _service_cache["archive_manager"] = ArchiveManager(public_folder, base_url)
     

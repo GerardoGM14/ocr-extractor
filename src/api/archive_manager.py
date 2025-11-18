@@ -22,7 +22,7 @@ class ArchiveManager:
     - Generar URLs públicas
     """
     
-    def __init__(self, public_folder: str = "public", base_url: str = "http://localhost:8000"):
+    def __init__(self, public_folder: str = "public", base_url: str = "https://localhost:8000"):
         """
         Inicializa el gestor de archivos.
         

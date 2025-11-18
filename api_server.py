@@ -5,6 +5,7 @@ Ejecutar: python api_server.py
 
 import sys
 import os
+import json
 from pathlib import Path
 
 # Configurar encoding para Windows
@@ -19,19 +20,72 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 import uvicorn
 from src.api.main import app
 
+def load_config():
+    """Carga la configuración desde config.json"""
+    config_path = Path("config/config.json")
+    if not config_path.exists():
+        return {}
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def get_ssl_config():
+    """Obtiene la configuración SSL desde config.json"""
+    config = load_config()
+    api_config = config.get("api", {})
+    ssl_config = api_config.get("ssl", {})
+    
+    if not ssl_config.get("enabled", False):
+        return None, None
+    
+    cert_file = ssl_config.get("cert_file", "ssl_certs/cert.pem")
+    key_file = ssl_config.get("key_file", "ssl_certs/key.pem")
+    
+    cert_path = Path(cert_file)
+    key_path = Path(key_file)
+    
+    if cert_path.exists() and key_path.exists():
+        return str(cert_path), str(key_path)
+    
+    return None, None
+
 if __name__ == "__main__":
     print("=" * 60)
     print("ExtractorOCR API Server")
     print("=" * 60)
-    print("\nServidor iniciando...")
-    print("Documentación disponible en: http://localhost:8000/docs")
-    print("API disponible en: http://localhost:8000/api/v1/")
+    
+    # Verificar configuración SSL
+    cert_path, key_path = get_ssl_config()
+    use_https = cert_path and key_path
+    
+    if use_https:
+        print("\nServidor iniciando con HTTPS...")
+        print("Documentación disponible en: https://localhost:8000/docs")
+        print("API disponible en: https://localhost:8000/api/v1/")
+        print(f"Certificado SSL: {cert_path}")
+    else:
+        print("\nServidor iniciando con HTTP...")
+        print("Documentación disponible en: http://localhost:8000/docs")
+        print("API disponible en: http://localhost:8000/api/v1/")
+        print("\nNOTA: Para habilitar HTTPS, configura 'api.ssl.enabled: true' en config.json")
+        print("      y coloca los certificados en las rutas especificadas.")
+    
     print("\nPresiona Ctrl+C para detener el servidor\n")
     
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        log_level="info"
-    )
+    # Configurar uvicorn
+    uvicorn_config = {
+        "app": app,
+        "host": "0.0.0.0",
+        "port": 8000,
+        "log_level": "info"
+    }
+    
+    if use_https:
+        uvicorn_config["ssl_keyfile"] = key_path
+        uvicorn_config["ssl_certfile"] = cert_path
+    
+    uvicorn.run(**uvicorn_config)
 

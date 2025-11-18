@@ -7,7 +7,12 @@
   "api": {
     "uploads_folder": "uploads",
     "public_folder": "public",
-    "base_url": "http://localhost:8000"
+    "base_url": "https://localhost:8000",
+    "ssl": {
+      "enabled": true,
+      "cert_file": "ssl_certs/cert.pem",
+      "key_file": "ssl_certs/key.pem"
+    }
   },
   "learning": {
     "enabled": true,
