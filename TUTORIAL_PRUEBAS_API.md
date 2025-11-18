@@ -165,10 +165,6 @@ En Swagger UI verás estas secciones:
 3. En `periodo_id`: `2025-10-offshore`
 4. En el body JSON, modifica lo que quieras:
 ```json
-{
-  "estado": "pendiente",
-  "registros": 5
-}
 ```
 5. Haz clic en "Execute"
 

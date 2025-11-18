@@ -1,0 +1,48 @@
+# Entorno virtual
+venv/
+
+# Carpeta de build
+build/ExtractorOCR_Batch/
+dist/
+config/gemini_config.json
+
+# Carpetas con .gitkeep
+learning/knowledge/
+learning/suggestions/
+learning/prompts/
+learning/errors/
+learning/
+
+# Archivos Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Archivos temporales
+*.tmp
+*.temp
+*.log
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de configuración local
+.env
+*.local
+
+# Archivos de salida y procesados
+output/
+processed/
+temp/
+uploads/
+
