@@ -95,24 +95,84 @@ class GeminiService:
         try:
             img = Image.open(image_path)
             
+            # Verificar que la imagen sea válida
+            if img.size[0] == 0 or img.size[1] == 0:
+                print(f"Error: Imagen inválida (tamaño: {img.size})")
+                return {
+                    "success": False,
+                    "error": "Invalid image dimensions",
+                    "text": "",
+                    "timestamp": time.time()
+                }
+            
             # Prompt para OCR
             prompt = self._create_ocr_prompt()
             
-            # Generar contenido
-            response = self.model.generate_content([prompt, img])
+            # Generar contenido con manejo de errores mejorado
+            try:
+                response = self.model.generate_content([prompt, img])
+            except Exception as api_error:
+                error_msg = str(api_error)
+                print(f"Error en llamada a Gemini API: {error_msg}")
+                # Verificar si es un error de timeout o conexión
+                if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
+                    return {
+                        "success": False,
+                        "error": f"API timeout/connection error: {error_msg}",
+                        "text": "",
+                        "timestamp": time.time()
+                    }
+                raise  # Re-lanzar otros errores
             
             # Verificar si hay respuesta válida
             if not response.text:
-                # Verificar finish_reason
+                # Verificar finish_reason para obtener más información
+                error_msg = "Empty response from Gemini"
+                finish_reason = None
+                
+                # Intentar obtener más información del error
                 if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
                     error_msg = f"Content filtered: {response.prompt_feedback.block_reason}"
-                else:
-                    error_msg = "Empty response from Gemini"
+                elif hasattr(response, 'candidates') and response.candidates:
+                    # Verificar finish_reason en candidates
+                    for candidate in response.candidates:
+                        if hasattr(candidate, 'finish_reason'):
+                            finish_reason = candidate.finish_reason
+                            if finish_reason == 'SAFETY':
+                                error_msg = "Content blocked by safety filters"
+                            elif finish_reason == 'RECITATION':
+                                error_msg = "Content blocked due to recitation"
+                            elif finish_reason == 'OTHER':
+                                error_msg = f"Content blocked: {finish_reason}"
+                            break
                 
-                print(f"Warning: {error_msg}")
+                print(f"Warning: {error_msg} (finish_reason: {finish_reason})")
+                # IMPORTANTE: Aunque falle, intentar extraer texto parcial si existe
+                # A veces Gemini puede tener texto en otras partes de la respuesta
+                partial_text = ""
+                if hasattr(response, 'candidates') and response.candidates:
+                    for candidate in response.candidates:
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    partial_text += part.text + "\n"
+                
+                # Si hay texto parcial, usarlo; si no, retornar error pero con texto vacío
+                if partial_text:
+                    cleaned_partial = self._clean_extracted_text(partial_text)
+                    print(f"Info: Se encontró texto parcial ({len(cleaned_partial)} caracteres)")
+                    return {
+                        "success": True,  # Marcar como éxito si hay texto parcial
+                        "text": cleaned_partial,
+                        "model": self.model_name,
+                        "timestamp": time.time(),
+                        "warning": error_msg  # Pero incluir advertencia
+                    }
+                
                 return {
                     "success": False,
                     "error": error_msg,
+                    "text": "",  # Asegurar que siempre haya campo text
                     "timestamp": time.time()
                 }
             
@@ -354,6 +414,17 @@ HIGHLIGHTED/BOXED SECTIONS (HIGH PRIORITY):
 - Examples: "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00" in a red box
 - If you see a calculation with currency symbols and operators (+, -, =), extract it completely
 - Mark these sections clearly in your output if possible (or just extract the text)
+- **ITALIAN INVOICES (FATTURA)**: Pay special attention to red boxes or highlighted areas containing:
+  - Invoice numbers (e.g., "FATTURA NO.: 333/25" in a red box)
+  - Total amounts (e.g., "TOTAL $ 122.94" in a red box)
+  - Any monetary values in colored/highlighted sections
+  - Extract these values with their complete format, including slashes in invoice numbers and decimal points in amounts
+- **ATTACHMENT TO INVOICE DOCUMENTS**: Pay special attention to red boxes or highlighted areas containing:
+  - **"TOTAL AMOUNT IN US$"** values in red boxes at the bottom of tables (e.g., "TOTAL AMOUNT IN US$ 22 180 $ - $ - $ 120.60 $ 120.60" - extract the final "$ 120.60")
+  - **"TOTAL $ XXX.XX"** values in red boxes in summary sections (e.g., "TOTAL $ 122.94")
+  - Table row values with "Total Amount" column (e.g., "Martin Loges ... $ 60.30 $ 60.30")
+  - Extract ALL table rows completely, including Resource, Vendor, Assignment no., Report Number, Date, hrs, rates, and amounts
+  - **CRITICAL**: Values in red boxes are PRIORITY - extract them completely with all decimal places
 
 GL JOURNAL SPECIFIC FIELDS:
 - Source Ref: Extract as document number (tNumero) - usually format like "2336732507B0032"
@@ -418,22 +489,39 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
             retries: Número de reintentos (None usa config)
             
         Returns:
-            Resultado del OCR o None
+            Resultado del OCR (nunca None, siempre retorna dict con al menos error)
         """
         max_retries = retries or self.max_retries
         
+        last_error = None
         for attempt in range(max_retries):
             result = self.extract_text_from_image(image_path)
             
+            # Si hay éxito (incluso con texto parcial), retornar
             if result and result.get("success"):
                 return result
+            
+            # Guardar el último error para retornarlo si todos los intentos fallan
+            if result:
+                last_error = result.get("error", "Unknown error")
+            else:
+                last_error = "OCR returned None"
             
             if attempt < max_retries - 1:
                 wait_time = (attempt + 1) * 2
                 print(f"Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(wait_time)
         
-        return None
+        # IMPORTANTE: Nunca retornar None, siempre retornar un dict con error
+        # Esto asegura que el procesamiento continúe y se genere JSON (aunque vacío)
+        print(f"Error: Todos los reintentos fallaron. Último error: {last_error}")
+        return {
+            "success": False,
+            "error": last_error or "All retry attempts failed",
+            "text": "",  # Asegurar que siempre haya campo text
+            "model": self.model_name,
+            "timestamp": time.time()
+        }
 
     def translate_text(self, text: str, source_language: str = None) -> Optional[str]:
         """

@@ -16,6 +16,7 @@ from ..core.file_manager import FileManager
 from .upload_manager import UploadManager
 from .archive_manager import ArchiveManager
 from .processed_tracker import ProcessedTracker
+from .periodo_manager import PeriodoManager
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +298,24 @@ def get_processed_tracker() -> ProcessedTracker:
         _service_cache["processed_tracker"] = ProcessedTracker()
     
     return _service_cache["processed_tracker"]
+
+
+def get_periodo_manager() -> PeriodoManager:
+    """
+    Obtiene instancia de PeriodoManager (singleton).
+    
+    Returns:
+        Instancia configurada de PeriodoManager
+    """
+    global _service_cache
+    
+    if _service_cache is None:
+        _service_cache = {}
+    
+    if "periodo_manager" not in _service_cache:
+        _service_cache["periodo_manager"] = PeriodoManager()
+    
+    return _service_cache["periodo_manager"]
 
 
 def clear_service_cache():

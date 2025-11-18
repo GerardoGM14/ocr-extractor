@@ -11,7 +11,7 @@ import tempfile
 import logging
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query
@@ -34,7 +34,22 @@ from .models import (
     PromptsResponse,
     ApplyPromptResponse,
     ErrorInfo,
-    PromptVersionInfo
+    PromptVersionInfo,
+    # Dashboard Models
+    DashboardStatsResponse,
+    DashboardAnalyticsResponse,
+    AnalyticsItem,
+    RejectedConceptsResponse,
+    RejectedConcept,
+    # Periodos Models
+    PeriodoInfo,
+    PeriodoArchivoInfo,
+    CreatePeriodoRequest,
+    PeriodoResponse,
+    PeriodosListResponse,
+    PeriodoDetailResponse,
+    PeriodoResumenPSResponse,
+    PeriodoResumenPSItem
 )
 from .dependencies import (
     get_ocr_extractor,
@@ -44,7 +59,8 @@ from .dependencies import (
     get_archive_manager,
     get_processed_tracker,
     is_email_allowed,
-    get_learning_system
+    get_learning_system,
+    get_periodo_manager
 )
 from .middleware import AuthMiddleware
 
@@ -232,7 +248,8 @@ async def process_pdf(
     request: Request,
     file_id: str = Form(..., description="ID del archivo subido (obtener de /api/v1/uploaded-files)"),
     save_files: bool = Form(default=True, description="Guardar archivos en disco"),
-    output_folder: str = Form(default="api", description="Subcarpeta de salida")
+    output_folder: str = Form(default="api", description="Subcarpeta de salida"),
+    periodo_id: Optional[str] = Form(default=None, description="ID del periodo para asociar el archivo procesado")
 ):
     """
     Procesa un PDF que fue previamente subido con upload-pdf.
@@ -246,6 +263,7 @@ async def process_pdf(
         file_id: ID del archivo subido (obligatorio, obtener de upload-pdf)
         save_files: Si guardar archivos en disco (default: True)
         output_folder: Subcarpeta dentro de output/ (default: "api")
+        periodo_id: ID del periodo para asociar el archivo procesado (opcional)
         
     Returns:
         ProcessPDFResponse con resultados del procesamiento
@@ -455,6 +473,23 @@ async def process_pdf(
             "api_version": "1.0.0"
         }
         
+        # Si se proporcionó periodo_id, agregarlo a la metadata y asociar al periodo
+        if periodo_id:
+            api_metadata["periodo_id"] = periodo_id
+            try:
+                periodo_manager = get_periodo_manager()
+                # Verificar que el periodo existe
+                periodo = periodo_manager.get_periodo(periodo_id)
+                if periodo:
+                    # Asociar el request_id al periodo
+                    periodo_manager.add_archivo_to_periodo(periodo_id, request_id)
+                    logger.info(f"[{request_id}] Archivo asociado al periodo {periodo_id}")
+                else:
+                    logger.warning(f"[{request_id}] Periodo {periodo_id} no encontrado, no se asoció el archivo")
+            except Exception as e:
+                logger.error(f"[{request_id}] Error asociando archivo al periodo: {e}")
+                # No fallar el procesamiento si hay error al asociar al periodo
+        
         # Agregar metadata a los JSONs procesados
         processed_results = []
         files_saved = []
@@ -560,6 +595,7 @@ async def process_pdf(
                         excel_filename = None
                         excel_download_url = None
                         try:
+                            logger.info(f"[{request_id}] Iniciando generación de Excel...")
                             excel_filename, excel_download_url = await _generate_excel_for_request(
                                 request_id=request_id,
                                 pdf_name=pdf_name,
@@ -572,11 +608,15 @@ async def process_pdf(
                                 print(f"[{request_id[:8]}] ✓ Archivo Excel creado: {excel_filename}")
                                 if excel_download_url:
                                     print(f"[{request_id[:8]}] ✓ URL de descarga Excel: {excel_download_url}")
+                            else:
+                                logger.warning(f"[{request_id}] Excel no se generó (retornó None)")
+                                print(f"[{request_id[:8]}] ⚠ Advertencia: Excel no se generó")
                         except Exception as e:
                             # No fallar si hay error al generar Excel, solo log
                             logger.error(f"[{request_id}] Error creando Excel: {e}")
                             import traceback
                             logger.debug(f"[{request_id}] Traceback Excel: {traceback.format_exc()}")
+                            print(f"[{request_id[:8]}] ✗ Error generando Excel: {e}")
                         
                         # Guardar relación file_id -> zip y excel
                         upload_manager = get_upload_manager()
@@ -1192,6 +1232,7 @@ async def _generate_excel_for_request(
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Genera un archivo Excel consolidado para un request_id.
+    SIEMPRE genera el Excel, incluso si no hay datos (solo con encabezados).
     
     Args:
         request_id: ID del procesamiento
@@ -1201,7 +1242,7 @@ async def _generate_excel_for_request(
         file_manager: Instancia de FileManager
         
     Returns:
-        Tupla (excel_filename, excel_download_url) o (None, None) si hay error
+        Tupla (excel_filename, excel_download_url) o (None, None) solo si hay error crítico
     """
     try:
         from openpyxl import Workbook
@@ -1212,27 +1253,7 @@ async def _generate_excel_for_request(
         base_output = file_manager.get_output_folder() or "./output"
         structured_folder = Path(base_output) / "api" / "structured"
         
-        if not structured_folder.exists():
-            return None, None
-        
-        # Buscar JSONs con este request_id
-        all_json_files = sorted(structured_folder.glob("*_structured.json"))
-        json_files = []
-        
-        for json_file in all_json_files:
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
-                metadata = json_data.get("metadata", {})
-                if metadata.get("request_id") == request_id:
-                    json_files.append(json_file)
-            except Exception:
-                continue
-        
-        if not json_files:
-            return None, None
-        
-        # Crear workbook de Excel
+        # Crear workbook de Excel (siempre se crea)
         wb = Workbook()
         ws = wb.active
         ws.title = "Datos Consolidados"
@@ -1244,8 +1265,39 @@ async def _generate_excel_for_request(
         
         # Diccionario para almacenar todas las tablas consolidadas
         all_tables = {}
+        all_columns = set()
         
-        # Procesar cada JSON estructurado
+        # Lista de campos estándar conocidos (por si no hay JSONs o están vacíos)
+        standard_fields = {
+            "hoja",  # Siempre presente
+            # Campos comunes de mcomprobante
+            "tNumero", "nPrecioTotal", "tFecha", "tRazonSocial",
+            # Campos comunes de mcomprobante_detalle
+            "tDescripcion", "nCantidad", "nPrecioUnitario", "nImporte",
+            # Campos comunes de mresumen
+            "tConcepto", "nMonto", "tMoneda",
+            # Campos comunes de mproveedor
+            "tRazonSocial", "tRUC", "tDireccion",
+            # Campos comunes de mjornada
+            "tEmpleado", "nHoras", "tFechaTrabajo"
+        }
+        
+        # Buscar JSONs con este request_id (si la carpeta existe)
+        json_files = []
+        if structured_folder.exists():
+            all_json_files = sorted(structured_folder.glob("*_structured.json"))
+            
+            for json_file in all_json_files:
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        json_data = json.load(f)
+                    metadata = json_data.get("metadata", {})
+                    if metadata.get("request_id") == request_id:
+                        json_files.append(json_file)
+                except Exception:
+                    continue
+        
+        # Procesar cada JSON estructurado (si existen)
         for json_file in json_files:
             try:
                 # Extraer número de página
@@ -1288,23 +1340,26 @@ async def _generate_excel_for_request(
                             
                             record_with_hoja["hoja"] = f"{pdf_name} - Página {page_num}"
                             all_tables[table_name].append(record_with_hoja)
+                            
+                            # Agregar todas las columnas encontradas
+                            all_columns.update(record_with_hoja.keys())
             except Exception:
                 continue
         
-        if not all_tables or all(not records for records in all_tables.values()):
-            return None, None
+        # Si no hay columnas de datos, usar campos estándar conocidos
+        if not all_columns:
+            all_columns = standard_fields
         
-        # Consolidar todas las tablas
-        all_columns = set()
+        # Consolidar todas las tablas en una sola lista
+        all_records = []
         for table_name, records in all_tables.items():
-            for record in records:
-                if isinstance(record, dict):
-                    all_columns.update(record.keys())
+            all_records.extend(records)
         
+        # Ordenar columnas (hoja siempre primero)
         sorted_columns = sorted([c for c in all_columns if c != "hoja"])
         column_order = ["hoja"] + sorted_columns
         
-        # Escribir encabezados
+        # Escribir encabezados (siempre se escriben, aunque no haya datos)
         row = 1
         for col_idx, col_name in enumerate(column_order, start=1):
             cell = ws.cell(row=row, column=col_idx, value=col_name)
@@ -1312,107 +1367,127 @@ async def _generate_excel_for_request(
             cell.font = header_font
             cell.alignment = header_alignment
         
-        # Escribir datos
+        # Escribir datos (si hay)
         row = 2
-        for table_name, records in all_tables.items():
-            for record in records:
-                if isinstance(record, dict):
-                    for col_idx, col_name in enumerate(column_order, start=1):
-                        value = record.get(col_name, "")
-                        if value is None:
-                            value = ""
-                        ws.cell(row=row, column=col_idx, value=value)
-                    row += 1
+        for record in all_records:
+            if isinstance(record, dict):
+                for col_idx, col_name in enumerate(column_order, start=1):
+                    value = record.get(col_name, "")
+                    if value is None:
+                        value = ""
+                    ws.cell(row=row, column=col_idx, value=value)
+                row += 1
         
         # Ajustar ancho de columnas
         for col_idx, col_name in enumerate(column_order, start=1):
             max_length = len(str(col_name))
-            for row_idx in range(2, row):
-                cell_value = ws.cell(row=row_idx, column=col_idx).value
-                if cell_value:
-                    max_length = max(max_length, len(str(cell_value)))
+            if row > 2:  # Solo si hay datos
+                for row_idx in range(2, row):
+                    cell_value = ws.cell(row=row_idx, column=col_idx).value
+                    if cell_value:
+                        max_length = max(max_length, len(str(cell_value)))
             adjusted_width = min(max(max_length + 2, 10), 50)
             ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
         
-        # Guardar Excel en carpeta pública
+        # Guardar Excel en carpeta pública (SIEMPRE se guarda, aunque esté vacío)
         excel_filename = f"{pdf_name}_consolidado_{timestamp}_{request_id[:8]}.xlsx"
         excel_path = archive_manager.public_folder / excel_filename
+        
+        # Asegurar que la carpeta pública existe
+        excel_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Guardar el Excel
         wb.save(excel_path)
+        
+        # Verificar que se guardó correctamente
+        if not excel_path.exists():
+            logger.error(f"Excel no se guardó correctamente: {excel_path}")
+            return None, None
         
         # Generar URL pública
         excel_download_url = archive_manager.get_public_url(excel_path)
         
+        logger.info(f"[{request_id}] Excel generado exitosamente: {excel_filename} ({len(all_records)} registros, {len(column_order)} columnas)")
+        
         return excel_filename, excel_download_url
     except Exception as e:
         logger.error(f"Error generando Excel para request_id {request_id}: {e}")
+        import traceback
+        logger.debug(f"Traceback Excel: {traceback.format_exc()}")
         return None, None
 
 
 @app.get("/api/v1/export-excel/{request_id}", tags=["Export"])
 async def export_structured_to_excel(request_id: str):
     """
-    Genera un archivo Excel consolidado con todos los JSONs estructurados de un request_id.
+    Redirige a la descarga del Excel consolidado para un request_id.
     
-    Consolida todas las tablas de additional_data de todos los JSONs estructurados
-    de un procesamiento específico en un solo archivo Excel, agregando una columna "hoja" 
-    con el número de página.
+    Busca el excel_filename en la metadata (igual que el ZIP) y redirige a /public/{excel_filename}.
+    Si no existe, intenta generarlo.
     
     Args:
         request_id: ID del procesamiento (obtener de la respuesta de /api/v1/process-pdf)
         
     Returns:
-        Archivo Excel para descarga directa
+        Redirección a /public/{excel_filename} o archivo Excel para descarga directa
     """
+    from fastapi.responses import RedirectResponse
+    
+    upload_manager = get_upload_manager()
+    processed_tracker = get_processed_tracker()
     archive_manager = get_archive_manager()
-    file_manager = get_file_manager()
     
-    # Buscar información del request_id para validar email
-    base_output = file_manager.get_output_folder() or "./output"
-    structured_folder = Path(base_output) / "api" / "structured"
-    
-    if not structured_folder.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": f"No se encontró la carpeta de archivos estructurados"}
-        )
-    
-    # Buscar email y pdf_name para validación
+    # Buscar excel_filename en metadata (igual que se busca zip_filename para el ZIP)
+    excel_filename = None
     email_found = None
     pdf_name = None
-    all_json_files = sorted(structured_folder.glob("*_structured.json"))
     
-    for json_file in all_json_files:
-        try:
-            with open(json_file, 'r', encoding='utf-8') as f:
-                json_data = json.load(f)
-            metadata = json_data.get("metadata", {})
-            if metadata.get("request_id") == request_id:
-                if email_found is None:
-                    email_found = metadata.get("email", "")
-                    name_parts = json_file.stem.split("_page_")
-                    if name_parts:
-                        pdf_name = name_parts[0]
+    # Buscar en archivos procesados desde upload-pdf
+    uploaded_files = upload_manager.list_uploaded_files(processed=True)
+    for f in uploaded_files:
+        if f.get("request_id") == request_id:
+            excel_filename = f.get("excel_filename")
+            email_found = f.get("metadata", {}).get("email", "")
+            filename = f.get("filename", "")
+            if filename:
+                pdf_name = Path(filename).stem
+            break
+    
+    # Si no se encontró, buscar en archivos procesados directamente
+    if not excel_filename:
+        direct_files = processed_tracker.get_processed_files()
+        for f in direct_files:
+            if f.get("request_id") == request_id:
+                excel_filename = f.get("excel_filename")
+                email_found = f.get("metadata", {}).get("email", "")
+                filename = f.get("filename", "")
+                if filename:
+                    pdf_name = Path(filename).stem
                 break
-        except Exception:
-            continue
-    
-    if not email_found:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": f"No se encontraron JSONs estructurados para request_id '{request_id}'"}
-        )
     
     # Validar correo autorizado
-    if not is_email_allowed(email_found):
+    if email_found and not is_email_allowed(email_found):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": f"Correo no autorizado o no encontrado para request_id '{request_id}'"}
+            detail={"error": f"Correo no autorizado para request_id '{request_id}'"}
         )
     
+    # Si se encontró el excel_filename, redirigir a /public/{excel_filename}
+    if excel_filename:
+        excel_path = archive_manager.public_folder / excel_filename
+        if excel_path.exists():
+            # Redirigir a /public/{excel_filename} (igual que el ZIP)
+            return RedirectResponse(url=f"/public/{excel_filename}", status_code=302)
+        else:
+            # El Excel no existe físicamente, intentar generarlo
+            logger.warning(f"[{request_id}] Excel en metadata no existe físicamente: {excel_filename}")
+    
+    # Si no se encontró excel_filename o no existe físicamente, intentar generarlo
     if not pdf_name:
         pdf_name = "unknown"
     
-    # Generar Excel usando la función helper
+    # Generar Excel usando la función helper (generará Excel vacío si no hay JSONs)
+    file_manager = get_file_manager()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     excel_filename, excel_download_url = await _generate_excel_for_request(
         request_id=request_id,
@@ -1424,17 +1499,12 @@ async def export_structured_to_excel(request_id: str):
     
     if not excel_filename:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": f"No se encontraron datos para consolidar para request_id '{request_id}'"}
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": f"Error generando Excel para request_id '{request_id}'"}
         )
     
-    # Devolver archivo para descarga directa
-    excel_path = archive_manager.public_folder / excel_filename
-    return FileResponse(
-        path=str(excel_path),
-        filename=excel_filename,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # Redirigir a /public/{excel_filename}
+    return RedirectResponse(url=f"/public/{excel_filename}", status_code=302)
 
 
 @app.get("/public/{filename}", tags=["Public"])
@@ -1500,11 +1570,15 @@ async def serve_public_file(filename: str):
                     except Exception:
                         continue
     
-    # Buscar en archivos procesados desde upload-pdf (para ZIPs)
+    # Buscar en archivos procesados desde upload-pdf (para ZIPs y Excel)
     if not email_found:
         uploaded_files = upload_manager.list_uploaded_files(processed=True)
         for f in uploaded_files:
-            if f.get("zip_filename") == filename or f.get("download_url", "").endswith(filename):
+            # Verificar si es el ZIP o el Excel
+            if (f.get("zip_filename") == filename or 
+                f.get("excel_filename") == filename or 
+                f.get("download_url", "").endswith(filename) or
+                f.get("excel_download_url", "").endswith(filename)):
                 email_found = f.get("metadata", {}).get("email", "")
                 break
     
@@ -1512,7 +1586,11 @@ async def serve_public_file(filename: str):
     if not email_found:
         direct_files = processed_tracker.get_processed_files()
         for f in direct_files:
-            if f.get("zip_filename") == filename or f.get("download_url", "").endswith(filename):
+            # Verificar si es el ZIP o el Excel
+            if (f.get("zip_filename") == filename or 
+                f.get("excel_filename") == filename or 
+                f.get("download_url", "").endswith(filename) or
+                f.get("excel_download_url", "").endswith(filename)):
                 email_found = f.get("metadata", {}).get("email", "")
                 break
     
@@ -1534,6 +1612,487 @@ async def serve_public_file(filename: str):
         filename=filename,
         media_type=media_type
     )
+
+
+# ===== Dashboard Endpoints =====
+
+@app.get("/api/v1/dashboard/stats", response_model=DashboardStatsResponse, tags=["Dashboard"])
+async def get_dashboard_stats(
+    fecha_inicio: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    moneda: str = Query("USD", description="Moneda (USD, PEN, EUR)"),
+    tipo_documento: Optional[str] = Query(None, description="Tipo de documento"),
+    departamento: Optional[str] = Query(None, description="Departamento"),
+    disciplina: Optional[str] = Query(None, description="Disciplina")
+):
+    """
+    Obtiene estadísticas globales del dashboard.
+    
+    Args:
+        fecha_inicio: Fecha de inicio para filtrar
+        fecha_fin: Fecha de fin para filtrar
+        moneda: Moneda para los cálculos
+        tipo_documento: Filtrar por tipo de documento
+        departamento: Filtrar por departamento
+        disciplina: Filtrar por disciplina
+        
+    Returns:
+        Estadísticas globales (Monto Total, Total Horas)
+    """
+    try:
+        file_manager = get_file_manager()
+        base_output = file_manager.get_output_folder() or "./output"
+        structured_folder = Path(base_output) / "api" / "structured"
+        
+        monto_total = 0.0
+        total_horas = 0.0
+        
+        # Leer todos los JSONs estructurados y agregar
+        if structured_folder.exists():
+            for json_file in structured_folder.glob("*_structured.json"):
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        json_data = json.load(f)
+                    
+                    # Aplicar filtros aquí si es necesario
+                    metadata = json_data.get("metadata", {})
+                    
+                    # Filtrar por fecha si se proporciona
+                    if fecha_inicio or fecha_fin:
+                        processed_at = metadata.get("processed_at", "")
+                        if processed_at:
+                            # Comparar fechas (simplificado)
+                            pass  # TODO: Implementar filtro de fechas
+                    
+                    # Extraer montos y horas de additional_data
+                    additional_data = json_data.get("additional_data", {})
+                    
+                    # Buscar en mcomprobante
+                    comprobantes = additional_data.get("mcomprobante", [])
+                    for comp in comprobantes:
+                        if isinstance(comp, dict):
+                            precio_total = comp.get("nPrecioTotal", 0)
+                            if precio_total:
+                                monto_total += float(precio_total)
+                    
+                    # Buscar en mjornada
+                    jornadas = additional_data.get("mjornada", [])
+                    for jornada in jornadas:
+                        if isinstance(jornada, dict):
+                            horas = jornada.get("nTotalHoras", 0)
+                            if horas:
+                                total_horas += float(horas)
+                
+                except Exception as e:
+                    logger.warning(f"Error leyendo {json_file}: {e}")
+                    continue
+        
+        return DashboardStatsResponse(
+            success=True,
+            monto_total_global=monto_total,
+            total_horas_global=total_horas,
+            currency=moneda
+        )
+    
+    except Exception as e:
+        logger.exception(f"Error obteniendo estadísticas: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener estadísticas: {str(e)}"
+        )
+
+
+@app.get("/api/v1/dashboard/analytics", response_model=DashboardAnalyticsResponse, tags=["Dashboard"])
+async def get_dashboard_analytics(
+    fecha_inicio: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    moneda: str = Query("USD", description="Moneda (USD, PEN, EUR)")
+):
+    """
+    Obtiene análisis Off-Shore y On-Shore.
+    
+    Returns:
+        Análisis con totales, distribución por departamento y top 5 disciplinas
+    """
+    # TODO: Implementar lógica de análisis basada en los JSONs estructurados
+    # Por ahora retornar estructura vacía
+    return DashboardAnalyticsResponse(
+        success=True,
+        offshore=None,
+        onshore=None
+    )
+
+
+@app.get("/api/v1/dashboard/rejected-concepts", response_model=RejectedConceptsResponse, tags=["Dashboard"])
+async def get_rejected_concepts(
+    fecha_inicio: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    fecha_fin: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)")
+):
+    """
+    Obtiene lista de conceptos rechazados.
+    
+    Returns:
+        Lista de conceptos rechazados con cantidad, monto y porcentaje
+    """
+    # TODO: Implementar lógica para extraer conceptos rechazados de los JSONs
+    # Por ahora retornar lista vacía
+    return RejectedConceptsResponse(
+        success=True,
+        total=0,
+        concepts=[]
+    )
+
+
+# ===== Periodos Endpoints =====
+
+@app.post("/api/v1/periodos", response_model=PeriodoResponse, tags=["Periodos"])
+async def create_periodo(request: CreatePeriodoRequest):
+    """
+    Crea un nuevo periodo.
+    
+    Args:
+        request: Datos del periodo a crear (periodo: "MM/AAAA", tipo: "onshore"|"offshore")
+        
+    Returns:
+        Periodo creado
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        
+        # Validar tipo
+        if request.tipo.lower() not in ["onshore", "offshore"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tipo debe ser 'onshore' o 'offshore'"
+            )
+        
+        periodo_data = periodo_manager.create_periodo(request.periodo, request.tipo)
+        
+        periodo_info = PeriodoInfo(
+            periodo_id=periodo_data["periodo_id"],
+            periodo=periodo_data["periodo"],
+            tipo=periodo_data["tipo"],
+            estado=periodo_data["estado"],
+            registros=periodo_data["registros"],
+            ultimo_procesamiento=periodo_data.get("ultimo_procesamiento"),
+            created_at=periodo_data["created_at"]
+        )
+        
+        return PeriodoResponse(success=True, periodo=periodo_info)
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.exception(f"Error creando periodo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al crear periodo: {str(e)}"
+        )
+
+
+@app.get("/api/v1/periodos", response_model=PeriodosListResponse, tags=["Periodos"])
+async def list_periodos(
+    tipo: Optional[str] = Query(None, description="Filtrar por tipo (onshore/offshore)"),
+    estado: Optional[str] = Query(None, description="Filtrar por estado"),
+    search: Optional[str] = Query(None, description="Buscar en periodo"),
+    limit: int = Query(15, ge=1, le=100, description="Límite de resultados"),
+    offset: int = Query(0, ge=0, description="Offset para paginación")
+):
+    """
+    Lista periodos con filtros opcionales.
+    
+    Returns:
+        Lista de periodos
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        periodos_data = periodo_manager.list_periodos(tipo=tipo, estado=estado, search=search)
+        
+        # Paginación
+        total = len(periodos_data)
+        periodos_data = periodos_data[offset:offset + limit]
+        
+        periodos = [
+            PeriodoInfo(
+                periodo_id=p["periodo_id"],
+                periodo=p["periodo"],
+                tipo=p["tipo"],
+                estado=p["estado"],
+                registros=p["registros"],
+                ultimo_procesamiento=p.get("ultimo_procesamiento"),
+                created_at=p["created_at"]
+            )
+            for p in periodos_data
+        ]
+        
+        return PeriodosListResponse(
+            success=True,
+            total=total,
+            periodos=periodos
+        )
+    
+    except Exception as e:
+        logger.exception(f"Error listando periodos: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al listar periodos: {str(e)}"
+        )
+
+
+@app.get("/api/v1/periodos/{periodo_id}", response_model=PeriodoDetailResponse, tags=["Periodos"])
+async def get_periodo_detail(periodo_id: str):
+    """
+    Obtiene el detalle completo de un periodo incluyendo sus archivos.
+    
+    Args:
+        periodo_id: ID del periodo
+        
+    Returns:
+        Detalle del periodo con lista de archivos
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        periodo_data = periodo_manager.get_periodo(periodo_id)
+        
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo {periodo_id} no encontrado"
+            )
+        
+        # Obtener archivos asociados
+        request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+        archivos = []
+        
+        # Buscar información de cada archivo en los JSONs estructurados
+        file_manager = get_file_manager()
+        base_output = file_manager.get_output_folder() or "./output"
+        structured_folder = Path(base_output) / "api" / "structured"
+        
+        for request_id in request_ids:
+            # Buscar JSONs con este request_id
+            archivo_info = None
+            if structured_folder.exists():
+                for json_file in structured_folder.glob("*_structured.json"):
+                    try:
+                        with open(json_file, 'r', encoding='utf-8') as f:
+                            json_data = json.load(f)
+                        metadata = json_data.get("metadata", {})
+                        if metadata.get("request_id") == request_id:
+                            # Extraer información del archivo
+                            additional_data = json_data.get("additional_data", {})
+                            # TODO: Extraer job_no, type, etc. de additional_data
+                            archivo_info = PeriodoArchivoInfo(
+                                archivo_id=request_id[:8],
+                                request_id=request_id,
+                                filename=metadata.get("filename", "unknown"),
+                                estado="procesado",
+                                processed_at=metadata.get("processed_at")
+                            )
+                            break
+                    except Exception:
+                        continue
+            
+            if archivo_info:
+                archivos.append(archivo_info)
+        
+        periodo_info = PeriodoInfo(
+            periodo_id=periodo_data["periodo_id"],
+            periodo=periodo_data["periodo"],
+            tipo=periodo_data["tipo"],
+            estado=periodo_data["estado"],
+            registros=periodo_data["registros"],
+            ultimo_procesamiento=periodo_data.get("ultimo_procesamiento"),
+            created_at=periodo_data["created_at"]
+        )
+        
+        return PeriodoDetailResponse(
+            success=True,
+            periodo=periodo_info,
+            archivos=archivos,
+            total_archivos=len(archivos)
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error obteniendo detalle de periodo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener detalle: {str(e)}"
+        )
+
+
+@app.put("/api/v1/periodos/{periodo_id}", response_model=PeriodoResponse, tags=["Periodos"])
+async def update_periodo(periodo_id: str, updates: Dict[str, Any]):
+    """
+    Actualiza un periodo.
+    
+    Args:
+        periodo_id: ID del periodo
+        updates: Campos a actualizar
+        
+    Returns:
+        Periodo actualizado
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        periodo_data = periodo_manager.update_periodo(periodo_id, updates)
+        
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo {periodo_id} no encontrado"
+            )
+        
+        periodo_info = PeriodoInfo(
+            periodo_id=periodo_data["periodo_id"],
+            periodo=periodo_data["periodo"],
+            tipo=periodo_data["tipo"],
+            estado=periodo_data["estado"],
+            registros=periodo_data["registros"],
+            ultimo_procesamiento=periodo_data.get("ultimo_procesamiento"),
+            created_at=periodo_data["created_at"]
+        )
+        
+        return PeriodoResponse(success=True, periodo=periodo_info)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error actualizando periodo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar periodo: {str(e)}"
+        )
+
+
+@app.delete("/api/v1/periodos/{periodo_id}", tags=["Periodos"])
+async def delete_periodo(periodo_id: str):
+    """
+    Elimina un periodo.
+    
+    Args:
+        periodo_id: ID del periodo
+        
+    Returns:
+        Confirmación de eliminación
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        deleted = periodo_manager.delete_periodo(periodo_id)
+        
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo {periodo_id} no encontrado"
+            )
+        
+        return {"success": True, "message": f"Periodo {periodo_id} eliminado"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error eliminando periodo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar periodo: {str(e)}"
+        )
+
+
+@app.get("/api/v1/periodos/{periodo_id}/resumen-ps", response_model=PeriodoResumenPSResponse, tags=["Periodos"])
+async def get_periodo_resumen_ps(periodo_id: str):
+    """
+    Obtiene el resumen PS (Off-Shore/On-Shore) de un periodo.
+    
+    Args:
+        periodo_id: ID del periodo
+        
+    Returns:
+        Resumen PS con Department, Discipline, Total US $, Total Horas, Ratios EDP
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        periodo_data = periodo_manager.get_periodo(periodo_id)
+        
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo {periodo_id} no encontrado"
+            )
+        
+        # TODO: Implementar lógica para generar resumen PS desde los JSONs estructurados
+        # Por ahora retornar estructura vacía
+        return PeriodoResumenPSResponse(
+            success=True,
+            periodo_id=periodo_id,
+            tipo=periodo_data["tipo"],
+            items=[],
+            total=0
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error obteniendo resumen PS: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener resumen PS: {str(e)}"
+        )
+
+
+@app.post("/api/v1/periodos/{periodo_id}/exportar", tags=["Periodos"])
+async def exportar_periodo(periodo_id: str):
+    """
+    Exporta un periodo (genera Excel/ZIP consolidado).
+    
+    Args:
+        periodo_id: ID del periodo
+        
+    Returns:
+        URL de descarga del archivo exportado
+    """
+    # TODO: Implementar exportación del periodo
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Exportación de periodo aún no implementada"
+    )
+
+
+@app.post("/api/v1/periodos/{periodo_id}/bloquear", tags=["Periodos"])
+async def bloquear_periodo(periodo_id: str):
+    """
+    Bloquea un periodo (cambia estado a "cerrado").
+    
+    Args:
+        periodo_id: ID del periodo
+        
+    Returns:
+        Confirmación de bloqueo
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        periodo_data = periodo_manager.update_periodo(periodo_id, {"estado": "cerrado"})
+        
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo {periodo_id} no encontrado"
+            )
+        
+        return {"success": True, "message": f"Periodo {periodo_id} bloqueado"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error bloqueando periodo: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al bloquear periodo: {str(e)}"
+        )
 
 
 @app.exception_handler(Exception)

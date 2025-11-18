@@ -59,6 +59,10 @@ class DataMapper:
         """Identifica el tipo de documento según su contenido."""
         text_lower = ocr_text.lower()
         
+        # Priorizar "ATTACHMENT TO INVOICE" como comprobante (es un anexo de factura, no un expense report)
+        if "attachment to invoice" in text_lower:
+            return "comprobante"
+        
         # Priorizar Expense Report (OnShore) antes de otros tipos
         # Verificar si es Concur Expense específicamente
         if "concur expense" in text_lower:
@@ -288,6 +292,20 @@ class DataMapper:
             else:
                 # Agregar a mresumen existente
                 result['mresumen'].extend(highlighted_calculations)
+        
+        # Extracción general de valores monetarios (para cualquier tipo de documento)
+        # Esto captura TODOS los valores económicos, sin importar el formato
+        general_monetary_values = self._extract_all_monetary_values(ocr_text)
+        if general_monetary_values:
+            # Si no hay mcomprobante_detalle, crear uno con los valores encontrados
+            if 'mcomprobante_detalle' not in result or not result.get('mcomprobante_detalle'):
+                result['mcomprobante_detalle'] = general_monetary_values
+            else:
+                # Agregar valores que no estén duplicados
+                existing_amounts = {item.get('nPrecioTotal', 0) for item in result.get('mcomprobante_detalle', [])}
+                for item in general_monetary_values:
+                    if item.get('nPrecioTotal', 0) not in existing_amounts:
+                        result['mcomprobante_detalle'].append(item)
         
         # IMPORTANTE: Siempre retornar un diccionario, aunque esté vacío
         # Esto asegura que siempre se genere un JSON estructurado, incluso sin datos
@@ -725,32 +743,49 @@ class DataMapper:
                                 if recibo_match:
                                     comprobante['tNumero'] = recibo_match.group(1)
                                 else:
-                                    # Patrón 7: INVOICE No. XXXX (evitando "Invoice Numb")
-                                    invoice_match = None
-                                    for m in re.finditer(r'(?:^|\s)(INVOICE|FATTURA|CASH|CASD|FACTURA|BOLETA|RECIBO)\s+(?:No\.?|NO\.?|N°|#)?\s*([A-Z0-9\-]+)', ocr_text, re.IGNORECASE):
-                                        if 'Numb' not in m.group(0):
-                                            invoice_match = m
-                                            break
-                                    if invoice_match:
-                                        comprobante['tNumero'] = invoice_match.group(2).strip()
+                                    # Patrón 6.7: FATTURA NO.: 333/25 (facturas italianas con formato específico)
+                                    # El número puede estar en la misma línea o en la siguiente línea
+                                    fattura_no_match = re.search(r'FATTURA\s+(?:NO\.?|No\.?|N°)\s*:?\s*([A-Z0-9/\-]+)', ocr_text, re.IGNORECASE)
+                                    if fattura_no_match:
+                                        comprobante['tNumero'] = fattura_no_match.group(1).strip()
                                     else:
-                                        # Patrón 8: NO. seguido de número cerca de TOTAL
-                                        no_total_match = re.search(r'NO\.\s+(\d{3,})\s+(?:总计|JUMLAH|TOTAL|Total)', ocr_text, re.IGNORECASE)
-                                        if no_total_match:
-                                            comprobante['tNumero'] = no_total_match.group(1)
+                                        # Buscar "FATTURA NO.:" y luego buscar el número en las siguientes líneas (formato XXX/XX)
+                                        fattura_header_match = re.search(r'FATTURA\s+(?:NO\.?|No\.?|N°)\s*:', ocr_text, re.IGNORECASE)
+                                        if fattura_header_match:
+                                            # Buscar después del header un número con formato XXX/XX o similar
+                                            after_header = ocr_text[fattura_header_match.end():]
+                                            # Buscar patrón de número con slash: "335/25" o "333/25"
+                                            numero_match = re.search(r'(\d{2,4}/\d{1,3})', after_header[:200])  # Buscar en los siguientes 200 caracteres
+                                            if numero_match:
+                                                comprobante['tNumero'] = numero_match.group(1).strip()
+                                    # Si aún no se encontró, intentar Patrón 7
+                                    if not comprobante.get('tNumero'):
+                                        # Patrón 7: INVOICE No. XXXX (evitando "Invoice Numb")
+                                        invoice_match = None
+                                        for m in re.finditer(r'(?:^|\s)(INVOICE|FATTURA|CASH|CASD|FACTURA|BOLETA|RECIBO)\s+(?:No\.?|NO\.?|N°|#)?\s*([A-Z0-9/\-]+)', ocr_text, re.IGNORECASE):
+                                            if 'Numb' not in m.group(0):
+                                                invoice_match = m
+                                                break
+                                        if invoice_match:
+                                            comprobante['tNumero'] = invoice_match.group(2).strip()
                                         else:
-                                            # Patrón 9: Palabras clave chinas con números (号码)
-                                            chinese_num_match = re.search(r'(?:号码|发票号码|发票代码)[:：]?\s*(\d{8,})', ocr_text)
-                                            if chinese_num_match:
-                                                comprobante['tNumero'] = chinese_num_match.group(1)
+                                            # Patrón 8: NO. seguido de número cerca de TOTAL
+                                            no_total_match = re.search(r'NO\.\s+(\d{3,})\s+(?:总计|JUMLAH|TOTAL|Total)', ocr_text, re.IGNORECASE)
+                                            if no_total_match:
+                                                comprobante['tNumero'] = no_total_match.group(1)
                                             else:
-                                                # Patrón 10: Patrones genéricos con palabras clave
-                                                generic_match = re.search(r'(?:总计|JUMLAH|No\.|NO\.|#)\s*([A-Z0-9\-]{4,})', ocr_text, re.IGNORECASE)
-                                                if generic_match and re.search(r'\d', generic_match.group(1)):
-                                                    invoice_num = generic_match.group(1).strip()
-                                                if ' ' in invoice_num:
-                                                    invoice_num = invoice_num.split()[0]
-                                                comprobante['tNumero'] = invoice_num
+                                                # Patrón 9: Palabras clave chinas con números (号码)
+                                                chinese_num_match = re.search(r'(?:号码|发票号码|发票代码)[:：]?\s*(\d{8,})', ocr_text)
+                                                if chinese_num_match:
+                                                    comprobante['tNumero'] = chinese_num_match.group(1)
+                                                else:
+                                                    # Patrón 10: Patrones genéricos con palabras clave
+                                                    generic_match = re.search(r'(?:总计|JUMLAH|No\.|NO\.|#)\s*([A-Z0-9\-]{4,})', ocr_text, re.IGNORECASE)
+                                                    if generic_match and re.search(r'\d', generic_match.group(1)):
+                                                        invoice_num = generic_match.group(1).strip()
+                                                        if ' ' in invoice_num:
+                                                            invoice_num = invoice_num.split()[0]
+                                                        comprobante['tNumero'] = invoice_num
         
         # Buscar serie o código de contrato
         contract_match = re.search(r'Contract\s*no\s*(\d+)', ocr_text, re.IGNORECASE)
@@ -779,13 +814,33 @@ class DataMapper:
             comprobante['fEmision'] = date_match.group(1)
         
         # Buscar total/precio (múltiples formatos)
-        # Priorizar Grand Total explícito primero
-        total_match = re.search(r'(?:Grand\s+Total|GRAND\s+TOTAL)\s*([\d,]+(?:[\.\s\-]?\d{2})?)', ocr_text, re.IGNORECASE)
-        if total_match and ' ' in total_match.group(1):
-            g = total_match.group(1).replace(',', '').strip()
-            g = re.sub(r'\s', '.', g) if re.match(r'^\d+\s\d{2}$', g.replace(',', '')) else g
-        # Patrón para "Total $XXX" o "Total $XXX,XXX" (formato español)
+        # Priorizar valores en cuadros rojos/highlighted (ATTACHMENT TO INVOICE)
+        # Patrón 1: "TOTAL AMOUNT IN US$ ... $ 120.60" (valor en cuadro rojo de tabla)
+        total_match = re.search(r'TOTAL\s+AMOUNT\s+IN\s+US\$\s+[^\$]*\$\s*([\d,]+\.\d{2})', ocr_text, re.IGNORECASE)
         if not total_match:
+            # Patrón 2: "TOTAL $ 3,758.14" (valor en cuadro rojo de resumen - facturas italianas)
+            # Buscar "TOTAL" seguido de "$" y luego el valor (puede estar en la misma línea o siguiente)
+            total_match = re.search(r'TOTAL\s+\$\s*([\d,]+\.\d{2})', ocr_text, re.IGNORECASE)
+            if not total_match:
+                # Buscar "TOTAL" en una línea y "$ XXX.XX" en líneas siguientes (formato multilínea)
+                # Para facturas italianas: "TOTAL\n$\n3,755.80\n$ 2.34\n$ 3,758.14" - capturar el ÚLTIMO valor
+                total_header_match = re.search(r'TOTAL\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+                if total_header_match:
+                    # Buscar después del header TODOS los valores monetarios y tomar el ÚLTIMO (el total final)
+                    after_total = ocr_text[total_header_match.end():]
+                    # Buscar todos los valores con formato $ XXX.XX en los siguientes 200 caracteres
+                    all_values = list(re.finditer(r'\$\s*([\d,]+\.\d{2})', after_total[:200]))
+                    if all_values:
+                        # Tomar el ÚLTIMO valor encontrado (es el total final después del stamp duty)
+                        total_match = all_values[-1]
+        if not total_match:
+            # Priorizar Grand Total explícito primero
+            total_match = re.search(r'(?:Grand\s+Total|GRAND\s+TOTAL)\s*([\d,]+(?:[\.\s\-]?\d{2})?)', ocr_text, re.IGNORECASE)
+            if total_match and ' ' in total_match.group(1):
+                g = total_match.group(1).replace(',', '').strip()
+                g = re.sub(r'\s', '.', g) if re.match(r'^\d+\s\d{2}$', g.replace(',', '')) else g
+        if not total_match:
+            # Buscar "Total $XXX" o "Total $XXX,XXX" sin decimales (formato español)
             total_match = re.search(r'Total\s+\$?\s*([\d,]+)', ocr_text, re.IGNORECASE)
         # Priorizar "Invoice Amount" para Invoice Approval Reports y Oracle AP
         if not total_match:
@@ -985,6 +1040,11 @@ class DataMapper:
         in_items_section = False
         skip_invoice_group = False  # Flag para excluir "Invoice Group Detail"
         
+        # Detectar si es "Invoice Approval Report" - estos documentos NO tienen items reales en "Line Item Details"
+        # Los valores en "Line Item Details" son solo columnas de datos, no items de compra
+        is_invoice_approval_report = 'Invoice Approval Report' in ocr_text or 'Invoice Approval' in ocr_text
+        in_line_item_details = False
+        
         last_item_index = None
         for i, line in enumerate(lines):
             line = line.strip()
@@ -1006,8 +1066,30 @@ class DataMapper:
                 # Si encontramos otra sección, dejar de saltar
                 if any(s in line for s in ['Invoice Data', 'Line Item', 'Supplier Data', 'Approval History', 'Line Type']):
                     skip_invoice_group = False
+                    # Si es "Invoice Approval Report" y encontramos "Line Item", marcar que estamos en esa sección
+                    if is_invoice_approval_report and 'Line Item' in line:
+                        in_line_item_details = True
                 else:
                     continue  # Continuar saltando hasta encontrar otra sección
+            
+            # Para "Invoice Approval Report", NO extraer valores de "Line Item Details" como items
+            # Estos son solo columnas de datos (Line Amount, Nat Class, Job, Sub Job, etc.), no items reales
+            if is_invoice_approval_report and in_line_item_details:
+                # Detectar si estamos en la sección de headers de "Line Item Details"
+                if any(keyword in line for keyword in ['Line Type', 'Line Amount', 'Nat Class', 'Job', 'Sub Job', 'Cost Code']):
+                    continue  # Saltar headers
+                # Detectar si encontramos otra sección (Approval History, etc.)
+                if 'Approval History' in line or 'Supplier Data' in line or 'Invoice Data' in line:
+                    in_line_item_details = False
+                    continue
+                # Si estamos en "Line Item Details", NO extraer estos valores como items
+                # Los valores como "890 264 223" o "42" son solo datos de columnas, no items
+                if re.match(r'^(\d{1,4}\s+){0,3}\d{1,4}$', line.strip()):
+                    # Línea que solo contiene números separados por espacios (valores de columnas)
+                    continue
+                # Si la línea contiene solo números pequeños sin descripción textual, probablemente es columna
+                if re.match(r'^\d{1,4}(\s+\d{1,4}){0,5}$', line.strip()) and len(line.strip()) < 30:
+                    continue
             
             # Detectar inicio de sección de items (evitar totales y subtotales)
             if (
@@ -1149,20 +1231,71 @@ class DataMapper:
         # Si no se detectaron ítems por patrón estándar, intentar con adjuntos (Attachment) y columna "Total Amount"
         if not detalles and ('ATTACHMENT' in ocr_text.upper() or 'Total Amount' in ocr_text):
             attach_lines = [l.strip() for l in ocr_text.split('\n') if l.strip()]
-            for l in attach_lines:
-                # Capturar montos al final de la línea (columna Total Amount)
-                m_end = re.search(r'\$\s*([\d,]+\.\d{2})\s*$', l)
-                if m_end:
-                    amount = float(m_end.group(1).replace(',', ''))
-                    # Evitar líneas de "TOTAL AMOUNT IN US$" (sumatoria) como detalle individual
-                    if 'TOTAL AMOUNT' in l.upper():
+            in_table = False
+            for i, l in enumerate(attach_lines):
+                # Detectar inicio de tabla (header con "Resource", "Vendor", "Total Amount", etc.)
+                if any(keyword in l for keyword in ['Resource', 'Vendor', 'Total Amount', 'Assignment no', 'Report Number']):
+                    in_table = True
+                    continue
+                
+                # Si estamos en la tabla, buscar filas con datos
+                if in_table:
+                    # Detectar líneas de total (saltarlas, se procesarán después)
+                    if 'TOTAL AMOUNT' in l.upper() or l.upper().startswith('TOTAL'):
+                        in_table = False
                         continue
-                    detalles.append({
-                        'nCantidad': 1.0,
-                        'tDescripcion': 'Attachment line',
-                        'nPrecioUnitario': amount,
-                        'nPrecioTotal': amount
-                    })
+                    
+                    # Patrón mejorado para filas de tabla: buscar valores monetarios al final
+                    # Ejemplo: "... $ 1,305.05 $ 1,305.05 # 01" o "... $ 60.30 $ 60.30"
+                    # Buscar múltiples valores monetarios al final de la línea (últimos 2 valores)
+                    amount_end_match = re.search(r'\$\s*([\d,]+\.\d{2})\s*\$\s*([\d,]+\.\d{2})(?:\s*#|\s*$)', l)
+                    if amount_end_match:
+                        # Verificar que no sea una línea de total
+                        if 'TOTAL' not in l.upper() and len(l) > 30:  # Filtrar líneas muy cortas
+                            amount1 = float(amount_end_match.group(1).replace(',', ''))
+                            amount2 = float(amount_end_match.group(2).replace(',', ''))
+                            # Usar el segundo valor (Total Amount) - es el valor final
+                            final_amount = amount2 if amount2 > 0 else amount1
+                            
+                            # Extraer descripción (todo antes de los valores monetarios)
+                            # Buscar nombre del recurso (primeras palabras con mayúsculas)
+                            resource_match = re.search(r'^([A-Z][a-z]+\s+[A-Z][a-z]+)', l)
+                            if resource_match:
+                                resource_name = resource_match.group(1)
+                                # Buscar vendor (después del resource name)
+                                vendor_match = re.search(rf'{re.escape(resource_name)}\s+([A-Z][^$]+?)(?:\s+\d|\s+\$)', l)
+                                if vendor_match:
+                                    vendor_info = vendor_match.group(1).strip()[:50]
+                                    descripcion = f'{resource_name} - {vendor_info}'
+                                else:
+                                    descripcion = resource_name
+                            else:
+                                # Si no hay nombre de recurso, usar todo antes de los valores monetarios
+                                desc_match = re.search(r'^(.+?)(?:\s+\$\s*[\d,]+\.\d{2})', l)
+                                descripcion = desc_match.group(1).strip()[:100] if desc_match else 'Attachment line'
+                            
+                            detalles.append({
+                                'nCantidad': 1.0,
+                                'tDescripcion': descripcion,
+                                'nPrecioUnitario': final_amount,
+                                'nPrecioTotal': final_amount
+                            })
+                            continue
+                    
+                    # Patrón alternativo: buscar solo un valor monetario al final (formato más simple)
+                    single_amount_match = re.search(r'\$\s*([\d,]+\.\d{2})\s*$', l)
+                    if single_amount_match and 'TOTAL' not in l.upper() and len(l) > 30:
+                        amount = float(single_amount_match.group(1).replace(',', ''))
+                        # Extraer descripción
+                        desc_match = re.search(r'^(.+?)(?:\s+\$\s*[\d,]+\.\d{2})', l)
+                        descripcion = desc_match.group(1).strip()[:100] if desc_match else 'Attachment line'
+                        
+                        detalles.append({
+                            'nCantidad': 1.0,
+                            'tDescripcion': descripcion,
+                            'nPrecioUnitario': amount,
+                            'nPrecioTotal': amount
+                        })
         return detalles if detalles else []
 
     def _extract_labor_details(self, ocr_text: str) -> List[Dict]:
@@ -2395,4 +2528,191 @@ class DataMapper:
                                 continue
         
         return highlights
+    
+    def _extract_all_monetary_values(self, ocr_text: str) -> List[Dict]:
+        """
+        Extrae TODOS los valores monetarios y numéricos del texto, sin importar el formato.
+        Esta función es muy general y captura cualquier valor que parezca monetario.
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Lista de diccionarios con valores monetarios encontrados
+        """
+        if not ocr_text or not ocr_text.strip():
+            return []
+        
+        monetary_values = []
+        lines = ocr_text.split('\n')
+        
+        # Patrones para valores monetarios (muy amplios)
+        # Patrón 1: $ XXX.XX o $ X,XXX.XX o $XXX.XX (con o sin espacio)
+        pattern1 = r'\$\s*([\d,]+\.\d{2})'
+        # Patrón 1b: $XX o $XXX (sin decimales, pero con símbolo $)
+        pattern1b = r'\$\s*(\d{1,6})\b'
+        # Patrón 2: USD XXX.XX o USD X,XXX.XX (con espacio)
+        pattern2 = r'USD\s+([\d,]+\.\d{2})'
+        # Patrón 2b: USDXXX.XX (sin espacio entre USD y el número, como "USD5.30")
+        pattern2b = r'USD([\d,]+\.\d{2})\b'
+        # Patrón 2c: USDXX o USDXXX (sin espacio y sin decimales)
+        pattern2c = r'USD(\d{1,6})\b'
+        # Patrón 3: Números con decimales que parecen montos (XX.XX, XXX.XX o X,XXX.XX)
+        # Cambiado de {3,} a {2,} para capturar valores como 41.35
+        pattern3 = r'\b([\d,]{2,}\.\d{2})\b'
+        # Patrón 4: Números con formato XXX,XXX.XX (sin símbolo de moneda)
+        pattern4 = r'\b([\d]{1,3}(?:,\d{3})+\.\d{2})\b'
+        # Patrón 5: Números pequeños que pueden ser montos (10, 20, etc.) cuando están en contexto monetario
+        # Solo capturar si están en líneas que contienen palabras monetarias o están cerca de otros valores monetarios
+        pattern5 = r'\b(\d{1,2})\b'
+        
+        seen_amounts = set()  # Para evitar duplicados
+        
+        for line_num, line in enumerate(lines):
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+            
+            # Buscar todos los patrones en la línea
+            all_matches = []
+            
+            # Buscar con patrón 1 ($ XXX.XX o $XXX.XX)
+            for match in re.finditer(pattern1, line):
+                amount_str = match.group(1).replace(',', '')
+                try:
+                    amount = float(amount_str)
+                    if amount > 0 and amount < 100000000:  # Valores razonables
+                        all_matches.append(('$', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 1b ($XX o $XXX sin decimales)
+            for match in re.finditer(pattern1b, line):
+                amount_str = match.group(1)
+                try:
+                    amount = float(amount_str)
+                    if amount > 0 and amount < 1000000:  # Valores razonables
+                        all_matches.append(('$', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 2 (USD XXX.XX con espacio)
+            for match in re.finditer(pattern2, line, re.IGNORECASE):
+                amount_str = match.group(1).replace(',', '')
+                try:
+                    amount = float(amount_str)
+                    if amount > 0 and amount < 100000000:
+                        all_matches.append(('USD', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 2b (USDXXX.XX sin espacio, como "USD5.30")
+            for match in re.finditer(pattern2b, line, re.IGNORECASE):
+                amount_str = match.group(1).replace(',', '')
+                try:
+                    amount = float(amount_str)
+                    if amount > 0 and amount < 100000000:
+                        all_matches.append(('USD', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 2c (USDXX o USDXXX sin espacio y sin decimales)
+            for match in re.finditer(pattern2c, line, re.IGNORECASE):
+                amount_str = match.group(1)
+                try:
+                    amount = float(amount_str)
+                    if amount > 0 and amount < 1000000:
+                        all_matches.append(('USD', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 3 (números con decimales: XX.XX, XXX.XX, etc.)
+            for match in re.finditer(pattern3, line):
+                amount_str = match.group(1).replace(',', '')
+                try:
+                    amount = float(amount_str)
+                    # Filtrar: debe ser >= 1.00 y < 100000000, y tener al menos 2 dígitos antes del punto
+                    if amount >= 1.00 and amount < 100000000 and len(amount_str.split('.')[0]) >= 2:
+                        # Verificar que no sea parte de una fecha o código
+                        context = line[max(0, match.start()-10):match.end()+10]
+                        if not re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', context):
+                            # Verificar que no sea parte de un código alfanumérico
+                            if not re.search(r'[A-Za-z]\d+\.\d{2}|\d+\.\d{2}[A-Za-z]', context):
+                                all_matches.append(('USD', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 4 (formato con comas: XXX,XXX.XX)
+            for match in re.finditer(pattern4, line):
+                amount_str = match.group(1).replace(',', '')
+                try:
+                    amount = float(amount_str)
+                    if amount >= 1.00 and amount < 100000000:
+                        all_matches.append(('USD', amount, match.start()))
+                except ValueError:
+                    continue
+            
+            # Buscar con patrón 5 (números pequeños en contexto monetario)
+            # Solo si la línea contiene palabras monetarias o está cerca de otros valores
+            if any(keyword in line.lower() for keyword in ['currency', 'us currency', 'malaysia currency', 'total', 'tot', 'amount', 'fee', 'toll', '$']):
+                for match in re.finditer(pattern5, line):
+                    amount_str = match.group(1)
+                    try:
+                        amount = float(amount_str)
+                        # Solo capturar números pequeños (1-99) en contexto monetario
+                        if 1 <= amount <= 99:
+                            # Verificar que no sea parte de una fecha (8-Jun-25, 15-Jun-25)
+                            context = line[max(0, match.start()-15):match.end()+15]
+                            if not re.search(r'\d{1,2}[-/](?:Jun|Jan|Feb|Mar|Apr|May|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-/]\d{2,4}', context, re.IGNORECASE):
+                                # Verificar que no sea parte de un código (BS0003, etc.)
+                                if not re.search(r'[A-Z]{2,}\d+', context):
+                                    all_matches.append(('USD', amount, match.start()))
+                    except ValueError:
+                        continue
+            
+            # Procesar matches encontrados
+            for currency, amount, position in all_matches:
+                # Evitar duplicados exactos
+                amount_key = (amount, currency)
+                if amount_key in seen_amounts:
+                    continue
+                seen_amounts.add(amount_key)
+                
+                # Extraer contexto/descripción de la línea
+                # Limpiar la línea para obtener descripción
+                desc_line = line[:position].strip() if position > 0 else line
+                # Remover valores monetarios de la descripción
+                desc_line = re.sub(r'\$\s*[\d,]+\.\d{2}', '', desc_line)  # $ XXX.XX
+                desc_line = re.sub(r'\$\s*\d{1,6}\b', '', desc_line)  # $XX o $XXX
+                desc_line = re.sub(r'USD\s+[\d,]+\.\d{2}', '', desc_line, flags=re.IGNORECASE)  # USD XXX.XX
+                desc_line = re.sub(r'USD[\d,]+\.\d{2}\b', '', desc_line, flags=re.IGNORECASE)  # USDXXX.XX (sin espacio)
+                desc_line = re.sub(r'USD\d{1,6}\b', '', desc_line, flags=re.IGNORECASE)  # USDXX o USDXXX (sin espacio)
+                desc_line = re.sub(r'\b[\d,]{2,}\.\d{2}\b', '', desc_line)  # XX.XX o XXX.XX
+                desc_line = desc_line.strip()[:100]  # Limitar longitud
+                
+                # Si no hay descripción, usar contexto de la línea
+                if not desc_line or len(desc_line) < 3:
+                    # Buscar palabras clave antes del valor
+                    before_text = line[max(0, position-50):position].strip()
+                    if before_text:
+                        # Extraer últimas palabras antes del valor
+                        words = before_text.split()[-3:]
+                        desc_line = ' '.join(words) if words else f'Valor monetario línea {line_num+1}'
+                    else:
+                        desc_line = f'Valor monetario línea {line_num+1}'
+                
+                monetary_values.append({
+                    'nCantidad': 1.0,
+                    'tDescripcion': desc_line or f'Valor monetario {amount}',
+                    'nPrecioUnitario': round(amount, 2),
+                    'nPrecioTotal': round(amount, 2),
+                    '_currency': currency,
+                    '_source_line': line_num + 1,
+                    '_auto_extracted': True
+                })
+        
+        # Ordenar por monto descendente (los totales suelen ser más grandes)
+        monetary_values.sort(key=lambda x: x['nPrecioTotal'], reverse=True)
+        
+        return monetary_values
 

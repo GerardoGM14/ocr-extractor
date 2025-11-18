@@ -169,3 +169,119 @@ class ApplyPromptResponse(BaseModel):
     success: bool
     new_version: int
     message: str
+
+
+# ===== Dashboard Models =====
+
+class DashboardStatsResponse(BaseModel):
+    """Estadísticas globales del dashboard."""
+    success: bool
+    monto_total_global: float
+    total_horas_global: float
+    currency: str = "USD"
+
+
+class AnalyticsItem(BaseModel):
+    """Item de análisis (Off-Shore/On-Shore)."""
+    total_gasto: float
+    total_horas: float
+    total_disciplinas: int
+    distribucion_departamento: Dict[str, float]  # {"Engineering": 70, "Other Services": 10, ...}
+    top_5_disciplinas: List[Dict[str, Any]]  # [{"name": "Procurement", "value": 1800}, ...]
+
+
+class DashboardAnalyticsResponse(BaseModel):
+    """Análisis Off-Shore y On-Shore."""
+    success: bool
+    offshore: Optional[AnalyticsItem] = None
+    onshore: Optional[AnalyticsItem] = None
+
+
+class RejectedConcept(BaseModel):
+    """Concepto rechazado."""
+    concepto: str
+    cantidad_total: int
+    monto_total: float
+    porcentaje_total: float
+
+
+class RejectedConceptsResponse(BaseModel):
+    """Lista de conceptos rechazados."""
+    success: bool
+    total: int
+    concepts: List[RejectedConcept]
+
+
+# ===== Periodos Models =====
+
+class PeriodoInfo(BaseModel):
+    """Información de un periodo."""
+    periodo_id: str
+    periodo: str  # "10/2025"
+    tipo: str  # "onshore" | "offshore"
+    estado: str  # "procesado" | "vacio" | "pendiente" | "procesando" | "cerrado"
+    registros: int
+    ultimo_procesamiento: Optional[str] = None
+    created_at: str
+
+
+class PeriodoArchivoInfo(BaseModel):
+    """Información de un archivo dentro de un periodo."""
+    archivo_id: str
+    request_id: str
+    filename: str
+    estado: str  # "procesado" | "pendiente" | "procesando"
+    job_no: Optional[str] = None
+    type: Optional[str] = None
+    source_reference: Optional[str] = None
+    source_ref_id: Optional[str] = None
+    entered_curr: Optional[str] = None
+    entered_amount: Optional[float] = None
+    total_usd: Optional[float] = None
+    fecha_valoracion: Optional[str] = None
+    processed_at: Optional[str] = None
+
+
+class CreatePeriodoRequest(BaseModel):
+    """Request para crear un periodo."""
+    periodo: str  # "10/2025" formato MM/AAAA
+    tipo: str  # "onshore" | "offshore"
+
+
+class PeriodoResponse(BaseModel):
+    """Respuesta de un periodo."""
+    success: bool
+    periodo: PeriodoInfo
+
+
+class PeriodosListResponse(BaseModel):
+    """Lista de periodos."""
+    success: bool
+    total: int
+    periodos: List[PeriodoInfo]
+
+
+class PeriodoDetailResponse(BaseModel):
+    """Detalle completo de un periodo."""
+    success: bool
+    periodo: PeriodoInfo
+    archivos: List[PeriodoArchivoInfo]
+    total_archivos: int
+
+
+class PeriodoResumenPSItem(BaseModel):
+    """Item del resumen PS."""
+    department: str
+    discipline: str
+    total_us: float
+    total_horas: float
+    ratios_edp: float
+
+
+class PeriodoResumenPSResponse(BaseModel):
+    """Resumen PS de un periodo."""
+    success: bool
+    periodo_id: str
+    tipo: str
+    items: List[PeriodoResumenPSItem]
+    total: int
