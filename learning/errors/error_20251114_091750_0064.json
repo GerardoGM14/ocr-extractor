@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251114_091750_0064",
+  "timestamp": "2025-11-14T09:17:50.520421",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 19,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 3,
+        "tTipo": "Jornada"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "BECHTEL\nOTHBP\nNewmont YANACOCHA OE"
+      }
+    ]
+  },
+  "ocr_text_length": 1014,
+  "ocr_text_preview": "BECHTEL\nOTHBP\nNewmont YANACOCHA OE0003\nYanacocha Water Treatment Project – Stage 3\nAUTORIZACIÓN DE VIAJE (TAR)\nN° Bechtel 26443-220-G96-GAM-001434\nFecha: 14-May-25\nEsta solicitud autorizará los viajes de las siguientes personas:\nNOMBRE CARGO CENTRO COSTO N° EMPLEADO\nTURNO E VARIOS VARIOS VARIOS\nFecha de Inicio: Fecha de regreso:\n24 Junio 2025 07 Julio 2025\nOrigen: Destino:\nPunto de Origen Cajamarca\nCajamarca Punto de Origen\nTipo de Viaje:\nAsignación a terreno Visita a terreno Acreditación para t",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251114_091750_0064_ocr_text.txt"
+}

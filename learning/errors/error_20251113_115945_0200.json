@@ -1,0 +1,24 @@
+{
+  "error_id": "error_20251113_115945_0200",
+  "timestamp": "2025-11-13T11:59:45.146575",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 549,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mcomprobante_detalle' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mcomprobante_detalle",
+    "expected_value": "Lista de items"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "tNumero": "104313174891",
+      "tSerie": null,
+      "fEmision": "10/03/25",
+      "nPrecioTotal": 130.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 313,
+  "ocr_text_preview": "mercado pago\nTICKET CLIENTE\n10/03/25 13:53\nOperación #104313174891\nDEBITO MASTERCARD 4729\n004399 NFC\nAID: A0000000041010\nTotal $ 130.000\nAPROBADO\nVÁLIDO COMO BOLETA\nTaxi turismo aeroporto 26.761.856-9\nAv. Independencia sin, Independencia, Región\nMetropolitana. Chile\nNúmero de seria: N950NCBA01834838\nOTHBP\nIS0008",
+  "ocr_text": "mercado pago\nTICKET CLIENTE\n10/03/25 13:53\nOperación #104313174891\nDEBITO MASTERCARD 4729\n004399 NFC\nAID: A0000000041010\nTotal $ 130.000\nAPROBADO\nVÁLIDO COMO BOLETA\nTaxi turismo aeroporto 26.761.856-9\nAv. Independencia sin, Independencia, Región\nMetropolitana. Chile\nNúmero de seria: N950NCBA01834838\nOTHBP\nIS0008"
+}

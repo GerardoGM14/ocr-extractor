@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251114_091809_0070",
+  "timestamp": "2025-11-14T09:18:09.275489",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 36,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mresumen' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mresumen",
+    "expected_value": "Lista de items de resumen"
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 2,
+        "tTipo": "Resumen"
+      }
+    ],
+    "mdivisa": [
+      {
+        "tDivisa": "USD"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Alimentación"
+      }
+    ]
+  },
+  "ocr_text_length": 414,
+  "ocr_text_preview": "¡Hola Sergio, gracias por tu compra!\nRecibirás un email por cada uno de tus productos con\ninstrucciones para su instalación. Por favor, revisa tu\nbandeja de spam.\nOTHBP\nOE0011\nComprobante de Holafly\n$39.90\nPagado May 31, 2025\nNúmero de comprobante #E11241842\nMétodo de pago Shopify payments ... 6440\nResumen del pedido\nAsia - 10 días y datos ilimitados × 1 $39.90\nDescuento -$0.00\nSubtotal $39.90\nImpuestos $0.00\n2",
+  "ocr_text": "¡Hola Sergio, gracias por tu compra!\nRecibirás un email por cada uno de tus productos con\ninstrucciones para su instalación. Por favor, revisa tu\nbandeja de spam.\nOTHBP\nOE0011\nComprobante de Holafly\n$39.90\nPagado May 31, 2025\nNúmero de comprobante #E11241842\nMétodo de pago Shopify payments ... 6440\nResumen del pedido\nAsia - 10 días y datos ilimitados × 1 $39.90\nDescuento -$0.00\nSubtotal $39.90\nImpuestos $0.00\n2"
+}

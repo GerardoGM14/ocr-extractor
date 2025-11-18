@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251113_112240_0019",
+  "timestamp": "2025-11-13T11:22:40.945050",
+  "pdf_name": "072cdee6-6ce5-43fa-96a2-a1eb5c4c2b96",
+  "page_number": 33,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "17/06/2025",
+      "tCliente": null,
+      "nPrecioTotal": 56.0
+    }
+  },
+  "ocr_text_length": 602,
+  "ocr_text_preview": "BSQE\nBS0003\nMEAL\nEST: 1907\nHAMEEDIYAH\nDident Nasi Kandar in Malaysia\nHAMELDIYAH EXPRESS\nSDN BHD\n(1162337-K)\nUnit GOA, Medan Perniagaan Pauh Jaya,\nJalan Baru, 13600 Perai,\nPulau Pinang.\nTel: 04-333 9186\nSST No.: P13-1309-32100052\nINVOICE\nTable No: NS18\nInvoice No: JBP_NK/15049\nOrder No : 15049\nDate : 17/06/2025 #1 8:17 PM\nCashier : CASHIER 1\nPRN ON : 17/06/2025 8:18 PM\nQTY ITEM RM\n*** Dine In ***\n1 NASI PUTIH 2.00\n1 AYAM BAWANG BIASA 10.50\n1 TELUR REBUS 1.50\nUSD 3.40\n3 Suplota 14.00\nNet Total [14",
+  "ocr_text": "BSQE\nBS0003\nMEAL\nEST: 1907\nHAMEEDIYAH\nDident Nasi Kandar in Malaysia\nHAMELDIYAH EXPRESS\nSDN BHD\n(1162337-K)\nUnit GOA, Medan Perniagaan Pauh Jaya,\nJalan Baru, 13600 Perai,\nPulau Pinang.\nTel: 04-333 9186\nSST No.: P13-1309-32100052\nINVOICE\nTable No: NS18\nInvoice No: JBP_NK/15049\nOrder No : 15049\nDate : 17/06/2025 #1 8:17 PM\nCashier : CASHIER 1\nPRN ON : 17/06/2025 8:18 PM\nQTY ITEM RM\n*** Dine In ***\n1 NASI PUTIH 2.00\n1 AYAM BAWANG BIASA 10.50\n1 TELUR REBUS 1.50\nUSD 3.40\n3 Suplota 14.00\nNet Total [14.00]\nCash *** 17/06/2025 8:18 PM *** 14.00\nTax Summary Taxable Tax\nInclusive Service Tax 6% 13.21 0.79"
+}

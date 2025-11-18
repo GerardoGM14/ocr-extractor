@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251113_112335_0046",
+  "timestamp": "2025-11-13T11:23:35.046173",
+  "pdf_name": "072cdee6-6ce5-43fa-96a2-a1eb5c4c2b96",
+  "page_number": 70,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 1.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 913,
+  "ocr_text_preview": "SGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nBSQE\nBS0004\nSQR/AEX:Nick Hu\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2 26529-000-409138-MLGT-YZ-A 213925 26529-000-409138-MLGT-YQ-A-005 China SQR Taxl ¥337.00 $51.85\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $51.85 $0.00 $51.85\n表格说明\nCURRENCY EXCHANGE RATE:",
+  "ocr_text": "SGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nMonth: Jun-25\nBSQE\nBS0004\nSQR/AEX:Nick Hu\nDate Assignment No. Charge No. Report No. Country Type of Activity Type Kilometer Transportation (USD) Amount Hotel (USD) Total (USD)\n1\n2 26529-000-409138-MLGT-YZ-A 213925 26529-000-409138-MLGT-YQ-A-005 China SQR Taxl ¥337.00 $51.85\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\nTotal China SQR $51.85 $0.00 $51.85\n表格说明\nCURRENCY EXCHANGE RATE: 1USD=6.5RMB\nNIGHT SHIFT-7PM-7AM WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nSATURDAYS WILL BE CHARGED AT 1.25 TIMES UNIT RATE\nSUNDAYS & PUBLIC HOLIDAYS WILL BE CHARGED AT 1.5 TIMES UNIT RATE\nUNIT RATE APPLIES TO ALL INSPECTION. TRAVEL AND REPORTING TIME\nUNIT RATE IS NET OF APPLICABLE LOCAL AND FEDERAL TAXES OF COUNTRY OF EXECUTION (E. G. VAT. ETC)\nMINIMUM CHARGE OF 5 HOURS APPLIES TO EACH EVENT (PER DATE AND SITE)"
+}

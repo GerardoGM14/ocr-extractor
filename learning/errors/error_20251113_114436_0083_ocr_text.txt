@@ -1,0 +1,54 @@
+BECHTEL
+OTHBP
+Newmont OE0003
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+066345 Leopoldo Abril Quicaña Jefe Adjunto de Topografia Arequipa 23/06/2025 07/07/2025 26443-351
+194225 Jimmy Oropeza Ponce Lead Piping FE Arequipa 19/06/2025 03/07/2025 26443-351
+065399 Dante Ardiles Zubiate Labor Relations Representative Arequipa 23/06/2025 07/07/2025 26443-351
+/Lead
+065179 Raciel Bautista Venegas Field Schedule Engineer Arequipa 23/06/2025 07/07/2025 26443-351
+069414 Jose Cuba Fernandez Pipeline-Pumpstations FIELD Arequipa 23/06/2025 07/07/2025 26443-351
+ENGINEER
+Luis Cristobal Mayta Moquegua 23/06/2025 07/07/2025 26443-351
+081433 JR Superintendent Piping East
+Coayla
+081585 Juan Carlos Flores Superintendente E&I (Este) Arequipa 23/06/2025 07/07/2025 26443-351
+Loaiza
+081586 Cesar Datto Paredes Lead Civil Field Engineer Arequipa 23/06/2025 07/07/2025 26443-351
+082418 Luz Clarita Yupa Velasco Profesional de Salud Mental Arequipa 23/06/2025 07/07/2025 26443-351
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+Christian Delgado Tacna 23/06/2025 07/07/2025 26443-351
+081250 Time Shiefkeeper
+Paredes
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+069776 Percy Ancori Cervantes Safety Senior Specialist Trujillo 23/06/2025 07/07/2025 26443-351
+081687 Nilton Ccallata Añamuro CSA Field Engineer (East) Trujillo 23/06/2025 07/07/2025 26443-351
+065340 Tomas Huaman Medina Field Schedule Engineer Chiclayo 24/06/2025 07/07/2025 26443-351
+082308 Nathaly Robles Carrero Civil Structural Field Engineer Chiclayo 24/06/2025 07/07/2025 26443-351
+082174 Raquel Mariños Obeso Trabajadora Social Trujillo 23/06/2025 07/07/2025 26443-351
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+069097 Miguel Melendez Rosado Field Planner Lima 01/07/2025 09/07/2025 26443-351
+165099 Roland Huerta Chavarri Deputy Project Security Lima 24/06/2025 07/07/2025 26443-351
+Manager
+Administrador de Servicios de Lima 24/06/2025 07/07/2025 26443-351
+043665 Lorena Diaz Cuadros
+Campamento
+067226 Saul Bellido Ruiz Electrical/Instr. FE Lima 27/06/2025 10/07/2025 26443-351
+070365 Ruby Martinez Vilchez Payroll Coordinator Lima 24/06/2025 07/07/2025 26443-351
+Alexander Jacobo Lima 24/06/2025 07/07/2025 26443-351
+069140 Warehouse Coordinador
+Charca
+080790 Jheferson Chaparro León JR Superintendent Civil - Lima 24/06/2025 07/07/2025 26443-351
+Superintendente Civil Junior
+194431 Carlos Mazuelos Monges Tools Superintendent Lima 24/06/2025 07/07/2025 26443-351
+066545 Claudia Llamosas Representante de Recursos Lima 24/06/2025 07/07/2025 26443-351
+Humanos
+081792 Angel Carbajal Robles Monitor Socio Laboral Lima 24/06/2025 07/07/2025 26443-351
+Líder de Precomisionamiento Lima 27/06/2025 10/06/2025 26443-351
+082010 Artemio Deza Quispe
+Electrico
+Level 3 - Bechtel Internal and Selected External Distribution

@@ -1,0 +1,28 @@
+Curran, Michael
+OTRE
+OR0001
+From: Raucci, Sharon
+Sent: Monday, July 21, 2025 10:50 AM
+To: BARS Input, Glendale
+Cc: Atkins, Garrett; May, Robert; Gann, Julie; Gosain, Tarun; Pletcher, Ben
+Subject: BWB2-55600-430 - WATC M&TE Lab - OBARS Upload - Jun 2025
+Attachments: 55600-430 M&TE-Testing-Lab-OBARS-Upload-2025-06-R00.csv; 55600-430 M&TE-Testing-Lab-OBARS-Upload-2025-06-R00.xls;
+06-2025 LAB BILL OUT R_0.xlsx
+Bechtel Level 3 - General. Non-Confidential Business Information.
+*** Re-submittal with re-formatted csv file ***
+Good Afternoon BARS team,
+Attached is the upload file plus the Excel version and supporting back-up for the WATC M&TE lab (Job 55600, Sub Job 430) for processing.
+Below is the upload summary:
+Credit/Recovery Debit/Cost
+Job Sub Job Sub Sub Recovery Job Sub Job Sub Sub Cost
+55600 430 $ (4,410.00) 26196 530 $ 4,410.00
+55600 430 $ (45,250.00) 26442 421 $ 45,250.00
+55600 430 $ -
+55600 430 $ -
+total $ (49,660.00) total $ 49,660.00
+Questions/issues, please contact me.
+Thank You,
+Sharon K. Raucci | Principal Cost Engineer
+BECHTEL
+Project Controls | EcoSys Super User
+1

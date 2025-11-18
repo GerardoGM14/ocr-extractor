@@ -1,0 +1,32 @@
+SGS
+INVOICE
+BSQE
+BS0004
+SGS Order No: SHINSCS2500784B01
+Date: 2025-07-07
+Page: 1/1
+Customer Number 1055615
+Customer Name BECHTEL SUPPLIER QUALITY & EXPEDITING INC.
+Customer Address 3000 POST OAK BLVD. MS75, HOUSTON, TEXAS,77058, United States
+Attention MONDSHINE
+Currency USD
+Payment Term Net due in 30 Days BBS ND REVC 10 JUL 2025
+VAT No
+Purchase Order
+Reference Order SHINSCS2500784B01
+Item Description Quantity UM Unit Price Net Amount Tax Code Amount
+57738 Inspection Service 1 Ea 3,764.35 3,551.27 VAT 6% 3,764.35
+Execution Location Taizhou&Tianjin&Suzhou&Baoding&Wuxi&Lishui&Dezhou&Guangzhou&Wuhan&Fushun
+Execution Date(s) 2025.6.2-6.30
+Inspector Name Herbert Fan&Nick Hu&Alex Wu&Allen Zhu&Muva Yang&Dong Zhichao&Jim Song&Jared Chen etc.
+Net Amount USD 3,551.27
+Sum of Tax USD 213.08
+Total Amount USD 3,764.35
+Contact Name : Angel Xia
+E-mai : Angel.xia@sgs.com
+Beneficiary's Name : SGS-CSTC Standards Technical Services (Shanghai) Co., Ltd.
+Beneficiary's Bank : Citibank (china)Co.,Ltd. Shanghai Branch
+Account Number : 1748074003
+BIC/SWIFT : CITICNSX
+Issuing Affiliate: F619301
+USD 1,210.92 + USD 51.08 + USD 53.85 + USD 30.00 + USD 114.98 = USD 1,460.83

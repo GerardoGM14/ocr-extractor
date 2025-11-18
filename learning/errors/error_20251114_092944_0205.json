@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251114_092944_0205",
+  "timestamp": "2025-11-14T09:29:44.850569",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 572,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 3,
+        "tTipo": "Jornada"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "Humanos\nLevel"
+      }
+    ]
+  },
+  "ocr_text_length": 1405,
+  "ocr_text_preview": "OTHBP\nNewmont IS0008\nYANAC\n#\nEmpleado\nNombre Puesto Origen Subida Bajada Centro de\nCosto\n069097 Miguel Melendez Field Planner Lima 22/04/2025 05/05/2025 26443-351\n165099 Roland Huerta Deputy Project Security Lima 22/04/2025 05/05/2025 26443-351\nManager\nAdministrador de Servicios\n043665 Lorena Diaz Lima 22/04/2025 05/05/2025 26443-351\nde Campamento\n067226 Saul Bellido FE Power Distribution Lima 22/04/2025 05/05/2025 26443-351\n070365 Ruby Martinez Payroll Coordinator Lima 22/04/2025 05/05/2025 264",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251114_092944_0205_ocr_text.txt"
+}

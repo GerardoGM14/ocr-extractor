@@ -1,0 +1,48 @@
+{
+  "error_id": "error_20251114_092307_0111",
+  "timestamp": "2025-11-14T09:23:07.601807",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 252,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "mcomprobante": [
+      {
+        "_sequential_number": "OE0050",
+        "tNumero": "IN-US05815346",
+        "tSerie": null,
+        "fEmision": "02 Jun 2025",
+        "tCliente": null
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "CLIENT CASE FIELDS"
+      }
+    ]
+  },
+  "ocr_text_length": 571,
+  "ocr_text_preview": "INVOICE IN-US05815346\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063740\nApplication Approval Date: 02 Jun 2025\nApplication File Date : 02 Jun 2025\nAuthorizing Manager :\nCase Initiation Date: 29 May 2025\nCost Center :\nCurrent Location City: Santiago\nEmployee ID: 031510\nFunction: Engineering and Technology\nJob Charge Code (ex. #####-###): 26443314\nNumber of Dependents: 0\nPO#\nPO #: 491154\n: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Yanacocha\nReceiving Country : PER",
+  "ocr_text": "INVOICE IN-US05815346\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063740\nApplication Approval Date: 02 Jun 2025\nApplication File Date : 02 Jun 2025\nAuthorizing Manager :\nCase Initiation Date: 29 May 2025\nCost Center :\nCurrent Location City: Santiago\nEmployee ID: 031510\nFunction: Engineering and Technology\nJob Charge Code (ex. #####-###): 26443314\nNumber of Dependents: 0\nPO#\nPO #: 491154\n: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Yanacocha\nReceiving Country : PERU\nSending Country: CHILE\nCONFIDENTIAL\nFRAGOMEN\nOTHBP\nOE0050\nPage 2 of 2"
+}

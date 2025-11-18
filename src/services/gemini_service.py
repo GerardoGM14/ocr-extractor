@@ -345,6 +345,61 @@ CASH FLOW VALUES (OnShore): Extract Cash Flow table values
 - Extract ALL values from Cash Flow tables, including negative values in parentheses
 - Example: "Period Balance (305,350) (6,333,781) (7,080,000)" - extract all values
 
+DEPARTMENTS (OnShore Documents) - CRITICAL FOR ANALYTICS:
+- **Department Names**: Look for department labels in tables, headers, or classification sections
+- Common department names to extract:
+  * "Engineering" or "Engineering Department"
+  * "Operations" or "Operations Department"
+  * "Maintenance" or "Maintenance Department"
+  * "Safety" or "Safety Department" or "Health & Safety"
+  * "Environmental" or "Environmental Department"
+  * "Human Resources" or "HR" or "HR Department"
+  * "Finance" or "Finance Department" or "Financial"
+  * "IT Services" or "IT" or "Information Technology"
+  * "Other Services" or "Other" or "Miscellaneous"
+- **Location**: Departments may appear in:
+  * Table headers (e.g., "Department", "Dept", "Department Name")
+  * Classification columns in expense reports
+  * Summary sections with department breakdowns
+  * Organization charts or org codes
+- **Patterns**: Look for patterns like:
+  * "Department: Engineering"
+  * "Dept: Operations"
+  * "Engineering Department - $450,000.00"
+  * Table columns with department names
+  * Org codes that map to departments (e.g., "HXH0009" might indicate a department)
+- **CRITICAL**: Extract department names even if they appear abbreviated or in different formats
+- If you see department-related information, extract it completely
+
+DISCIPLINES (OnShore Documents) - CRITICAL FOR ANALYTICS:
+- **Discipline Names**: Look for discipline labels in tables, classifications, or job sections
+- Common discipline names to extract:
+  * "Engineering" (may appear as discipline AND department)
+  * "Operations"
+  * "Maintenance"
+  * "Safety"
+  * "Environmental"
+  * "Project Management"
+  * "Quality Control" or "QC"
+  * "Procurement"
+  * "Construction"
+  * "Logistics"
+- **Location**: Disciplines may appear in:
+  * Job section classifications (e.g., "Line Item by Job Section")
+  * NC Codes or cost codes that map to disciplines
+  * Table columns labeled "Discipline", "Type", "Category"
+  * Expense type classifications
+  * Labor classifications in time sheets
+- **Patterns**: Look for patterns like:
+  * "Discipline: Engineering"
+  * "Type: Operations"
+  * "Category: Maintenance"
+  * Job codes that indicate disciplines (e.g., "611" might map to a discipline)
+  * NC Codes in expense reports (e.g., "NC Code: 611" might indicate Engineering discipline)
+- **CRITICAL**: Extract discipline names even if they appear in codes or abbreviated formats
+- If you see discipline-related information, extract it completely
+- Note: Disciplines are often more granular than departments (e.g., "Engineering" department might have "Civil Engineering", "Mechanical Engineering" disciplines)
+
 PAYMENT TERMS: Conditions, notes, payment information
 - Extract payment terms, due dates, payment methods
 

@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251113_114713_0101",
+  "timestamp": "2025-11-13T11:47:13.297158",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 126,
+  "error_type": "incorrect_value",
+  "error_message": "Campo 'nPrecioTotal' tiene valor incorrecto: 0.0",
+  "context": {
+    "field_name": "nPrecioTotal",
+    "extracted_value": "0.0",
+    "expected_value": null,
+    "reason": "Valor sospechosamente bajo (< 0.01)"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_sequential_number": "OE0025",
+      "tNumero": "6072",
+      "tSerie": null,
+      "nPrecioTotal": 0.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1810,
+  "ocr_text_preview": "INVOICE\nGLOBAL IMMIGRATION\nBECHTEL GLOBAL CORPORATION\nP.O. BOX 7700\nGLENDALE, ARIZONA 85312-7700\nUNITED STATES OF AMERICA\nContact Email: aexpatri@bechtel.com\nFRAGOMEN\nOTHBP\nFragomen, Del Rey, Bernsen & Loewy, LLP\n1400 Broadway\nOE0025\nNew York, NY 10018\nUnited States of America\nTelephone: +1 732 862 5000\nFacsimile: +1 732 862 5020\nINVOICE SUMMARY:\nMatter: HUGO ALBERTO JARA Invoice #: IN-US05812023 Total Professional Fees: 0.00 USD\nSOTO\nMatter #: 9394417 Invoice Date: Jun 9, 2025 Total Disbursemen",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251113_114713_0101_ocr_text.txt"
+}

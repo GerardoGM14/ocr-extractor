@@ -1,0 +1,14 @@
+{
+  "periodos": [
+    {
+      "periodo_id": "2025-10-offshore",
+      "periodo": "10/2025",
+      "tipo": "offshore",
+      "estado": "pendiente",
+      "registros": 5,
+      "ultimo_procesamiento": null,
+      "archivos_asociados": [],
+      "created_at": "2025-11-18T08:52:36.121776"
+    }
+  ]
+}

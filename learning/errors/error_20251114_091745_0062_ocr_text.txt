@@ -1,0 +1,59 @@
+INVOICE
+GLOBAL IMMIGRATION
+BECHTEL GLOBAL CORPORATION
+P.O. BOX 7700
+GLENDALE, ARIZONA 85312-7700
+UNITED STATES OF AMERICA
+Contact Email: aexpatri@bechtel.com
+FRAGOMEN
+OTHBP
+Fragomen, Del Rey, Bernsen & Loewy LLP
+OE0002
+New York NY 10018
+United States of America
+Telephone: +1 732 862 5000
+Facsimile: +1 732 862 5020
+INVOICE SUMMARY:
+Matter: ARIEL ARIOSTO
+ARANCIBIA GALLARDO
+Matter #: 9099381
+Employee ID: 039654
+Cost Center:
+Purchase Order #: 491154
+Invoice #: IN-US05799459
+Invoice Date: May 31, 2025
+Payment Term: 60 Days
+Total Professional Fees: 0.00 USD
+Total Disbursements: 28.05 USD
+Invoice Total: 28.05 USD
+Checks via Delivery Service
+Please send checks made payable to:
+Fragomen, Del Rey, Bernsen & Loewy, LLP
+Attn: 96072
+5503 N. Cumberland Ave
+Chicago, Illinois 60656
+Checks via USPS
+Please send checks made payable to:
+Fragomen, Del Rey, Bernsen & Loewy, LLP
+75 Remittance Drive, Suite # 6072
+Chicago, Illinois 60675-6072
+ACH/Wire Transfer
+Fragomen, Del Rey, Bernsen & Loewy, LLP
+The Northern Trust Company
+Account # 30147775
+ABA Transit # 071000152
+Swift Code: CNORUS44
+PLEASE INCLUDE REMITTANCE DETAILS WITH ALL PAYMENTS TO CLIENT.REMIT@FRAGOMEN.COM
+INVOICE DETAILS:
+Professional (Flat) Fees: (Work carried out by FRAGOMEN - COSTA RICA)
+Date Description Amount
+May 30, 2025 Disbursement only. 0.00
+Total 0.00
+Disbursements: (Work carried out by FRAGOMEN - COSTA RICA)
+Date Description Amount
+May 30, 2025 Foreign GST/VAT (PO-0009099381-00002) 4.28
+May 30, 2025 Third party vendor out of pocket expenses - Local Transport/Taxi (PO-0009099381-00002) 23.77
+Total 28.05
+CLIENT CASE FIELDS:
+CONFIDENTIAL
+Page 1 of 2

@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251114_092436_0127",
+  "timestamp": "2025-11-14T09:24:36.327510",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 332,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mcomprobante_detalle' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mcomprobante_detalle",
+    "expected_value": "Lista de items"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_sequential_number": "OE0068",
+      "tNumero": "IN-US05760661",
+      "tSerie": null,
+      "fEmision": "07 Apr 2025",
+      "nPrecioTotal": 140.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 589,
+  "ocr_text_preview": "INVOICE IN-US05760661\nDate Description Amount\nTotal 140.57\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00064313\nApplication Approval Date: 07 Apr 2025\nApplication File Date: 20 Mar 2025\nAuthorizing Manager:\nCase Initiation Date: 17 Mar 2025\nCost Center:\nCurrent Location City: Santiago\nEmployee ID: 035011\nFunction: Procurement\nJob Charge Code (ex. #####-###): 26443331\nNumber of Dependents: 0\nPO #: 491154\nPO# : 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Yanacocha\nRece",
+  "ocr_text": "INVOICE IN-US05760661\nDate Description Amount\nTotal 140.57\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00064313\nApplication Approval Date: 07 Apr 2025\nApplication File Date: 20 Mar 2025\nAuthorizing Manager:\nCase Initiation Date: 17 Mar 2025\nCost Center:\nCurrent Location City: Santiago\nEmployee ID: 035011\nFunction: Procurement\nJob Charge Code (ex. #####-###): 26443331\nNumber of Dependents: 0\nPO #: 491154\nPO# : 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Yanacocha\nReceiving Country: PERU\nSending Country: CHILE\nFRAGOMEN\nOTHBP\nOE0068\nCONFIDENTIAL\nPage 2 of 2"
+}

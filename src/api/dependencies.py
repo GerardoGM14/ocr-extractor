@@ -11,6 +11,7 @@ from typing import Optional
 
 from ..services.gemini_service import GeminiService
 from ..services.data_mapper import DataMapper
+from ..services.database_service import DatabaseService
 from ..core.ocr_extractor import OCRExtractor
 from ..core.file_manager import FileManager
 from .upload_manager import UploadManager
@@ -316,6 +317,38 @@ def get_periodo_manager() -> PeriodoManager:
         _service_cache["periodo_manager"] = PeriodoManager()
     
     return _service_cache["periodo_manager"]
+
+
+def get_database_service() -> DatabaseService:
+    """
+    Obtiene instancia de DatabaseService (singleton).
+    
+    Returns:
+        Instancia configurada de DatabaseService
+    """
+    global _service_cache
+    
+    if _service_cache is None:
+        _service_cache = {}
+    
+    if "database_service" not in _service_cache:
+        # Leer configuración de BD desde config.json
+        config_path = _find_config_json()
+        db_enabled = False
+        
+        if config_path and Path(config_path).exists():
+            try:
+                import json
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                db_config = config.get("database", {})
+                db_enabled = db_config.get("enabled", False)
+            except Exception as e:
+                logger.warning(f"No se pudo leer configuración de BD: {e}")
+        
+        _service_cache["database_service"] = DatabaseService(enabled=db_enabled)
+    
+    return _service_cache["database_service"]
 
 
 def clear_service_cache():

@@ -1,0 +1,45 @@
+TQ Cert Services Private Limited
+Abu Dhabi-UAE
+Invoice Mont Jan'25 Invoice Number: BSQE25NT2005 14-Feb-25 (Expenses) Due Date:
+OTHBP
+SQ0003
+Date * Assignment Number Report Number Charge No Supplier Country Type of Std Std Std Travel
+Insp./Exp Hours Total km hrs** Meal Lodging Other Visit Type
+Activity Hours Rate Value fare
+07-Jan-25 26232-160-165400- 26232-160-165400- General Energy
+MBNO-YZ-D MBNO-YQ-D-012, Rev 26251-140 Management Systems India Inspection SS 13 13 15 120 9+4
+000 Private Limited
+10-Jan-25 26251-140-327208- 26251-140-327208- Pressure Vessel -
+MWDM-YZ-Β MWDM-YQ-B-004, Rev 26280-223 CHAKAN, Pune India Inspection SS 13 13 15 95 9+4
+000
+26251-140-308746- 26251-140-308746- Cryogas Equipment Pvt. Ltd-
+28-Jan-25 26251-100 India Inspection RUJ 12 12 15 150 8+4
+MSXN-YZ-C MSXN-YQ-C-021, Rev 000 Vadodara, Gujarat
+26607-220-YZA-MPGL 26607-220-YQA-MPGL- SatyaybTechnocast PVT.
+27-Jan-25 26607-120 India Inspection RJS 9 9 15 0 8+1 14.79 Outstation
+2B001 2B001, Rev 000 Ltda-Rajkot, Ahmedabad
+Visit
+07-Jan-25 26251-140-156014- 26251-140-156014- Koch Glitsch India Limited-
+26290-140 India Inspection SKP 8 8 15 0 4+4 12.44 Outstation
+MVTO-YZ-A MVTO-YQ-A-034, Rev 000 SAVLI, Vadodara
+Visit
+26260-140-312536- 26260-140-312536- Koch Glitsch India Limited-
+07-Jan-25 26290-140 India Inspection SKP 4 4 15 0 4+0
+MVTO-YZ-A MVTO-YQ-A-004, Rev 000 SAVLI, Vadodara
+13-Jan-25 26251-140-156014- 26251-140-156014- Koch Glitsch India Limited-
+26290-140 India Inspection SKP 8 8 15 0 4+4 13.83 Outstation
+MVTO-YZ-A MVTO-YQ-A-035, Rev 000 SAVLI, Vadodara
+Visit
+26260-140-312536- 26260-140-312536- Koch Glitsch India Limited-
+13-Jan-25 26290-140 India Inspection SKP 4 4 15 0 4+0
+MVTO-YZ-A MVTO-YQ-A-005, Rev 000 SAVLI, Vadodara
+22-Jan-25 26251-140-156014- 26251-140-156014- Koch Glitsch India Limited-
+26290-140 India Inspection SKP 8 8 15 0 4+4 12.44 Outstation
+MVTO-YZ-A MVTO-YQ-A-036, Rev 000 SAVLI, Vadodara
+Visit
+26260-140-312536- 26260-140-312536- Koch Glitsch India Limited-
+22-Jan-25 26290-140 India Inspection SKP 4 4 15 0 4+0
+MVTO-YZ-A MVTO-YQ-A-006, Rev 000 SAVLI, Vadodara
+30-Jan-25 26280-220-ΥΖΑ- 26280-220-YQA-MAHU- Sunrise Industries India
+26290-140 India Inspection SKP 10 10 15 150 6+4
+MAHU-1J001 1J001-7 Limited-GARADIA, Vadodara

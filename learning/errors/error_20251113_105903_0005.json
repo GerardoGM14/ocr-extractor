@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251113_105903_0005",
+  "timestamp": "2025-11-13T10:59:03.050041",
+  "pdf_name": "2755aba3-0569-40ae-944b-1242e098dc92",
+  "page_number": 14,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "8/6/25",
+      "nPrecioTotal": 21.9,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 216,
+  "ocr_text_preview": "BSQE\nBS0003\nM/s.\nMOL\n日期\nTarikh 8/6/25\n编号 数量 摘要 NO. 价目 银额\nNO. KUANTITI JENIS BARANG-BARANG HARGA JUMLAH [RM]\n1 Makan 21.90\n2\n3\n4\n5\n6\n7\n8\n9\n10 USD5.30\nCASD / INVOICE 总计\nJUMLAH RM 21.90\nTERIMA OLEH 收货人 DISAHKAN OLEH 经手人",
+  "ocr_text": "BSQE\nBS0003\nM/s.\nMOL\n日期\nTarikh 8/6/25\n编号 数量 摘要 NO. 价目 银额\nNO. KUANTITI JENIS BARANG-BARANG HARGA JUMLAH [RM]\n1 Makan 21.90\n2\n3\n4\n5\n6\n7\n8\n9\n10 USD5.30\nCASD / INVOICE 总计\nJUMLAH RM 21.90\nTERIMA OLEH 收货人 DISAHKAN OLEH 经手人"
+}

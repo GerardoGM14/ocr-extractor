@@ -1,0 +1,44 @@
+{
+  "error_id": "error_20251113_114839_0112",
+  "timestamp": "2025-11-13T11:48:39.893942",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 189,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mresumen' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mresumen",
+    "expected_value": "Lista de items de resumen"
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 2,
+        "tTipo": "Resumen"
+      }
+    ],
+    "mdivisa": [
+      {
+        "tDivisa": "CLP"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Alimentación"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "ow if you have any questions.\nThanks and regards"
+      }
+    ]
+  },
+  "ocr_text_length": 2888,
+  "ocr_text_preview": "Rotation #03 [FACUNDO MOSSO]\nSummary Details▾ List Settings Receipts▾ Print/Email\nExpenses\nTransaction Expense Type Free... City R... Amount Amount Approv... Payment Type Exch... Ver\n06/04/2025 Local Transport... Taxi Santiago, CHILE No CLP 40,250 CLP 40,250 Cash Out of P... 1 Tax\n06/03/2025 Meals - Travel Tuna... Cajamarca, PERU No CLP 19,474 CLP 19,474 Cash Out of P... 259.6... Tur\n06/03/2025 Meals Travel TGI ... Lima, PERU No CLP 18,796 CLP 18,796 Cash Out of P... 939.8... TGI\n06/02/2025 Meal",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251113_114839_0112_ocr_text.txt"
+}

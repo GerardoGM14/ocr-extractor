@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251113_114423_0077",
+  "timestamp": "2025-11-13T11:44:23.671843",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 11,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "CLIENT CASE FIELDS"
+      }
+    ]
+  },
+  "ocr_text_length": 556,
+  "ocr_text_preview": "INVOICE IN-US05799459\nFRAGOMEN\nOTHBP\nOE0002\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063346\nApplication Approval Date: 08 May 2025\nApplication File Date : 08 May 2025\nAuthorizing Manager :\nCase Initiation Date: 09 Jan 2025\nCost Center :\nCurrent Location City: Santiago\nEmployee ID: 039654\nFunction: Procurement\nJob Charge Code (ex. #####-###): 26443111\nNumber of Dependents: 0\nPO#\nPO #: 491154\n: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Cajamarca\nReceiving Countr",
+  "ocr_text": "INVOICE IN-US05799459\nFRAGOMEN\nOTHBP\nOE0002\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063346\nApplication Approval Date: 08 May 2025\nApplication File Date : 08 May 2025\nAuthorizing Manager :\nCase Initiation Date: 09 Jan 2025\nCost Center :\nCurrent Location City: Santiago\nEmployee ID: 039654\nFunction: Procurement\nJob Charge Code (ex. #####-###): 26443111\nNumber of Dependents: 0\nPO#\nPO #: 491154\n: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Cajamarca\nReceiving Country : PERU\nSending Country: CHILE\nCONFIDENTIAL\nPage 2 of 2"
+}

@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251114_092834_0191",
+  "timestamp": "2025-11-14T09:28:34.701104",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 522,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tSequentialNumber' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tSequentialNumber",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "hoja": {
+      "tJson": "TQ Cert Services Private Limited\nAbu Dhabi-UAE\nInvoice Mont Jan'25 Invoice Number: BSQE25NT2005 14-Feb-25 (Expenses) Due Date:\nOTHBP\nSQ0003\nDate * Assignment Number Report Number Charge No Supplier Country Type of Std Std Std Travel\nInsp./Exp Hours Total km hrs** Meal Lodging Other Visit Type\nActivity Hours Rate Value fare\n07-Jan-25 26232-160-165400- 26232-160-165400- General Energy\nMBNO-YZ-D MBNO-YQ-D-012, Rev 26251-140 Management Systems India Inspection SS 13 13 15 120 9+4\n000 Private Limited\n10-Jan-25 26251-140-327208- 26251-140-327208- Pressure Vessel -\nMWDM-YZ-Β MWDM-YQ-B-004, Rev 26280-223 CHAKAN, Pune India Inspection SS 13 13 15 95 9+4\n000\n26251-140-308746- 26251-140-308746- Cryogas Equipment Pvt. Ltd-\n28-Jan-25 26251-100 India Inspection RUJ 12 12 15 150 8+4\nMSXN-YZ-C MSXN-YQ-C-021, Rev 000 Vadodara, Gujarat\n26607-220-YZA-MPGL 26607-220-YQA-MPGL- SatyaybTechnocast PVT.\n27-Jan-25 26607-120 India Inspection RJS 9 9 15 0 8+1 14.79 Outstation\n2B001 2B001, Rev 000 Ltda-Rajkot, Ahmedabad\nVisit\n07-Jan-25 26251-140-156014- 26251-140-156014- Koch Glitsch India Limited-\n26290-140 India Inspection SKP 8 8 15 0 4+4 12.44 Outstation\nMVTO-YZ-A MVTO-YQ-A-034, Rev 000 SAVLI, Vadodara\nVisit\n26260-140-312536- 26260-140-312536- Koch Glitsch India Limited-\n07-Jan-25 26290-140 India Inspection SKP 4 4 15 0 4+0\nMVTO-YZ-A MVTO-YQ-A-004, Rev 000 SAVLI, Vadodara\n13-Jan-25 26251-140-156014- 26251-140-156014- Koch Glitsch India Limited-\n26290-140 India Inspection SKP 8 8 15 0 4+4 13.83 Outstation\nMVTO-YZ-A MVTO-YQ-A-035, Rev 000 SAVLI, Vadodara\nVisit\n26260-140-312536- 26260-140-312536- Koch Glitsch India Limited-\n13-Jan-25 26290-140 India Inspection SKP 4 4 15 0 4+0\nMVTO-YZ-A MVTO-YQ-A-005, Rev 000 SAVLI, Vadodara\n22-Jan-25 26251-140-156014- 26251-140-156014- Koch Glitsch India Limited-\n26290-140 India Inspection SKP 8 8 15 0 4+4 12.44 Outstation\nMVTO-YZ-A MVTO-YQ-A-036, Rev 000 SAVLI, Vadodara\nVisit\n26260-140-312536- 26260-140-312536- Koch Glitsch India Limited-\n22-Jan-25 26290-140 India Inspection SKP 4 4 15 0 4+0\nMVTO-YZ-A MVTO-YQ-A-006, Rev 000 SAVLI, Vadodara\n30-Jan-25 26280-220-ΥΖΑ- 26280-220-YQA-MAHU- Sunrise Industries India\n26290-140 India Inspection SKP 10 10 15 150 6+4\nMAHU-1J001 1J001-7 Limited-GARADIA, Vadodara",
+      "tJsonTraducido": null,
+      "lFormato": false,
+      "iMIdioma": 2,
+      "iMDocumentoTipo": 4,
+      "tSequentialNumber": null
+    }
+  },
+  "ocr_text_length": 2246,
+  "ocr_text_preview": "TQ Cert Services Private Limited\nAbu Dhabi-UAE\nInvoice Mont Jan'25 Invoice Number: BSQE25NT2005 14-Feb-25 (Expenses) Due Date:\nOTHBP\nSQ0003\nDate * Assignment Number Report Number Charge No Supplier Country Type of Std Std Std Travel\nInsp./Exp Hours Total km hrs** Meal Lodging Other Visit Type\nActivity Hours Rate Value fare\n07-Jan-25 26232-160-165400- 26232-160-165400- General Energy\nMBNO-YZ-D MBNO-YQ-D-012, Rev 26251-140 Management Systems India Inspection SS 13 13 15 120 9+4\n000 Private Limited",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251114_092834_0191_ocr_text.txt"
+}

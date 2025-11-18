@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251114_091848_0076",
+  "timestamp": "2025-11-14T09:18:48.125960",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 59,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 3,
+        "tIdioma": "Italiano"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 99,
+        "tTipo": "Desconocido"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "PAGADO CON TC PERSONAL"
+      }
+    ]
+  },
+  "ocr_text_length": 1389,
+  "ocr_text_preview": "ALMUERZO C/AGB\nPAGADO CON TC PERSONAL\nRISTORANTE DA CLARA\nDI ZIPPI RITA\nVIA DELLA PLAIA SNC\n67020 CALASCIO\nP.IVA 01691160665\nTEL. 0862 930365\nTAVOLO: 9\nOPERATORE: amministratore\n2 X COPERTO 4,00\n1 X ACQUA 1,50\n1 X AFFETTATO MISTO 12,00\n1 X GNOCCHETTO ZAFFERANO, SALSICCIA E ZU 13,00\n1 X ARROSTO MISTO 16,00\n1 X INSALATA VERDE 3,00\n2 X caffe' 3,00\nTOTALE EURO 52,50\n11/06/2025 15:38\nOTHBP\nOE0011\nRISTORANTE DA CLARA\nDI ZIPPI RITA\nVIA DELLA PLAIA SNC\n67020 CALASCIO\nP.IVA 01691160665\nTEL. 0862 930365\nD",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251114_091848_0076_ocr_text.txt"
+}

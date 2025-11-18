@@ -1,0 +1,48 @@
+{
+  "error_id": "error_20251114_092706_0172",
+  "timestamp": "2025-11-14T09:27:06.648018",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 454,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "mcomprobante": [
+      {
+        "_sequential_number": "OE0100",
+        "tNumero": "IN-US05799460",
+        "tSerie": null,
+        "fEmision": "19 May 2025",
+        "tCliente": null
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "CLIENT CASE FIELDS"
+      }
+    ]
+  },
+  "ocr_text_length": 576,
+  "ocr_text_preview": "INVOICE IN-US05799460\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063531\nApplication Approval Date: 19 May 2025\nApplication File Date: 19 May 2025\nAuthorizing Manager:\nCase Initiation Date: 10 Feb 2025\nCost Center:\nCurrent Location City: The Woodlands\nEmployee ID: 045055\nFunction: Construction\nJob Charge Code (ex. #####-###): 26443121\nNumber of Dependents: 0\nPO #: 491154\nPO#: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Cajamarca\nReceiving Country: PERU\nSending Coun",
+  "ocr_text": "INVOICE IN-US05799460\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063531\nApplication Approval Date: 19 May 2025\nApplication File Date: 19 May 2025\nAuthorizing Manager:\nCase Initiation Date: 10 Feb 2025\nCost Center:\nCurrent Location City: The Woodlands\nEmployee ID: 045055\nFunction: Construction\nJob Charge Code (ex. #####-###): 26443121\nNumber of Dependents: 0\nPO #: 491154\nPO#: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Cajamarca\nReceiving Country: PERU\nSending Country: UNITED STATES OF AMERICA\nFRAGOMEN\nOTHBP\nOE0100\nCONFIDENTIAL\nPage 2 of 2"
+}

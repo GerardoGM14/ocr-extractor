@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251113_112220_0008",
+  "timestamp": "2025-11-13T11:22:20.974707",
+  "pdf_name": "072cdee6-6ce5-43fa-96a2-a1eb5c4c2b96",
+  "page_number": 19,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "10/6/25",
+      "nPrecioTotal": 23.1,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 362,
+  "ocr_text_preview": "BSQE\nBS0003\nM/S\n號碼 摘要\nPARTICULARS\nBUTIR-BUTIR\nNO\n1 makon\n2\n3\n4\n5\n6\n7\n8\n9\n10\nNO\n34669\n日期\nDATE/TARIKH : 10/6/25\n數量 價目 銀額\nQUANTITY UNIT PRICE AMOUNT\nKUANTITI HARGA RM JUMLAH RM\n23.10\nUSD/5.60\n貨物出門,恕不退換。\nGoods sold are not refumable\nBarang yang sudah dijual\nfidak boleh dikembalikan.\n總計\nTOTAL\nJUMLAH\nRM\n23-10\nReceived by / Diterima Oleh/收貨人 Signature/Tandatangan/經手人",
+  "ocr_text": "BSQE\nBS0003\nM/S\n號碼 摘要\nPARTICULARS\nBUTIR-BUTIR\nNO\n1 makon\n2\n3\n4\n5\n6\n7\n8\n9\n10\nNO\n34669\n日期\nDATE/TARIKH : 10/6/25\n數量 價目 銀額\nQUANTITY UNIT PRICE AMOUNT\nKUANTITI HARGA RM JUMLAH RM\n23.10\nUSD/5.60\n貨物出門,恕不退換。\nGoods sold are not refumable\nBarang yang sudah dijual\nfidak boleh dikembalikan.\n總計\nTOTAL\nJUMLAH\nRM\n23-10\nReceived by / Diterima Oleh/收貨人 Signature/Tandatangan/經手人"
+}

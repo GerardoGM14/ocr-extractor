@@ -1,0 +1,23 @@
+{
+  "error_id": "error_20251113_115856_0196",
+  "timestamp": "2025-11-13T11:58:56.685500",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 522,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "tNumero": null,
+      "tSerie": null,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 2247,
+  "ocr_text_preview": "TQ Cert Services Private Limited\nAbu Dhabi-UAE\nInvoice Mont Jan'25 Invoice Number: BSQE25NT2005 14-Feb-25 (Expenses) Due Date:\nOTHBP\nSQ0003\nDate * Assignment Number Report Number Charge No Supplier Country Type of Std Std Std Travel\nInsp./Exp Hours Total km hrs** Meal Lodging Other Visit Type\nActivity Hours Rate Value fare\n07-Jan-25 26232-160-165400- 26232-160-165400- General Energy\nMBNO-YZ-D MBNO-YQ-D-012, Rev 26251-140 Management Systems India Inspection SS 13 13 15 120 9+4\n000 Private Limited",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251113_115856_0196_ocr_text.txt"
+}

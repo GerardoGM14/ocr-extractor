@@ -1,0 +1,35 @@
+5. Si hay ítems no entregados: insertar en DENTREGA_ITEM solo los ítems devueltos (cantidad >
+0).
+6. Actualizar DCIERRE_PEDIDO_DETALLE:
+iEstadoEntrega:
+• 1 si todo quedó entregado (no hay DENTREGA_ITEM y acumulado entregado ==
+facturado)
+• 2 si parcial (existieron DENTREGA_ITEM y queda diferencia)
+• 3 si rechazo total (se crean DENTREGA_ITEM con nCantidadDevuelta =
+nCantidadFacturada)
+• 4 si reprogramado (sin NC)
+fFechaUltEntrega, iUsuarioUltEntrega, nImporteCobrado según
+corresponda.
+7. Generación de Nota de Crédito (NC)
+8. Si DENTREGA indica iEstadoEntrega = 3 (rechazo total) → generar NC total: generar
+NC por cada línea del DCOTIZACION_DETALLE con cantidad = nCantidad.
+9. Si iEstadoEntrega = 2 (parcial) → generar NC parcial por las cantidades devueltas
+registradas en DENTREGA_ITEM.
+10. Marcar bNCGenerada = 1 y guardar iDNotaCredito / iDNotaCreditoGenerada en
+DCIERRE_PEDIDO_DETALLE / DENTREGA.
+11. Idempotencia: antes de generar la NC, verificar bNCGenerada = 0 para evitar duplicados.
+12. Cobro (Caja)
+13. Si el cliente pagó en entrega, registrar movimiento en caja por nImporteCobrado con
+referencia a iDEntrega y iDCierrePedidoDetalle.
+14. Si hay NC posterior que obliga a devolución, el sistema de caja debe registrar la salida
+correspondiente (o saldo a favor), según política.
+15. Histórico y reintentos
+16. DENTREGA registra cada intento; DENTREGA_ITEM registra líneas devueltas en ese intento.
+17. El estado final en DCIERRE_PEDIDO_DETALLE es la suma del historial y refleja la situación
+actual.
+18. Notas legales / fiscales
+19. NC debe tener referencia a la factura original (iDComprobante original) y respetar reglas
+tributarias para su emisión.
+20. Decidir si la NC se emite por iDCotizacion o por el comprobante fiscal (normalmente por
+comprobante).
+4

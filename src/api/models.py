@@ -181,13 +181,25 @@ class DashboardStatsResponse(BaseModel):
     currency: str = "USD"
 
 
+class DepartamentoItem(BaseModel):
+    """Item de departamento."""
+    label: str
+    value: float
+
+
+class DisciplinaItem(BaseModel):
+    """Item de disciplina."""
+    label: str
+    value: float
+
+
 class AnalyticsItem(BaseModel):
     """Item de análisis (Off-Shore/On-Shore)."""
     total_gasto: float
     total_horas: float
     total_disciplinas: int
-    distribucion_departamento: Dict[str, float]  # {"Engineering": 70, "Other Services": 10, ...}
-    top_5_disciplinas: List[Dict[str, Any]]  # [{"name": "Procurement", "value": 1800}, ...]
+    distribucion_departamento: List[DepartamentoItem]  # [{"label": "Engineering", "value": 850000.00}, ...]
+    top_5_disciplinas: List[DisciplinaItem]  # [{"label": "Procurement", "value": 1800.00}, ...]
 
 
 class DashboardAnalyticsResponse(BaseModel):

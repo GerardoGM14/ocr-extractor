@@ -276,6 +276,17 @@ class DataMapper:
         if catalog_data:
             result.update(catalog_data)
         
+        # Extraer departamentos y disciplinas para documentos OnShore
+        if doc_type in ["expense_report", "concur_expense"]:
+            dept_disc_data = self._extract_departments_and_disciplines(ocr_text)
+            if dept_disc_data:
+                # Agregar a result sin sobrescribir datos existentes
+                for key, value in dept_disc_data.items():
+                    if key not in result:
+                        result[key] = value
+                    elif isinstance(result[key], list) and isinstance(value, list):
+                        result[key].extend(value)
+        
         # Extraer cálculos destacados (cuadros rojos, boxes, etc.)
         highlighted_calculations = self._extract_highlighted_calculations(ocr_text)
         
@@ -2715,4 +2726,162 @@ class DataMapper:
         monetary_values.sort(key=lambda x: x['nPrecioTotal'], reverse=True)
         
         return monetary_values
+    
+    def _extract_departments_and_disciplines(self, ocr_text: str) -> Dict[str, List[Dict]]:
+        """
+        Extrae departamentos y disciplinas de documentos OnShore.
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Diccionario con listas de departamentos y disciplinas encontrados
+        """
+        result = {
+            "departments": [],
+            "disciplines": []
+        }
+        
+        text_lower = ocr_text.lower()
+        
+        # Lista de departamentos comunes en OnShore
+        department_patterns = {
+            "Engineering": ["engineering", "engineering department", "dept: engineering", "department: engineering"],
+            "Operations": ["operations", "operations department", "dept: operations", "department: operations"],
+            "Maintenance": ["maintenance", "maintenance department", "dept: maintenance", "department: maintenance"],
+            "Safety": ["safety", "safety department", "health & safety", "health and safety", "dept: safety"],
+            "Environmental": ["environmental", "environmental department", "dept: environmental", "department: environmental"],
+            "Human Resources": ["human resources", "hr", "hr department", "human resources department"],
+            "Finance": ["finance", "finance department", "financial", "financial department"],
+            "IT Services": ["it services", "it", "information technology", "it department"],
+            "Other Services": ["other services", "other", "miscellaneous", "misc"]
+        }
+        
+        # Lista de disciplinas comunes en OnShore
+        discipline_patterns = {
+            "Engineering": ["engineering", "discipline: engineering", "type: engineering", "category: engineering"],
+            "Operations": ["operations", "discipline: operations", "type: operations"],
+            "Maintenance": ["maintenance", "discipline: maintenance", "type: maintenance"],
+            "Safety": ["safety", "discipline: safety", "type: safety"],
+            "Environmental": ["environmental", "discipline: environmental", "type: environmental"],
+            "Project Management": ["project management", "discipline: project management"],
+            "Quality Control": ["quality control", "qc", "discipline: quality control"],
+            "Procurement": ["procurement", "discipline: procurement"],
+            "Construction": ["construction", "discipline: construction"],
+            "Logistics": ["logistics", "discipline: logistics"]
+        }
+        
+        # Buscar departamentos
+        found_departments = set()
+        for dept_name, patterns in department_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    found_departments.add(dept_name)
+                    # Buscar montos asociados al departamento
+                    # Patrón: "Engineering Department - $450,000.00" o "Engineering: 450000"
+                    dept_with_amount = re.search(
+                        rf'{re.escape(pattern)}[:\s\-]+[\$]?\s*([\d,]+\.?\d*)',
+                        ocr_text,
+                        re.IGNORECASE
+                    )
+                    amount = None
+                    if dept_with_amount:
+                        try:
+                            amount_str = dept_with_amount.group(1).replace(',', '')
+                            amount = float(amount_str)
+                        except (ValueError, AttributeError):
+                            pass
+                    
+                    result["departments"].append({
+                        "name": dept_name,
+                        "amount": amount,
+                        "pattern_found": pattern
+                    })
+                    break  # No duplicar si ya se encontró
+        
+        # Buscar disciplinas
+        found_disciplines = set()
+        for disc_name, patterns in discipline_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    found_disciplines.add(disc_name)
+                    # Buscar valores asociados a la disciplina
+                    # Patrón: "Discipline: Engineering - 1250.00" o "Type: Operations: 980"
+                    disc_with_value = re.search(
+                        rf'{re.escape(pattern)}[:\s\-]+([\d,]+\.?\d*)',
+                        ocr_text,
+                        re.IGNORECASE
+                    )
+                    value = None
+                    if disc_with_value:
+                        try:
+                            value_str = disc_with_value.group(1).replace(',', '')
+                            value = float(value_str)
+                        except (ValueError, AttributeError):
+                            pass
+                    
+                    result["disciplines"].append({
+                        "name": disc_name,
+                        "value": value,
+                        "pattern_found": pattern
+                    })
+                    break  # No duplicar si ya se encontró
+        
+        # Buscar NC Codes que puedan mapear a disciplinas
+        # NC Code 611 suele ser Engineering, etc.
+        nc_code_pattern = re.compile(r'NC\s+Code[:\s]+(\d+)', re.IGNORECASE)
+        nc_codes = nc_code_pattern.findall(ocr_text)
+        for nc_code in nc_codes:
+            # Mapeo común de NC Codes a disciplinas
+            nc_mapping = {
+                "611": "Engineering",
+                "612": "Operations",
+                "613": "Maintenance",
+                "614": "Safety",
+                "615": "Environmental"
+            }
+            if nc_code in nc_mapping:
+                disc_name = nc_mapping[nc_code]
+                if disc_name not in found_disciplines:
+                    result["disciplines"].append({
+                        "name": disc_name,
+                        "value": None,
+                        "pattern_found": f"NC Code {nc_code}",
+                        "nc_code": nc_code
+                    })
+                    found_disciplines.add(disc_name)
+        
+        # Buscar Org Codes que puedan mapear a departamentos
+        org_code_pattern = re.compile(r'Org\s+Code[:\s]+([A-Z0-9]+)', re.IGNORECASE)
+        org_codes = org_code_pattern.findall(ocr_text)
+        for org_code in org_codes:
+            # Algunos org codes pueden indicar departamentos
+            # Esto se puede expandir con un mapeo real si se conoce
+            if org_code and org_code not in [item.get("org_code") for item in result["departments"]]:
+                # Por ahora, solo registrar que se encontró un org code
+                # El mapeo real se puede hacer después con datos reales
+                pass
+        
+        # Eliminar duplicados manteniendo el primero encontrado
+        seen_depts = set()
+        unique_departments = []
+        for dept in result["departments"]:
+            if dept["name"] not in seen_depts:
+                seen_depts.add(dept["name"])
+                unique_departments.append(dept)
+        result["departments"] = unique_departments
+        
+        seen_discs = set()
+        unique_disciplines = []
+        for disc in result["disciplines"]:
+            if disc["name"] not in seen_discs:
+                seen_discs.add(disc["name"])
+                unique_disciplines.append(disc)
+        result["disciplines"] = unique_disciplines
+        
+        # Solo retornar si se encontró algo
+        if result["departments"] or result["disciplines"]:
+            return result
+        
+        return {}
 

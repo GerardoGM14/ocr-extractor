@@ -1,0 +1,25 @@
+{
+  "error_id": "error_20251113_112409_0048",
+  "timestamp": "2025-11-13T11:24:09.875851",
+  "pdf_name": "072cdee6-6ce5-43fa-96a2-a1eb5c4c2b96",
+  "page_number": 72,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0004",
+      "tNumero": null,
+      "tSerie": null,
+      "nPrecioTotal": 1.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 2980,
+  "ocr_text_preview": "Month: Jun-25\nSGS-CSTC Standards Technical Service., Ltd. Shanghai Branch\nProject Monthly Expense\nBSQE\nBS0004\nSQR/AEX:Alex Wu\nTransportation (USD)\nDate\nAssignment No.\nCharge No.\nReport No.\nCountry\nType of\nActivity\nType\nKilometer Amount\nHotel\n(USD)\nTotal\n(USD)\n1\n2\n26529-000-409138-MLGT-YQ-A\n26529-211\n26529-000-409138-MLGT-YQ-A-007\nChina\nSQR\nTaxl\n¥320.00\n$49.23\n3\n26529-000-409138-MLGT-YQ-A\n26529-211\n26529-000-409138-MLGT-YQ-A-007\nChina\nSQR\nTaxl\n¥320.00\n$49.23\n4\n26529-000-409138-MLGT-YQ-A\n26529-211",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251113_112409_0048_ocr_text.txt"
+}

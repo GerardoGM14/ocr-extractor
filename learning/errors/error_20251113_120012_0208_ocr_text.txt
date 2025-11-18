@@ -1,0 +1,43 @@
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+066345 Leopoldo Abril Jefe Adjunto de Topografia Arequipa 21/04/2025 05/05/2025 26443-351
+194225 Jimmy Oropeza Lead Piping FE Arequipa 21/04/2025 05/05/2025 26443-351
+065399 Dante Ardiles Labor Relations Arequipa 21/04/2025 05/05/2025 26443-351
+Representative /Lead
+065179 Raciel Bautista Field Schedule Engineer Arequipa 21/04/2025 05/05/2025 26443-351
+Venegas
+Pipeline-Pumpstations
+069414 Jose Cuba Arequipa 21/04/2025 05/05/2025 26443-351
+FIELD ENGINEER
+081433 Luis Cristobal Mayta JR Superintendent Piping Moquegua 21/04/2025 05/05/2025 26443-351
+Coayla East
+081585 Juan Carlos Flores Superintendente E&I (Este) Arequipa 21/04/2025 05/05/2025 26443-351
+Loaiza
+081586 Cesar Datto Paredes Lead Civil Field Engineer Arequipa 21/04/2025 05/05/2025 26443-351
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+Christian Delgado
+081250 Time Shiefkeeper Tacna 21/04/2025 05/05/2025 26443-351
+Paredes
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+069776 Percy Ancori Safety Senior Specialist Trujillo 21/04/2025 05/05/2025 26443-351
+081094 Amy Avalos Trabajadora Social Trujillo 21/04/2025 05/05/2025 26443-351
+#
+Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+207875 Sergio Jofre Gerente de Calidad
+Santiago
+22/04/2025 05/05/2025 26443-331
+de Chile
+160167 Eddson Diaz ES&H Leader
+Santiago
+22/04/2025 05/05/2025 26443-331
+de Chile
+Occupational Hygiene
+063573 Ana Ayala
+Santiago
+22/04/2025 29/04/2025 26443-331
+Seniors
+de Chile
+Level 3 - Bechtel Internal and Selected External Distribution

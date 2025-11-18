@@ -1,0 +1,15 @@
+{
+  "error_id": "error_20251115_100647_0046",
+  "timestamp": "2025-11-15T10:06:47.402502",
+  "pdf_name": "a9f18b00-31ec-441b-b26c-cdef567040ed",
+  "page_number": 114,
+  "error_type": "parse_error",
+  "error_message": "cannot access local variable 'invoice_num' where it is not associated with a value",
+  "context": {
+    "exception_type": "UnboundLocalError",
+    "exception_message": "cannot access local variable 'invoice_num' where it is not associated with a value"
+  },
+  "extracted_data": {},
+  "ocr_text_length": 0,
+  "ocr_text_preview": null
+}

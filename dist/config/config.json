@@ -1,0 +1,7 @@
+{
+  "folders": {
+    "input_pdf": "onedrive",
+    "processing_results": "processed",
+    "output_json": "output"
+  }
+}

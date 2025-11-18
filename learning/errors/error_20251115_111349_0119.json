@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251115_111349_0119",
+  "timestamp": "2025-11-15T11:13:49.808951",
+  "pdf_name": "bcf9606e-0383-49c1-8d6a-f11fa453432a",
+  "page_number": 160,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mresumen' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mresumen",
+    "expected_value": "Lista de items de resumen"
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 4,
+        "tIdioma": "Otro"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 2,
+        "tTipo": "Resumen"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "Lorena\nSubject"
+      }
+    ]
+  },
+  "ocr_text_length": 2812,
+  "ocr_text_preview": "Torres Ferreira, Lorena\nSubject: Recovery Plan - WTP ON PLANT / Bechtel\nLocation: Hotel Costa Del Sol - Cajamarca / conexión via TEAMS; STO-Alcantara-10th Floor-02-Suri (10)-VC\nStart: martes 10-06-2025 12:00\nEnd: martes 10-06-2025 20:00\nRecurrence: (none)\nMeeting Status: Accepted\nOrganizer: Hilbck Peschiera, Roberto\nRequired Attendees: Hilbck Peschiera, Roberto; INGRID DEMARIA; BURMESTER, ENRIQUE (Newmont); Cerna, Juan (Newmont); Johm\nFelipe Mendoza Sanchez; Ruiz Ulloa, Maria Eliana; Garabito Ma",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251115_111349_0119_ocr_text.txt"
+}

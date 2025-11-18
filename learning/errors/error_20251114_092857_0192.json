@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251114_092857_0192",
+  "timestamp": "2025-11-14T09:28:57.895135",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 539,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 99,
+        "tTipo": "Desconocido"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "THBP\nIS"
+      }
+    ]
+  },
+  "ocr_text_length": 80,
+  "ocr_text_preview": "Total By SubJob: 331\n20,900.00THBP\nIS0006\nRun Time:\nPage 2 of 2\nBECHTEL INTERNAL",
+  "ocr_text": "Total By SubJob: 331\n20,900.00THBP\nIS0006\nRun Time:\nPage 2 of 2\nBECHTEL INTERNAL"
+}

@@ -13,5 +13,15 @@
     "enabled": true,
     "folder": "learning",
     "auto_analyze": true
+  },
+  "database": {
+    "enabled": false,
+    "driver": "ODBC Driver 17 for SQL Server",
+    "server": "138.128.247.60",
+    "database": "BD_NEWMONT_OCR_PDF",
+    "username": "usr_rpa_gerardog",
+    "password": "123",
+    "trusted_connection": false,
+    "encrypt": true
   }
 }

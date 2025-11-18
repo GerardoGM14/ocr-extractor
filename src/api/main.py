@@ -39,6 +39,8 @@ from .models import (
     DashboardStatsResponse,
     DashboardAnalyticsResponse,
     AnalyticsItem,
+    DepartamentoItem,
+    DisciplinaItem,
     RejectedConceptsResponse,
     RejectedConcept,
     # Periodos Models
@@ -60,7 +62,8 @@ from .dependencies import (
     get_processed_tracker,
     is_email_allowed,
     get_learning_system,
-    get_periodo_manager
+    get_periodo_manager,
+    get_database_service
 )
 from .middleware import AuthMiddleware
 
@@ -579,87 +582,141 @@ async def process_pdf(
                 json_files = list(api_folder.rglob("*.json")) if api_folder.exists() else []
                 
                 if json_files:
-                    # Crear nombre único para el zip
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    zip_filename = f"{pdf_name}_{timestamp}_{request_id[:8]}.zip"
+                    # ============================================================
+                    # PASO 1: Guardar en Base de Datos ANTES de crear ZIP/Excel
+                    # ============================================================
+                    db_service = get_database_service()
+                    db_saved_successfully = False
                     
-                    # Zipear carpeta (se guarda en public/)
-                    zip_path = archive_manager.zip_folder(api_folder, zip_filename)
+                    # Obtener solo los JSONs structured (no los raw)
+                    structured_folder = api_folder / "structured"
+                    structured_json_files = []
+                    if structured_folder.exists():
+                        structured_json_files = list(structured_folder.glob("*_structured.json"))
                     
-                    # Verificar que el ZIP se creó correctamente en public/
-                    if zip_path.exists():
-                        # Generar URL pública para descargar desde public/
-                        download_url = archive_manager.get_public_url(zip_path)
-                        
-                        # Generar Excel consolidado (igual que el ZIP)
-                        excel_filename = None
-                        excel_download_url = None
+                    if structured_json_files:
                         try:
-                            logger.info(f"[{request_id}] Iniciando generación de Excel...")
-                            excel_filename, excel_download_url = await _generate_excel_for_request(
+                            logger.info(f"[{request_id}] Guardando {len(structured_json_files)} archivos en BD...")
+                            db_saved_successfully = db_service.save_structured_data(
                                 request_id=request_id,
-                                pdf_name=pdf_name,
-                                timestamp=timestamp,
-                                archive_manager=archive_manager,
-                                file_manager=file_manager
+                                json_files=structured_json_files
                             )
-                            if excel_filename:
-                                logger.info(f"[{request_id}] Excel creado en public/: {excel_filename}")
-                                print(f"[{request_id[:8]}] ✓ Archivo Excel creado: {excel_filename}")
-                                if excel_download_url:
-                                    print(f"[{request_id[:8]}] ✓ URL de descarga Excel: {excel_download_url}")
-                            else:
-                                logger.warning(f"[{request_id}] Excel no se generó (retornó None)")
-                                print(f"[{request_id[:8]}] ⚠ Advertencia: Excel no se generó")
+                            
+                            if not db_saved_successfully:
+                                logger.warning(
+                                    f"[{request_id}] ⚠ No se guardó en BD correctamente. "
+                                    "Los JSONs NO se eliminarán por seguridad."
+                                )
+                                print(f"[{request_id[:8]}] ⚠ Advertencia: No se guardó en BD. JSONs conservados.")
                         except Exception as e:
-                            # No fallar si hay error al generar Excel, solo log
-                            logger.error(f"[{request_id}] Error creando Excel: {e}")
-                            import traceback
-                            logger.debug(f"[{request_id}] Traceback Excel: {traceback.format_exc()}")
-                            print(f"[{request_id[:8]}] ✗ Error generando Excel: {e}")
-                        
-                        # Guardar relación file_id -> zip y excel
-                        upload_manager = get_upload_manager()
-                        upload_manager.mark_as_processed(file_id, zip_filename, download_url, request_id, excel_filename, excel_download_url)
-                        
-                        logger.info(f"[{request_id}] ZIP creado en public/: {zip_path.name}")
-                        logger.info(f"[{request_id}] URL de descarga: {download_url}")
-                        print(f"[{request_id[:8]}] ✓ Archivo ZIP creado: {zip_path.name}")
-                        print(f"[{request_id[:8]}] ✓ URL de descarga: {download_url}")
-                        
-                        # Limpiar archivos JSON después de generar ZIP y Excel exitosamente
-                        try:
-                            raw_folder = api_folder / "raw"
-                            structured_folder = api_folder / "structured"
-                            
-                            deleted_count = 0
-                            
-                            # Eliminar archivos en raw/
-                            if raw_folder.exists():
-                                for json_file in raw_folder.glob("*.json"):
-                                    try:
-                                        json_file.unlink()
-                                        deleted_count += 1
-                                    except Exception as e:
-                                        logger.warning(f"[{request_id}] No se pudo eliminar {json_file}: {e}")
-                            
-                            # Eliminar archivos en structured/
-                            if structured_folder.exists():
-                                for json_file in structured_folder.glob("*.json"):
-                                    try:
-                                        json_file.unlink()
-                                        deleted_count += 1
-                                    except Exception as e:
-                                        logger.warning(f"[{request_id}] No se pudo eliminar {json_file}: {e}")
-                            
-                            if deleted_count > 0:
-                                logger.info(f"[{request_id}] Archivos JSON eliminados: {deleted_count} archivos")
-                                print(f"[{request_id[:8]}] ✓ Archivos JSON eliminados: {deleted_count} archivos")
-                        except Exception as e:
-                            # No fallar si hay error al limpiar, solo log
-                            logger.warning(f"[{request_id}] Error limpiando archivos JSON: {e}")
+                            logger.error(f"[{request_id}] Error guardando en BD: {e}")
+                            print(f"[{request_id[:8]}] ✗ Error guardando en BD: {e}")
+                            # No continuar si falla el guardado en BD
+                            db_saved_successfully = False
                     else:
-                        logger.error(f"[{request_id}] ZIP no se creó correctamente: {zip_path}")
+                        # Si no hay JSONs structured, considerar como "guardado" (no hay nada que guardar)
+                        logger.info(f"[{request_id}] No hay JSONs structured para guardar en BD")
+                        db_saved_successfully = True
+                    
+                    # ============================================================
+                    # PASO 2: Crear ZIP y Excel (solo si BD fue exitoso o está deshabilitado)
+                    # ============================================================
+                    if db_saved_successfully or not db_service.is_enabled():
+                        # Crear nombre único para el zip
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        zip_filename = f"{pdf_name}_{timestamp}_{request_id[:8]}.zip"
+                        
+                        # Zipear carpeta (se guarda en public/)
+                        zip_path = archive_manager.zip_folder(api_folder, zip_filename)
+                        
+                        # Verificar que el ZIP se creó correctamente en public/
+                        if zip_path.exists():
+                            # Generar URL pública para descargar desde public/
+                            download_url = archive_manager.get_public_url(zip_path)
+                            
+                            # Generar Excel consolidado (igual que el ZIP)
+                            excel_filename = None
+                            excel_download_url = None
+                            try:
+                                logger.info(f"[{request_id}] Iniciando generación de Excel...")
+                                excel_filename, excel_download_url = await _generate_excel_for_request(
+                                    request_id=request_id,
+                                    pdf_name=pdf_name,
+                                    timestamp=timestamp,
+                                    archive_manager=archive_manager,
+                                    file_manager=file_manager
+                                )
+                                if excel_filename:
+                                    logger.info(f"[{request_id}] Excel creado en public/: {excel_filename}")
+                                    print(f"[{request_id[:8]}] ✓ Archivo Excel creado: {excel_filename}")
+                                    if excel_download_url:
+                                        print(f"[{request_id[:8]}] ✓ URL de descarga Excel: {excel_download_url}")
+                                else:
+                                    logger.warning(f"[{request_id}] Excel no se generó (retornó None)")
+                                    print(f"[{request_id[:8]}] ⚠ Advertencia: Excel no se generó")
+                            except Exception as e:
+                                # No fallar si hay error al generar Excel, solo log
+                                logger.error(f"[{request_id}] Error creando Excel: {e}")
+                                import traceback
+                                logger.debug(f"[{request_id}] Traceback Excel: {traceback.format_exc()}")
+                                print(f"[{request_id[:8]}] ✗ Error generando Excel: {e}")
+                            
+                            # Guardar relación file_id -> zip y excel
+                            upload_manager = get_upload_manager()
+                            upload_manager.mark_as_processed(file_id, zip_filename, download_url, request_id, excel_filename, excel_download_url)
+                            
+                            logger.info(f"[{request_id}] ZIP creado en public/: {zip_path.name}")
+                            logger.info(f"[{request_id}] URL de descarga: {download_url}")
+                            print(f"[{request_id[:8]}] ✓ Archivo ZIP creado: {zip_path.name}")
+                            print(f"[{request_id[:8]}] ✓ URL de descarga: {download_url}")
+                            
+                            # ============================================================
+                            # PASO 3: Limpiar archivos JSON SOLO si BD fue exitoso
+                            # ============================================================
+                            if db_saved_successfully:
+                                try:
+                                    raw_folder = api_folder / "raw"
+                                    structured_folder = api_folder / "structured"
+                                    
+                                    deleted_count = 0
+                                    
+                                    # Eliminar archivos en raw/
+                                    if raw_folder.exists():
+                                        for json_file in raw_folder.glob("*.json"):
+                                            try:
+                                                json_file.unlink()
+                                                deleted_count += 1
+                                            except Exception as e:
+                                                logger.warning(f"[{request_id}] No se pudo eliminar {json_file}: {e}")
+                                    
+                                    # Eliminar archivos en structured/
+                                    if structured_folder.exists():
+                                        for json_file in structured_folder.glob("*.json"):
+                                            try:
+                                                json_file.unlink()
+                                                deleted_count += 1
+                                            except Exception as e:
+                                                logger.warning(f"[{request_id}] No se pudo eliminar {json_file}: {e}")
+                                    
+                                    if deleted_count > 0:
+                                        logger.info(f"[{request_id}] Archivos JSON eliminados: {deleted_count} archivos")
+                                        print(f"[{request_id[:8]}] ✓ Archivos JSON eliminados: {deleted_count} archivos")
+                                except Exception as e:
+                                    # No fallar si hay error al limpiar, solo log
+                                    logger.warning(f"[{request_id}] Error limpiando archivos JSON: {e}")
+                            else:
+                                logger.warning(
+                                    f"[{request_id}] ⚠ JSONs NO eliminados porque no se guardó en BD correctamente"
+                                )
+                                print(f"[{request_id[:8]}] ⚠ JSONs conservados (no se guardó en BD)")
+                        else:
+                            logger.error(f"[{request_id}] ZIP no se creó correctamente: {zip_path}")
+                    else:
+                        logger.error(
+                            f"[{request_id}] ✗ No se crearon ZIP/Excel porque falló el guardado en BD. "
+                            "Los JSONs se conservan por seguridad."
+                        )
+                        print(f"[{request_id[:8]}] ✗ Error: No se guardó en BD. ZIP/Excel no creados.")
                 else:
                     logger.warning(f"[{request_id}] No se encontraron archivos JSON en {api_folder} para zipear")
             except Exception as e:
@@ -1640,19 +1697,41 @@ async def get_dashboard_stats(
         Estadísticas globales (Monto Total, Total Horas)
     """
     try:
+        # ============================================================
+        # NOTA: Actualmente lee de JSONs estructurados (temporal)
+        # Cuando tengas conexión a SQL Server, cambiar a leer de BD:
+        # 
+        # SELECT 
+        #   SUM(nPrecioTotal) as monto_total,
+        #   SUM(nTotalHoras) as total_horas
+        # FROM MCOMPROBANTE c
+        # LEFT JOIN MJORNADA j ON j.iMHoja = c.iMHoja
+        # WHERE ... (aplicar filtros de fecha, moneda, etc.)
+        # ============================================================
+        
+        # ============================================================
+        # DATOS MOCKEADOS PARA PRUEBAS (TEMPORAL)
+        # TODO: Reemplazar con lectura real de JSONs o SQL Server
+        # ============================================================
+        
+        # Intentar leer de JSONs reales primero
         file_manager = get_file_manager()
         base_output = file_manager.get_output_folder() or "./output"
         structured_folder = Path(base_output) / "api" / "structured"
         
         monto_total = 0.0
         total_horas = 0.0
+        has_real_data = False
         
-        # Leer todos los JSONs estructurados y agregar
+        # TEMPORAL: Leer todos los JSONs estructurados y agregar
+        # TODO: Migrar a SQL Server cuando tengas conexión a BD
         if structured_folder.exists():
             for json_file in structured_folder.glob("*_structured.json"):
                 try:
                     with open(json_file, 'r', encoding='utf-8') as f:
                         json_data = json.load(f)
+                    
+                    has_real_data = True
                     
                     # Aplicar filtros aquí si es necesario
                     metadata = json_data.get("metadata", {})
@@ -1661,10 +1740,14 @@ async def get_dashboard_stats(
                     if fecha_inicio or fecha_fin:
                         processed_at = metadata.get("processed_at", "")
                         if processed_at:
-                            # Comparar fechas (simplificado)
-                            pass  # TODO: Implementar filtro de fechas
+                            # TODO: Implementar filtro de fechas
+                            # Cuando tengas BD: WHERE fEmision BETWEEN fecha_inicio AND fecha_fin
+                            pass
                     
                     # Extraer montos y horas de additional_data
+                    # TODO: Cuando tengas BD, esto vendrá de:
+                    # - MCOMPROBANTE.nPrecioTotal
+                    # - MJORNADA.nTotalHoras
                     additional_data = json_data.get("additional_data", {})
                     
                     # Buscar en mcomprobante
@@ -1687,11 +1770,17 @@ async def get_dashboard_stats(
                     logger.warning(f"Error leyendo {json_file}: {e}")
                     continue
         
+        # Si no hay datos reales, usar datos mockeados para pruebas
+        if not has_real_data:
+            # Datos mockeados realistas
+            monto_total = 2450000.75
+            total_horas = 1875.5
+        
         return DashboardStatsResponse(
             success=True,
-            monto_total_global=monto_total,
-            total_horas_global=total_horas,
-            currency=moneda
+            monto_total_global=round(monto_total, 2),
+            total_horas_global=round(total_horas, 2),
+            currency=moneda.upper()  # Asegurar formato consistente (USD, PEN, EUR)
         )
     
     except Exception as e:
@@ -1714,13 +1803,134 @@ async def get_dashboard_analytics(
     Returns:
         Análisis con totales, distribución por departamento y top 5 disciplinas
     """
-    # TODO: Implementar lógica de análisis basada en los JSONs estructurados
-    # Por ahora retornar estructura vacía
-    return DashboardAnalyticsResponse(
-        success=True,
-        offshore=None,
-        onshore=None
-    )
+    try:
+        # ============================================================
+        # DATOS MOCKEADOS PARA PRUEBAS (TEMPORAL)
+        # TODO: Reemplazar con lectura real de JSONs o SQL Server
+        # ============================================================
+        
+        # Datos mockeados para Offshore
+        # Valores absolutos de departamentos
+        offshore_dept_values = {
+            "Engineering": 850000.00,
+            "Procurement": 320000.00,
+            "Construction": 180000.00,
+            "Project Management": 95000.00,
+            "Quality Control": 45000.00,
+            "Health & Safety": 35000.00,
+            "Environmental": 28000.00,
+            "Logistics": 22000.00,
+            "Other Services": 100000.50
+        }
+        
+        # Calcular total de departamentos y convertir a porcentajes
+        offshore_dept_total = sum(offshore_dept_values.values())
+        offshore_departamentos = [
+            DepartamentoItem(
+                label=label,
+                value=round((valor / offshore_dept_total) * 100, 2)
+            )
+            for label, valor in offshore_dept_values.items()
+        ]
+        # Ordenar de mayor a menor por porcentaje
+        offshore_departamentos.sort(key=lambda x: x.value, reverse=True)
+        
+        # Valores absolutos de disciplinas
+        offshore_disc_values = {
+            "Procurement": 1800.00,
+            "Engineering": 1450.00,
+            "Construction": 1200.00,
+            "Project Management": 950.00,
+            "Quality Control": 680.00
+        }
+        
+        # Calcular total de disciplinas y convertir a porcentajes
+        offshore_disc_total = sum(offshore_disc_values.values())
+        offshore_disciplinas = [
+            DisciplinaItem(
+                label=label,
+                value=round((valor / offshore_disc_total) * 100, 2)
+            )
+            for label, valor in offshore_disc_values.items()
+        ]
+        # Ordenar de mayor a menor por porcentaje
+        offshore_disciplinas.sort(key=lambda x: x.value, reverse=True)
+        
+        offshore_item = AnalyticsItem(
+            total_gasto=1450000.50,
+            total_horas=1125.25,
+            total_disciplinas=12,
+            distribucion_departamento=offshore_departamentos,
+            top_5_disciplinas=offshore_disciplinas
+        )
+        
+        # Datos mockeados para Onshore
+        # Valores absolutos de departamentos
+        onshore_dept_values = {
+            "Engineering": 450000.00,
+            "Operations": 280000.00,
+            "Maintenance": 150000.00,
+            "Safety": 85000.00,
+            "Environmental": 45000.00,
+            "Human Resources": 35000.00,
+            "Finance": 28000.00,
+            "IT Services": 22000.00,
+            "Other Services": 120000.25
+        }
+        
+        # Calcular total de departamentos y convertir a porcentajes
+        onshore_dept_total = sum(onshore_dept_values.values())
+        onshore_departamentos = [
+            DepartamentoItem(
+                label=label,
+                value=round((valor / onshore_dept_total) * 100, 2)
+            )
+            for label, valor in onshore_dept_values.items()
+        ]
+        # Ordenar de mayor a menor por porcentaje
+        onshore_departamentos.sort(key=lambda x: x.value, reverse=True)
+        
+        # Valores absolutos de disciplinas
+        onshore_disc_values = {
+            "Engineering": 1250.00,
+            "Operations": 980.00,
+            "Maintenance": 720.00,
+            "Safety": 550.00,
+            "Environmental": 420.00
+        }
+        
+        # Calcular total de disciplinas y convertir a porcentajes
+        onshore_disc_total = sum(onshore_disc_values.values())
+        onshore_disciplinas = [
+            DisciplinaItem(
+                label=label,
+                value=round((valor / onshore_disc_total) * 100, 2)
+            )
+            for label, valor in onshore_disc_values.items()
+        ]
+        # Ordenar de mayor a menor por porcentaje
+        onshore_disciplinas.sort(key=lambda x: x.value, reverse=True)
+        
+        onshore_item = AnalyticsItem(
+            total_gasto=1000000.25,
+            total_horas=750.25,
+            total_disciplinas=10,
+            distribucion_departamento=onshore_departamentos,
+            top_5_disciplinas=onshore_disciplinas
+        )
+        
+        return DashboardAnalyticsResponse(
+            success=True,
+            offshore=offshore_item,
+            onshore=onshore_item
+        )
+    
+    except Exception as e:
+        logger.exception(f"Error obteniendo analytics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener analytics: {str(e)}"
+        )
 
 
 @app.get("/api/v1/dashboard/rejected-concepts", response_model=RejectedConceptsResponse, tags=["Dashboard"])
@@ -1734,13 +1944,60 @@ async def get_rejected_concepts(
     Returns:
         Lista de conceptos rechazados con cantidad, monto y porcentaje
     """
-    # TODO: Implementar lógica para extraer conceptos rechazados de los JSONs
-    # Por ahora retornar lista vacía
-    return RejectedConceptsResponse(
-        success=True,
-        total=0,
-        concepts=[]
-    )
+    try:
+        # ============================================================
+        # DATOS MOCKEADOS PARA PRUEBAS (TEMPORAL)
+        # TODO: Reemplazar con lectura real de JSONs o SQL Server
+        # ============================================================
+        
+        # Calcular total para porcentajes
+        total_monto_rechazado = 125000.00
+        
+        concepts_mock = [
+            RejectedConcept(
+                concepto="Materiales no especificados",
+                cantidad_total=15,
+                monto_total=45000.00,
+                porcentaje_total=36.0
+            ),
+            RejectedConcept(
+                concepto="Servicios sin factura",
+                cantidad_total=8,
+                monto_total=32000.00,
+                porcentaje_total=25.6
+            ),
+            RejectedConcept(
+                concepto="Conceptos duplicados",
+                cantidad_total=12,
+                monto_total=28000.00,
+                porcentaje_total=22.4
+            ),
+            RejectedConcept(
+                concepto="Documentación incompleta",
+                cantidad_total=6,
+                monto_total=15000.00,
+                porcentaje_total=12.0
+            ),
+            RejectedConcept(
+                concepto="Fechas fuera de rango",
+                cantidad_total=4,
+                monto_total=5000.00,
+                porcentaje_total=4.0
+            )
+        ]
+        
+        return RejectedConceptsResponse(
+            success=True,
+            total=len(concepts_mock),
+            concepts=concepts_mock
+        )
+    
+    except Exception as e:
+        logger.exception(f"Error obteniendo conceptos rechazados: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener conceptos rechazados: {str(e)}"
+        )
 
 
 # ===== Periodos Endpoints =====

@@ -1,0 +1,28 @@
+BECHTEL
+OTHBP
+Newmont OE0003
+YAN CO
+081934 Bruno Peña Moreno Ingeniero/a de Terreno de Área Lima 24/06/2025 07/07/2025 26443-351
+(Oeste)
+081998 Tomas Saballo Diaz Mechanical Field Engineer Lima 24/06/2025 07/07/2025 26443-351
+082308 Cesar Vidal Carrollo Superintendente/a Civil de Lima 24/06/2025 07/07/2025 26443-351
+Concreto Este
+188063 Javier Enriquez Vereau Bechtel Standard Application Lima 24/06/2025 07/07/2025 26443-351
+Program Coordinator
+082262 Renzo Alexis Barrueto Ing. de Soldadura de Terreno Lima 24/06/2025 07/07/2025 26443-351
+(Oeste)
+082558 Mario Sanchez Pintado Mechanical Field Engineer Lima 24/06/2025 07/07/2025 26443-351
+082506 Flor de Maria Galarreta Coordinador/a de Sostenibilidad Lima 24/06/2025 07/07/2025 26443-351
+Marin
+082508 Luis Angel Garcia Tuesta Labor Relations Specialists Lima 24/06/2025 07/07/2025 26443-351
+082191 Laura Lucia Gil Cuayla Ingeniero/a Eléctrico/a e Lima 15/04/2025 28/04/2025 26443-351
+Instrumentación de Terreno
+082191 Laura Lucia Gil Cuayla Ingeniero/a Eléctrico/a e Lima 06/05/2025 19/05/2025 26443-351
+Instrumentación de Terreno
+# Empleado Nombre Puesto Origen Subida Bajada Centro de
+Costo
+160167 Eddson Antonio Diaz ES&H Leader Santiago 24/06/2025 07/07/2025 26443-331
+Rivera de Chile
+063573 Ana Maria Ayala Sehlke Occupational Hygiene Seniors Santiago 24/06/2025 07/07/2025 26443-331
+de Chile
+Level 3 - Bechtel Internal and Selected External Distribution

@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251114_092309_0112",
+  "timestamp": "2025-11-14T09:23:09.860451",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 249,
+  "error_type": "incorrect_value",
+  "error_message": "Campo 'nPrecioTotal' tiene valor incorrecto: 0.0",
+  "context": {
+    "field_name": "nPrecioTotal",
+    "extracted_value": "0.0",
+    "expected_value": null,
+    "reason": "Valor sospechosamente bajo (< 0.01)"
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_sequential_number": "OE0049",
+      "tNumero": "GLOBAL",
+      "tSerie": null,
+      "nPrecioTotal": 0.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 1714,
+  "ocr_text_preview": "INVOICE\nGLOBAL IMMIGRATION\nBECHTEL GLOBAL CORPORATION\nP.O. BOX 7700\nGLENDALE, ARIZONA 85312-7700\nUNITED STATES OF AMERICA\nContact Email: aexpatri@bechtel.com\nINVOICE SUMMARY:\nMatter: PABLO ANDRES TAPIA Invoice #: IN-US05734783 Total Professional Fees: 0.00 USD\nDAVILA\nMatter #: 9278150 Invoice Date: May 6, 2025 Total Disbursements: 160.36 USD\nEmployee ID: 031510 Payment Term: 60 Days Invoice Total: 160.36 USD\nCost Center.\nPurchase Order #: 491154\nChecks via Delivery Service Checks via USPS ACH/Wi",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251114_092309_0112_ocr_text.txt"
+}

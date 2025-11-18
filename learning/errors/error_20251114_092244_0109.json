@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251114_092244_0109",
+  "timestamp": "2025-11-14T09:22:44.885825",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 230,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 3,
+        "tTipo": "Jornada"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "t Project"
+      }
+    ]
+  },
+  "ocr_text_length": 1475,
+  "ocr_text_preview": "Yanacocha Water Treatment Project – Stage 3\nTRAVEL AUTHORIZATION (TAR)\nN° Bechtel 26442-220-G96-GAM-01444\nOTHBP\nOE0043\nNewmont\nFecha: 13-May-25\nEsta solicitud autorizará los viajes de las siguientes personas:\nNombre Cargo Centro de Costo Numero Empleado\nMa Eliana Ruiz Ulloa Gerente de Control de Proyecto 26443-354 191129\n***Solo para Expatriados***\nPaís de residencia Numero de Pasaporte País donde se emitió pasaporte Numero de Visa de Negocios\nChile CE: 008586907\nFecha de Inicio: Fecha de regres",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251114_092244_0109_ocr_text.txt"
+}

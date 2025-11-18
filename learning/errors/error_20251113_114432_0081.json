@@ -1,0 +1,39 @@
+{
+  "error_id": "error_20251113_114432_0081",
+  "timestamp": "2025-11-13T11:44:32.556214",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 17,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 1,
+        "tIdioma": "Español"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 3,
+        "tTipo": "Jornada"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "BECHTEL\nNewmont\nYAN CO\nOTHBP\nOE"
+      }
+    ]
+  },
+  "ocr_text_length": 1414,
+  "ocr_text_preview": "BECHTEL\nNewmont\nYAN CO\nOTHBP\nOE0003\n081934 Bruno Peña Moreno Ingeniero/a de Terreno de Área Lima 24/06/2025 07/07/2025 26443-351\n(Oeste)\n081998 Tomas Saballo Diaz Mechanical Field Engineer Lima 24/06/2025 07/07/2025 26443-351\n082308 Cesar Vidal Carrollo\nSuperintendente/a Civil de\nConcreto Este\nLima 24/06/2025 07/07/2025 26443-351\n188063 Javier Enriquez Vereau\nBechtel Standard Application\nProgram Coordinator\nLima 24/06/2025 07/07/2025 26443-351\n082262 Renzo Alexis Barrueto\nIng. de Soldadura de Te",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251113_114432_0081_ocr_text.txt"
+}

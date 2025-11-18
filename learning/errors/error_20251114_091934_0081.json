@@ -1,0 +1,48 @@
+{
+  "error_id": "error_20251114_091934_0081",
+  "timestamp": "2025-11-14T09:19:34.581974",
+  "pdf_name": "a0f308ff-d516-4b5a-aab4-474010200fc1",
+  "page_number": 94,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mdivisa' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mdivisa",
+    "expected_value": "USD, PEN, RM, etc."
+  },
+  "extracted_data": {
+    "mcomprobante": [
+      {
+        "_sequential_number": "OE0017",
+        "tNumero": "IN-US05706092",
+        "tSerie": null,
+        "fEmision": "10 Apr 2025",
+        "tCliente": null
+      }
+    ],
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "CLIENT CASE FIELDS"
+      }
+    ]
+  },
+  "ocr_text_length": 547,
+  "ocr_text_preview": "INVOICE IN-US05706092\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063117\nApplication Approval Date: 10 Apr 2025\nApplication File Date: 10 Apr 2025\nAuthorizing Manager:\nCase Initiation Date: 14 Feb 2025\nCost Center:\nCurrent Location City: Houston\nEmployee ID: 044495\nFunction: Tanks\nJob Charge Code (ex. #####-###): 26442421\nNumber of Dependents: 0\nPO#: 491154\nPO #: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Yanacocha\nReceiving Country: PERU\nSending Country: COLOMBIA",
+  "ocr_text": "INVOICE IN-US05706092\nCLIENT CASE FIELDS:\nComments:\nApplicant ID: 00063117\nApplication Approval Date: 10 Apr 2025\nApplication File Date: 10 Apr 2025\nAuthorizing Manager:\nCase Initiation Date: 14 Feb 2025\nCost Center:\nCurrent Location City: Houston\nEmployee ID: 044495\nFunction: Tanks\nJob Charge Code (ex. #####-###): 26442421\nNumber of Dependents: 0\nPO#: 491154\nPO #: 491154\nProject Name: YANACOCHA AWTP - ONSHORE\nReceiving Assignment City: Yanacocha\nReceiving Country: PERU\nSending Country: COLOMBIA\nCONFIDENTIAL\nFRAGOMEN\nOTHBP\nOE0017\nPage 2 of 2"
+}

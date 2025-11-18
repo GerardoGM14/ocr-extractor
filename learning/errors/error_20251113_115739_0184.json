@@ -1,0 +1,44 @@
+{
+  "error_id": "error_20251113_115739_0184",
+  "timestamp": "2025-11-13T11:57:39.487742",
+  "pdf_name": "e4b3e21e-bad4-489c-bd98-1fc3c780c9ec",
+  "page_number": 479,
+  "error_type": "missing_field",
+  "error_message": "Campo 'mresumen' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "mresumen",
+    "expected_value": "Lista de items de resumen"
+  },
+  "extracted_data": {
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 2,
+        "tTipo": "Resumen"
+      }
+    ],
+    "mdivisa": [
+      {
+        "tDivisa": "USD"
+      }
+    ],
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Otro"
+      }
+    ],
+    "mproveedor": [
+      {
+        "tRazonSocial": "PLEASE UPDATE TO WORKCARE"
+      }
+    ]
+  },
+  "ocr_text_length": 3284,
+  "ocr_text_preview": "OTHBP\nOE0103\nPLEASE UPDATE TO WORKCARE'S NEW BANKING INFORMATION LISTED BELOW\n03/06/2025: International Clinic Setup Fee [New Delhi, India] 1 187.00 $187.00\nKavit Surati\n03/06/2025: Travel Questionnaire Review (Intl) [New Delhi, India] 1 136.00 $136.00\nKavit Surati\n03/06/2025: Management Fee International [New Delhi, India] 1 0.00 $0.00\nKavit Surati\n03/06/2025: Complimentary Travel Request [New Delhi, India] 1 0.00 $0.00\nKavit Surati\n03/06/2025: Relocation Exam - International [New Delhi, India]",
+  "ocr_text_file": "C:\\Users\\Soporte\\Documents\\Proyectos\\ExtractorOCRv1\\learning\\errors\\error_20251113_115739_0184_ocr_text.txt"
+}

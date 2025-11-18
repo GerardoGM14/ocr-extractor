@@ -1,0 +1,48 @@
+OTHBP
+OE0011
+靖江国际大酒店
+Jing Jiang International Hotel
+总台账单(Front Bill)
+姓名(Name): Baldini Gjurinovic Sergio Reynaldo
+房号(Room): 1817 到日(Arr): 2025/06/03 16:00
+帐号(Accnt): F25F030014 离日(Dep):2025/06/04 08:38
+=项目(Items) 金额(Charge)
+06/03 Room Charge 1817 498.00
+消费总额(Total):肆佰玖拾捌圆整 498.00
+付款总额(Deposit): 零圆整 0.00
+账户余额(Balance):肆佰玖拾捌圆整 498.00
+收银员(Cashier): 574 客户签名(Signature):
+打印时间(Typing Time): 2025/06/04 08:43
+中国建设银行
+China Construction Bank
+持卡人存根(CARDHOLDER COPY)
+POS签购单(POS SALES SLIP):
+商户名(MERCHANT NAME):
+靖江国际大酒店有限公司
+商户号(MERCHANT NO):
+105321270110019 #0002
+终端号(TERMINAL NO):
+00071050
+操作员号(OPERATOR NO):01
+发卡行(ISSUER): VIS
+收单行(ACQUIRER):建设银行
+卡号(CARD NO):
+4919 4784 2338 6440 (1)
+SERGIO REYNALDO BAL/ SN: 001
+交易类型(TRANS TYPE):
+预授权/AUTH
+批次号(BATCH NO):000894
+凭证号(VOUCHER NO): 000151
+参考号(REF NO) : 515416431501
+授权码(AUTH NO):102082
+交易日期(DATE):2025/06/03
+交易时间(TIME):16:07:11
+有效期(EXP. DATE): 2030/03
+金额(AMOUNT): RMB 1000.00
+(REFERENCE):
+TC:FA2DDE2C093104ED ATC:0018
+TVR: 0080008800 TSI:E800
+AID: A0000000031010
+APP LABEL: VISA CREDITO
+终端版本号(VER): 00001133241201 (v5.3.0)
+终端序列号(TUSN): 00000304NANL00260605 (W)

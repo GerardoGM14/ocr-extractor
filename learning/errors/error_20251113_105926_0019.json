@@ -1,0 +1,26 @@
+{
+  "error_id": "error_20251113_105926_0019",
+  "timestamp": "2025-11-13T10:59:26.288379",
+  "pdf_name": "2755aba3-0569-40ae-944b-1242e098dc92",
+  "page_number": 32,
+  "error_type": "missing_field",
+  "error_message": "Campo 'tNumero' está vacío o no se pudo extraer",
+  "context": {
+    "field_name": "tNumero",
+    "expected_value": null
+  },
+  "extracted_data": {
+    "comprobante": {
+      "_stamp_name": "BSQE",
+      "_sequential_number": "BS0003",
+      "tNumero": null,
+      "tSerie": null,
+      "fEmision": "18/6/2025",
+      "nPrecioTotal": 21.0,
+      "tCliente": null
+    }
+  },
+  "ocr_text_length": 210,
+  "ocr_text_preview": "BSQE\nBS0003\nM/s.\nM3m\n日期\nTamkh 18/6/2025\nNO.\n编号 数量 摘要 价目 银额\nNO KUANTITI JENIS BARANG-BARANG HARGA JUMLAH (RM)\n2 21.00\n3\n4\n5\n6\n7\n8\n9\n10 USD 5-10\nCASH / INVOICE 总计 21.00\nJUMLAH RM\nTERIMA OLEH 收货人 DISAHKAN OLEH 经手人",
+  "ocr_text": "BSQE\nBS0003\nM/s.\nM3m\n日期\nTamkh 18/6/2025\nNO.\n编号 数量 摘要 价目 银额\nNO KUANTITI JENIS BARANG-BARANG HARGA JUMLAH (RM)\n2 21.00\n3\n4\n5\n6\n7\n8\n9\n10 USD 5-10\nCASH / INVOICE 总计 21.00\nJUMLAH RM\nTERIMA OLEH 收货人 DISAHKAN OLEH 经手人"
+}
