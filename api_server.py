@@ -6,6 +6,7 @@ Ejecutar: python api_server.py
 import sys
 import os
 import json
+import asyncio
 from pathlib import Path
 
 # Configurar encoding para Windows
@@ -13,6 +14,9 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
     os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # Configurar asyncio para Windows (evita errores de ProactorEventLoop)
+    if sys.version_info >= (3, 8):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Agregar src al path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -80,12 +84,24 @@ if __name__ == "__main__":
         "app": app,
         "host": "0.0.0.0",
         "port": 8000,
-        "log_level": "info"
+        "log_level": "info",
+        "access_log": True,
+        "timeout_keep_alive": 5
     }
     
     if use_https:
         uvicorn_config["ssl_keyfile"] = key_path
         uvicorn_config["ssl_certfile"] = cert_path
     
-    uvicorn.run(**uvicorn_config)
+    try:
+        uvicorn.run(**uvicorn_config)
+    except KeyboardInterrupt:
+        print("\n\nServidor detenido por el usuario.")
+        # Dar tiempo para cerrar conexiones
+        import time
+        time.sleep(0.5)
+    except Exception as e:
+        print(f"\n\nError al iniciar el servidor: {e}")
+        import traceback
+        traceback.print_exc()
 

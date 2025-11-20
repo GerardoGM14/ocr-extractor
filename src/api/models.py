@@ -55,6 +55,31 @@ class ProcessStatusResponse(BaseModel):
     error: Optional[str] = None
 
 
+class BatchJobInfo(BaseModel):
+    """Información de un job en el batch."""
+    file_id: str
+    request_id: str
+    status: str  # "queued" | "processing"
+    message: str
+
+
+class BatchProcessRequest(BaseModel):
+    """Request para procesar múltiples PDFs en batch."""
+    file_ids: List[str] = Field(..., description="Lista de file_ids a procesar", min_items=1)
+    save_files: bool = Field(default=True, description="Guardar archivos en disco")
+    output_folder: str = Field(default="api", description="Subcarpeta de salida")
+    periodo_id: Optional[str] = Field(default=None, description="ID del periodo para asociar los archivos procesados")
+
+
+class BatchProcessResponse(BaseModel):
+    """Respuesta del procesamiento batch."""
+    success: bool
+    total: int
+    procesados: int
+    jobs: List[BatchJobInfo]
+    errores: Optional[List[Dict[str, Any]]] = None
+
+
 class ErrorResponse(BaseModel):
     """Respuesta de error."""
     success: bool = False

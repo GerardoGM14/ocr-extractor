@@ -239,30 +239,46 @@ class DataMapper:
         """
         result = {}
         
-        # Extraer datos específicos según tipo
-        if doc_type == "concur_expense":
-            concur_data = self._extract_concur_expense_data(ocr_text)
-            if concur_data:
-                result.update(concur_data)
-        elif doc_type == "expense_report":
-            expense_report_data = self._extract_expense_report_data(ocr_text)
-            if expense_report_data:
-                result.update(expense_report_data)
-        elif doc_type == "resumen":
-            resumen_data = self._extract_resumen_data(ocr_text)
-            if resumen_data:
-                result.update(resumen_data)
-        elif doc_type == "comprobante":
-            comprobante_data = self._extract_comprobante_data(ocr_text)
-            if comprobante_data:
-                result.update(comprobante_data)
-        elif doc_type == "jornada":
-            jornada_data = self._extract_jornada_data(ocr_text)
-            if jornada_data:
-                result.update(jornada_data)
+        # Verificar si es GL Journal Details con cálculo destacado ANTES de extraer datos por tipo
+        is_gl_journal = 'gl journal details'.lower() in ocr_text.lower()
+        has_highlighted_calc = bool(re.search(r'USD\s+[\d,]+\.\d{2}\s*\+\s*USD\s+[\d,]+\.\d{2}\s*\+\s*USD\s+[\d,]+\.\d{2}\s*=\s*USD\s+[\d,]+\.\d{2}', ocr_text, re.IGNORECASE))
+        
+        # Si es GL Journal Details con cálculo destacado, NO extraer datos por tipo (solo valores destacados)
+        if not (is_gl_journal and has_highlighted_calc):
+            # Extraer datos específicos según tipo
+            if doc_type == "concur_expense":
+                concur_data = self._extract_concur_expense_data(ocr_text)
+                if concur_data:
+                    result.update(concur_data)
+            elif doc_type == "expense_report":
+                expense_report_data = self._extract_expense_report_data(ocr_text)
+                if expense_report_data:
+                    result.update(expense_report_data)
+            elif doc_type == "resumen":
+                resumen_data = self._extract_resumen_data(ocr_text)
+                if resumen_data:
+                    result.update(resumen_data)
+            elif doc_type == "comprobante":
+                comprobante_data = self._extract_comprobante_data(ocr_text)
+                if comprobante_data:
+                    result.update(comprobante_data)
+            elif doc_type == "jornada":
+                jornada_data = self._extract_jornada_data(ocr_text)
+                if jornada_data:
+                    result.update(jornada_data)
 
-        # Si el documento contiene "GL Journal Details", extraer también líneas como detalle
-        if 'gl journal details'.lower() in ocr_text.lower():
+        # Si el documento contiene "GL Journal Details", verificar si hay cálculo destacado
+        # Si hay cálculo destacado, SOLO extraer esos valores (no todo el documento)
+        # (is_gl_journal y has_highlighted_calc ya están definidos arriba)
+        
+        # Si es GL Journal Details con cálculo destacado, NO extraer todo el documento
+        # Solo extraeremos los valores destacados en highlighted_calculations más adelante
+        if is_gl_journal and has_highlighted_calc:
+            # NO extraer journal_items ni resumen_data completo
+            # Solo extraeremos los valores destacados
+            pass
+        elif is_gl_journal:
+            # Si es GL Journal Details pero sin cálculo destacado, extraer líneas como detalle
             journal_items = self._extract_journal_details_items(ocr_text)
             if journal_items:
                 # No sobrescribir si ya existen, concatenar
@@ -296,6 +312,13 @@ class DataMapper:
             if jornada_highlights:
                 highlighted_calculations.extend(jornada_highlights)
         
+        # Si es GL Journal Details con cálculo destacado, extraer SOLO los valores destacados
+        if is_gl_journal and has_highlighted_calc:
+            # Extraer valores individuales del cálculo destacado
+            gl_highlighted_values = self._extract_gl_journal_highlighted_values(ocr_text)
+            if gl_highlighted_values:
+                highlighted_calculations.extend(gl_highlighted_values)
+        
         if highlighted_calculations:
             # Agregar a mresumen si está vacío o crear campo específico
             if 'mresumen' not in result or not result.get('mresumen'):
@@ -306,13 +329,14 @@ class DataMapper:
         
         # Extracción general de valores monetarios (para cualquier tipo de documento)
         # Esto captura TODOS los valores económicos, sin importar el formato
-        # EXCEPCIÓN: Para documentos jornada o comprobante con valores destacados (rectángulo rojo),
+        # EXCEPCIÓN: Para documentos jornada, comprobante o GL Journal Details con valores destacados (rectángulo rojo),
         # NO extraer todos los valores, solo usar los destacados que ya están en mresumen
         general_monetary_values = []
         has_highlighted_total = any(calc.get("_total_highlighted", False) or calc.get("_highlighted", False) for calc in highlighted_calculations)
         
-        if (doc_type == "jornada" and highlighted_calculations) or (doc_type == "comprobante" and has_highlighted_total):
-            # Si es jornada/comprobante y hay valores destacados, NO extraer todos los valores
+        # Si es GL Journal Details con cálculo destacado, NO extraer todos los valores
+        if (is_gl_journal and has_highlighted_calc) or (doc_type == "jornada" and highlighted_calculations) or (doc_type == "comprobante" and has_highlighted_total):
+            # Si tiene valores destacados, NO extraer todos los valores
             # Solo usar los valores destacados que ya están en mresumen
             pass  # No ejecutar _extract_all_monetary_values
         else:
@@ -1567,6 +1591,80 @@ class DataMapper:
                         continue
         
         return calculations
+    
+    def _extract_gl_journal_highlighted_values(self, ocr_text: str) -> List[Dict]:
+        """
+        Extrae SOLO los valores destacados (en cuadros rojos) de un GL Journal Details.
+        
+        Cuando hay un cálculo destacado como "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00",
+        extrae solo esos valores individuales (4,301.00, 616.00, 1,452.00) y el total (6,369.00).
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Lista de diccionarios con valores destacados en formato mresumen
+        """
+        highlighted_values = []
+        
+        # Buscar el cálculo destacado: "USD X + USD Y + USD Z = USD TOTAL"
+        calculation_pattern = r'([A-Z]{3})\s+([\d,]+\.\d{2})\s*\+\s*([A-Z]{3})\s+([\d,]+\.\d{2})\s*\+\s*([A-Z]{3})\s+([\d,]+\.\d{2})\s*=\s*([A-Z]{3})\s+([\d,]+\.\d{2})'
+        match = re.search(calculation_pattern, ocr_text, re.IGNORECASE)
+        
+        if match:
+            currency = match.group(1).upper()
+            value1 = float(match.group(2).replace(',', ''))
+            value2 = float(match.group(4).replace(',', ''))
+            value3 = float(match.group(6).replace(',', ''))
+            total = float(match.group(8).replace(',', ''))
+            
+            # Agregar cada valor individual destacado
+            highlighted_values.append({
+                "tjobno": None,
+                "ttype": "GL Journal Highlighted",
+                "tsourcereference": None,
+                "tsourcerefid": None,
+                "tdescription": f"GL Journal Highlighted Value 1",
+                "nImporte": value1,
+                "tStampname": None,
+                "tsequentialnumber": None
+            })
+            
+            highlighted_values.append({
+                "tjobno": None,
+                "ttype": "GL Journal Highlighted",
+                "tsourcereference": None,
+                "tsourcerefid": None,
+                "tdescription": f"GL Journal Highlighted Value 2",
+                "nImporte": value2,
+                "tStampname": None,
+                "tsequentialnumber": None
+            })
+            
+            highlighted_values.append({
+                "tjobno": None,
+                "ttype": "GL Journal Highlighted",
+                "tsourcereference": None,
+                "tsourcerefid": None,
+                "tdescription": f"GL Journal Highlighted Value 3",
+                "nImporte": value3,
+                "tStampname": None,
+                "tsequentialnumber": None
+            })
+            
+            # Agregar el total
+            highlighted_values.append({
+                "tjobno": None,
+                "ttype": "GL Journal Highlighted",
+                "tsourcereference": None,
+                "tsourcerefid": None,
+                "tdescription": f"GL Journal Highlighted Total",
+                "nImporte": total,
+                "tStampname": None,
+                "tsequentialnumber": None
+            })
+        
+        return highlighted_values
     
     def _extract_jornada_data(self, ocr_text: str) -> Dict[str, List[Dict]]:
         """Extrae datos de jornadas (horas trabajadas por empleados)."""

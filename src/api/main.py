@@ -10,14 +10,18 @@ import uuid
 import tempfile
 import logging
 import json
+import asyncio
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, AsyncGenerator
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from starlette.requests import Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from .models import (
     ProcessPDFResponse,
@@ -52,7 +56,11 @@ from .models import (
     PeriodosListResponse,
     PeriodoDetailResponse,
     PeriodoResumenPSResponse,
-    PeriodoResumenPSItem
+    PeriodoResumenPSItem,
+    # Batch Models
+    BatchProcessRequest,
+    BatchProcessResponse,
+    BatchJobInfo
 )
 from .dependencies import (
     get_ocr_extractor,
@@ -79,6 +87,13 @@ logger = logging.getLogger(__name__)
 # Suprimir warnings de archivos temporales en consola
 logging.getLogger(__name__).setLevel(logging.INFO)
 
+# Suprimir errores de asyncio en Windows (errores de limpieza al cerrar)
+if sys.platform == 'win32':
+    logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+
+# Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 # Crear aplicación FastAPI
 app = FastAPI(
     title="ExtractorOCR API",
@@ -88,6 +103,10 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Agregar rate limiter a la app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -96,11 +115,15 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:8080",
+        "https://localhost:8000",
+        "http://localhost:8000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
 
 # Middleware de autenticación (preparado pero desactivado)
 auth_middleware = AuthMiddleware()
@@ -355,6 +378,133 @@ async def process_pdf(
     )
 
 
+@app.post("/api/v1/process-batch", response_model=BatchProcessResponse, tags=["Processing"])
+async def process_batch(request: BatchProcessRequest):
+    """
+    Procesa múltiples PDFs en paralelo (hasta 3 workers simultáneos).
+    
+    Este endpoint permite procesar varios archivos a la vez. Los archivos se agregan
+    a la cola de procesamiento y se procesan hasta 3 en paralelo automáticamente.
+    El resto espera en cola hasta que haya un worker disponible.
+    
+    Primero debes subir los PDFs con POST /api/v1/upload-pdf y obtener los file_ids.
+    Luego usa este endpoint con la lista de file_ids para procesarlos todos.
+    
+    Este endpoint es ASÍNCRONO: responde inmediatamente con los request_ids.
+    Usa GET /api/v1/process-status/{request_id} para consultar el estado de cada procesamiento.
+    
+    Args:
+        request: BatchProcessRequest con lista de file_ids y opciones de procesamiento
+        
+    Returns:
+        BatchProcessResponse con lista de jobs creados (cada uno con su request_id)
+    """
+    upload_manager = get_upload_manager()
+    worker_manager = get_worker_manager()
+    
+    jobs_creados = []
+    errores = []
+    
+    logger.info(f"Procesando batch de {len(request.file_ids)} archivos")
+    
+    # Procesar cada file_id
+    for file_id in request.file_ids:
+        try:
+            # Validar que el file_id existe
+            if not upload_manager.file_exists(file_id):
+                errores.append({
+                    "file_id": file_id,
+                    "error": f"Archivo con file_id '{file_id}' no encontrado"
+                })
+                continue
+            
+            # Obtener PDF y metadata
+            pdf_path = upload_manager.get_uploaded_pdf_path(file_id)
+            metadata = upload_manager.get_uploaded_metadata(file_id)
+            
+            if not pdf_path or not metadata:
+                errores.append({
+                    "file_id": file_id,
+                    "error": f"Error obteniendo archivo o metadata para file_id '{file_id}'"
+                })
+                continue
+            
+            # Obtener datos del PDF subido
+            pdf_filename = metadata["filename"]
+            email = metadata["metadata"]["email"]
+            year = metadata["metadata"]["year"]
+            normalized_month = metadata["metadata"]["month"]
+            
+            # Validar correo autorizado
+            if not is_email_allowed(email):
+                errores.append({
+                    "file_id": file_id,
+                    "error": f"Correo no autorizado: {email}. Acceso denegado para procesar este archivo."
+                })
+                continue
+            
+            # Crear request_id único para este job
+            request_id = str(uuid.uuid4())
+            
+            logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento batch - file_id: {file_id}")
+            logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
+            
+            # Crear job
+            job = ProcessingJob(
+                request_id=request_id,
+                file_id=file_id,
+                pdf_path=Path(pdf_path),
+                metadata={
+                    "filename": pdf_filename,
+            "email": email,
+            "year": year,
+                    "month": normalized_month
+                },
+                save_files=request.save_files,
+                output_folder=request.output_folder,
+                periodo_id=request.periodo_id
+            )
+            
+            # Agregar job a la cola
+            worker_manager.add_job(job)
+            
+            # Determinar estado inicial
+            initial_status = "queued"
+            initial_message = "Esperando en cola de procesamiento..."
+            
+            # Si hay workers disponibles, el job puede empezar inmediatamente
+            if worker_manager.get_active_jobs_count() < worker_manager.max_workers:
+                initial_status = "processing"
+                initial_message = "Iniciando procesamiento..."
+                job.status = "processing"
+                job.message = "Iniciando procesamiento..."
+            
+            # Agregar a la lista de jobs creados
+            jobs_creados.append(BatchJobInfo(
+                file_id=file_id,
+                request_id=request_id,
+                status=initial_status,
+                message=initial_message
+            ))
+            
+        except Exception as e:
+            logger.error(f"Error procesando file_id '{file_id}' en batch: {e}")
+            errores.append({
+                "file_id": file_id,
+                "error": f"Error inesperado: {str(e)}"
+            })
+    
+    logger.info(f"Batch completado: {len(jobs_creados)} jobs creados, {len(errores)} errores")
+    
+    return BatchProcessResponse(
+        success=True,
+        total=len(request.file_ids),
+        procesados=len(jobs_creados),
+        jobs=jobs_creados,
+        errores=errores if errores else None
+    )
+
+
 @app.get("/api/v1/process-status/{request_id}", response_model=ProcessStatusResponse, tags=["Processing"])
 async def get_process_status(request_id: str):
     """
@@ -386,6 +536,344 @@ async def get_process_status(request_id: str):
         download_url=job.download_url,
         excel_download_url=job.excel_download_url,
         error=job.error
+    )
+
+
+async def _stream_job_status(request_id: str) -> AsyncGenerator[str, None]:
+    """
+    Generator para streaming de estado de un job individual.
+    
+    Args:
+        request_id: ID del job a monitorear
+        
+    Yields:
+        Eventos SSE en formato text/event-stream
+    """
+    worker_manager = get_worker_manager()
+    last_status = None
+    last_progress = -1
+    timeout_seconds = 1800  # 30 minutos máximo
+    start_time = time.time()
+    poll_interval = 0.5  # Polling cada 0.5 segundos
+    
+    # Verificar que el job existe
+    job = worker_manager.get_job_status(request_id)
+    if not job:
+        error_data = {
+            "error": f"Request ID '{request_id}' no encontrado",
+            "request_id": request_id
+        }
+        yield f"data: {json.dumps(error_data)}\n\n"
+        return
+    
+    # Enviar estado inicial
+    initial_data = {
+        "request_id": job.request_id,
+        "status": job.status,
+        "progress": job.progress,
+        "message": job.message,
+        "pages_processed": job.pages_processed,
+        "processing_time": job.processing_time,
+        "download_url": job.download_url,
+        "excel_download_url": job.excel_download_url,
+        "error": job.error
+    }
+    yield f"data: {json.dumps(initial_data)}\n\n"
+    last_status = job.status
+    last_progress = job.progress
+    
+    # Monitorear cambios hasta que termine
+    while True:
+        # Verificar timeout
+        if time.time() - start_time > timeout_seconds:
+            timeout_data = {
+                "request_id": request_id,
+                "status": "timeout",
+                "error": "Timeout: conexión SSE cerrada después de 30 minutos",
+                "message": "El procesamiento puede continuar, pero la conexión SSE ha expirado"
+            }
+            yield f"data: {json.dumps(timeout_data)}\n\n"
+            break
+        
+        # Obtener estado actual
+        job = worker_manager.get_job_status(request_id)
+        if not job:
+            # Job eliminado o no encontrado
+            error_data = {
+                "request_id": request_id,
+                "status": "not_found",
+                "error": "Job no encontrado (puede haber sido eliminado)"
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+            break
+        
+        # Verificar si hay cambios
+        status_changed = job.status != last_status
+        progress_changed = job.progress != last_progress
+        
+        # Enviar actualización si hay cambios o cada 2 segundos (heartbeat)
+        if status_changed or progress_changed or (time.time() - start_time) % 2 < poll_interval:
+            update_data = {
+                "request_id": job.request_id,
+                "status": job.status,
+                "progress": job.progress,
+                "message": job.message,
+                "pages_processed": job.pages_processed,
+                "processing_time": job.processing_time,
+                "download_url": job.download_url,
+                "excel_download_url": job.excel_download_url,
+                "error": job.error
+            }
+            yield f"data: {json.dumps(update_data)}\n\n"
+            last_status = job.status
+            last_progress = job.progress
+        
+        # Si el job terminó, cerrar conexión
+        if job.status in ["completed", "failed"]:
+            # Enviar estado final y cerrar
+            final_data = {
+                "request_id": job.request_id,
+                "status": job.status,
+                "progress": job.progress,
+                "message": job.message,
+                "pages_processed": job.pages_processed,
+                "processing_time": job.processing_time,
+                "download_url": job.download_url,
+                "excel_download_url": job.excel_download_url,
+                "error": job.error,
+                "finished": True
+            }
+            yield f"data: {json.dumps(final_data)}\n\n"
+            break
+        
+        await asyncio.sleep(poll_interval)
+
+
+@app.get("/api/v1/process-status-stream/{request_id}", tags=["Processing"])
+async def stream_process_status(request_id: str):
+    """
+    Stream de estado de procesamiento usando Server-Sent Events (SSE).
+    
+    Este endpoint mantiene una conexión abierta y envía actualizaciones en tiempo real
+    del estado del procesamiento. Ideal para mostrar progreso en el frontend sin polling.
+    
+    El stream se cierra automáticamente cuando el job termina (completed/failed)
+    o después de 30 minutos de inactividad.
+    
+    Args:
+        request_id: ID del request de procesamiento (obtenido de POST /api/v1/process-pdf)
+        
+    Returns:
+        StreamingResponse con eventos SSE (text/event-stream)
+        
+    Ejemplo de uso en frontend:
+        const eventSource = new EventSource('/api/v1/process-status-stream/abc123');
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log('Estado:', data.status, 'Progreso:', data.progress);
+        };
+    """
+    return StreamingResponse(
+        _stream_job_status(request_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Deshabilitar buffering en nginx
+        }
+    )
+
+
+async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
+    """
+    Generator para streaming de estado de todos los jobs de un periodo.
+    
+    Args:
+        periodo_id: ID del periodo a monitorear
+        
+    Yields:
+        Eventos SSE en formato text/event-stream con estado consolidado
+    """
+    worker_manager = get_worker_manager()
+    periodo_manager = get_periodo_manager()
+    last_jobs_state = {}
+    timeout_seconds = 1800  # 30 minutos máximo
+    start_time = time.time()
+    poll_interval = 1.0  # Polling cada 1 segundo (batch puede ser más lento)
+    
+    # Verificar que el periodo existe
+    periodo_data = periodo_manager.get_periodo(periodo_id)
+    if not periodo_data:
+        error_data = {
+            "error": f"Periodo '{periodo_id}' no encontrado",
+            "periodo_id": periodo_id
+        }
+        yield f"data: {json.dumps(error_data)}\n\n"
+        return
+    
+    # Obtener request_ids asociados al periodo
+    request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+    
+    if not request_ids:
+        # No hay jobs aún, pero el periodo existe
+        initial_data = {
+            "periodo_id": periodo_id,
+            "total_jobs": 0,
+            "completed": 0,
+            "processing": 0,
+            "queued": 0,
+            "failed": 0,
+            "jobs": [],
+            "message": "No hay archivos procesados en este periodo aún"
+        }
+        yield f"data: {json.dumps(initial_data)}\n\n"
+        # Esperar a que se agreguen jobs (timeout más corto si no hay jobs)
+        await asyncio.sleep(2)
+        request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+        if not request_ids:
+            return
+    
+    # Función helper para obtener estado consolidado
+    def get_consolidated_status():
+        jobs_info = []
+        status_counts = {"completed": 0, "processing": 0, "queued": 0, "failed": 0}
+        
+        for req_id in request_ids:
+            job = worker_manager.get_job_status(req_id)
+            if job:
+                job_info = {
+                    "request_id": job.request_id,
+                    "status": job.status,
+                    "progress": job.progress,
+                    "message": job.message,
+                    "pages_processed": job.pages_processed,
+                    "error": job.error
+                }
+                jobs_info.append(job_info)
+                if job.status in status_counts:
+                    status_counts[job.status] += 1
+            else:
+                # Job no encontrado (puede haber sido eliminado)
+                jobs_info.append({
+                    "request_id": req_id,
+                    "status": "not_found",
+                    "progress": 0,
+                    "message": "Job no encontrado"
+                })
+        
+        return {
+            "periodo_id": periodo_id,
+            "total_jobs": len(request_ids),
+            "completed": status_counts["completed"],
+            "processing": status_counts["processing"],
+            "queued": status_counts["queued"],
+            "failed": status_counts["failed"],
+            "jobs": jobs_info
+        }
+    
+    # Enviar estado inicial
+    initial_state = get_consolidated_status()
+    yield f"data: {json.dumps(initial_state)}\n\n"
+    last_jobs_state = {job["request_id"]: (job["status"], job["progress"]) for job in initial_state["jobs"]}
+    
+    # Monitorear cambios
+    while True:
+        # Verificar timeout
+        if time.time() - start_time > timeout_seconds:
+            timeout_data = {
+                "periodo_id": periodo_id,
+                "status": "timeout",
+                "error": "Timeout: conexión SSE cerrada después de 30 minutos",
+                "message": "El procesamiento puede continuar, pero la conexión SSE ha expirado"
+            }
+            yield f"data: {json.dumps(timeout_data)}\n\n"
+            break
+        
+        # Actualizar lista de request_ids (pueden agregarse nuevos jobs)
+        current_request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+        if set(current_request_ids) != set(request_ids):
+            request_ids = current_request_ids
+        
+        # Obtener estado actual
+        current_state = get_consolidated_status()
+        
+        # Verificar si hay cambios
+        has_changes = False
+        for job in current_state["jobs"]:
+            req_id = job["request_id"]
+            current_status = job["status"]
+            current_progress = job["progress"]
+            
+            if req_id not in last_jobs_state:
+                has_changes = True
+                break
+            
+            last_status, last_progress = last_jobs_state[req_id]
+            if current_status != last_status or current_progress != last_progress:
+                has_changes = True
+                break
+        
+        # También verificar si cambió el total de jobs
+        if len(current_state["jobs"]) != len(last_jobs_state):
+            has_changes = True
+        
+        # Enviar actualización si hay cambios o cada 3 segundos (heartbeat)
+        if has_changes or (time.time() - start_time) % 3 < poll_interval:
+            yield f"data: {json.dumps(current_state)}\n\n"
+            last_jobs_state = {job["request_id"]: (job["status"], job["progress"]) for job in current_state["jobs"]}
+        
+        # Verificar si todos los jobs terminaron
+        all_finished = all(
+            job["status"] in ["completed", "failed", "not_found"]
+            for job in current_state["jobs"]
+        )
+        
+        if all_finished and current_state["total_jobs"] > 0:
+            # Enviar estado final y cerrar
+            final_state = current_state.copy()
+            final_state["finished"] = True
+            final_state["message"] = f"Todos los jobs del periodo han terminado: {current_state['completed']} completados, {current_state['failed']} fallidos"
+            yield f"data: {json.dumps(final_state)}\n\n"
+            break
+        
+        await asyncio.sleep(poll_interval)
+
+
+@app.get("/api/v1/periodos/{periodo_id}/process-status-stream", tags=["Periodos"])
+async def stream_periodo_status(periodo_id: str):
+    """
+    Stream de estado de procesamiento de todos los jobs de un periodo usando Server-Sent Events (SSE).
+    
+    Este endpoint mantiene una conexión abierta y envía actualizaciones en tiempo real
+    del estado de todos los archivos procesados en un periodo. Ideal para monitorear
+    procesamiento batch completo.
+    
+    El stream se cierra automáticamente cuando todos los jobs terminan o después de 30 minutos.
+    
+    Args:
+        periodo_id: ID del periodo a monitorear (ej: "2025-11-onshore")
+        
+    Returns:
+        StreamingResponse con eventos SSE (text/event-stream)
+        
+    Ejemplo de uso en frontend:
+        const eventSource = new EventSource('/api/v1/periodos/2025-11-onshore/process-status-stream');
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log('Total:', data.total_jobs, 'Completados:', data.completed);
+            data.jobs.forEach(job => {
+                console.log('Job:', job.request_id, 'Estado:', job.status);
+            });
+        };
+    """
+    return StreamingResponse(
+        _stream_periodo_status(periodo_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Deshabilitar buffering en nginx
+        }
     )
 
 
@@ -952,6 +1440,72 @@ async def get_learning_suggestions():
 from .excel_generator import generate_excel_for_request as _generate_excel_for_request
 
 
+@app.get("/api/v1/export-zip/{request_id}", tags=["Export"])
+async def export_zip(request_id: str):
+    """
+    Redirige a la descarga del archivo ZIP para un request_id.
+    
+    Busca el zip_filename en la metadata y redirige a /public/{zip_filename}.
+    
+    Args:
+        request_id: ID del procesamiento (obtener de la respuesta de /api/v1/process-pdf)
+        
+    Returns:
+        Redirección a /public/{zip_filename} o error 404 si no se encuentra
+    """
+    from fastapi.responses import RedirectResponse
+    
+    upload_manager = get_upload_manager()
+    processed_tracker = get_processed_tracker()
+    archive_manager = get_archive_manager()
+    
+    # Buscar zip_filename en metadata
+    zip_filename = None
+    email_found = None
+    
+    # Buscar en archivos procesados desde upload-pdf
+    uploaded_files = upload_manager.list_uploaded_files(processed=True)
+    for f in uploaded_files:
+        if f.get("request_id") == request_id:
+            zip_filename = f.get("zip_filename")
+            email_found = f.get("metadata", {}).get("email", "")
+            break
+    
+    # Si no se encontró, buscar en archivos procesados directamente
+    if not zip_filename:
+        direct_files = processed_tracker.get_processed_files()
+        for f in direct_files:
+            if f.get("request_id") == request_id:
+                zip_filename = f.get("zip_filename")
+                email_found = f.get("metadata", {}).get("email", "")
+                break
+    
+    # Validar correo autorizado
+    if email_found and not is_email_allowed(email_found):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": f"Correo no autorizado para request_id '{request_id}'"}
+        )
+    
+    # Si no se encontró el zip_filename
+    if not zip_filename:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"ZIP no encontrado para request_id '{request_id}'. El archivo puede no haber sido procesado aún."}
+        )
+    
+    # Verificar que el archivo existe físicamente
+    zip_path = archive_manager.public_folder / zip_filename
+    if not zip_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"Archivo ZIP '{zip_filename}' no existe físicamente para request_id '{request_id}'"}
+        )
+    
+    # Redirigir a /public/{zip_filename}
+    return RedirectResponse(url=f"/public/{zip_filename}", status_code=302)
+
+
 @app.get("/api/v1/export-excel/{request_id}", tags=["Export"])
 async def export_structured_to_excel(request_id: str):
     """
@@ -1481,7 +2035,8 @@ async def get_rejected_concepts(
 # ===== Periodos Endpoints =====
 
 @app.post("/api/v1/periodos", response_model=PeriodoResponse, tags=["Periodos"])
-async def create_periodo(request: CreatePeriodoRequest):
+@limiter.limit("10/minute")  # Máximo 10 requests por minuto por IP
+async def create_periodo(http_request: Request, request: CreatePeriodoRequest):
     """
     Crea un nuevo periodo.
     
@@ -1540,7 +2095,9 @@ async def create_periodo(request: CreatePeriodoRequest):
 
 
 @app.get("/api/v1/periodos", response_model=PeriodosListResponse, tags=["Periodos"])
+@limiter.limit("30/minute")  # Máximo 30 requests por minuto por IP
 async def list_periodos(
+    request: Request,
     tipo: Optional[str] = Query(None, description="Filtrar por tipo (onshore/offshore)"),
     estado: Optional[str] = Query(None, description="Filtrar por estado"),
     search: Optional[str] = Query(None, description="Buscar en periodo"),
@@ -1614,7 +2171,8 @@ async def list_periodos(
 
 
 @app.get("/api/v1/periodos/{periodo_id}", response_model=PeriodoDetailResponse, tags=["Periodos"])
-async def get_periodo_detail(periodo_id: str):
+@limiter.limit("30/minute")  # Máximo 30 requests por minuto por IP
+async def get_periodo_detail(request: Request, periodo_id: str):
     """
     Obtiene el detalle completo de un periodo incluyendo sus archivos.
     
@@ -1638,14 +2196,17 @@ async def get_periodo_detail(periodo_id: str):
         request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
         archivos = []
         
-        # Buscar información de cada archivo en los JSONs estructurados
+        # Buscar información de cada archivo
+        # Primero en JSONs estructurados, luego en processed_tracking.json
         file_manager = get_file_manager()
         base_output = file_manager.get_output_folder() or "./output"
         structured_folder = Path(base_output) / "api" / "structured"
+        processed_tracker = get_processed_tracker()
         
         for request_id in request_ids:
-            # Buscar JSONs con este request_id
             archivo_info = None
+            
+            # 1. Buscar en JSONs estructurados (si existen)
             if structured_folder.exists():
                 for json_file in structured_folder.glob("*_structured.json"):
                     try:
@@ -1655,17 +2216,81 @@ async def get_periodo_detail(periodo_id: str):
                         if metadata.get("request_id") == request_id:
                             # Extraer información del archivo
                             additional_data = json_data.get("additional_data", {})
-                            # TODO: Extraer job_no, type, etc. de additional_data
+                            # Extraer job_no, type, etc. de additional_data si están disponibles
+                            mresumen = additional_data.get("mresumen", [])
+                            mcomprobante = additional_data.get("mcomprobante", [])
+                            
+                            job_no = None
+                            source_ref = None
+                            entered_curr = None
+                            entered_amount = None
+                            total_usd = None
+                            fecha_valoracion = None
+                            
+                            # Intentar extraer de mresumen o mcomprobante
+                            if mresumen:
+                                first_item = mresumen[0]
+                                job_no = first_item.get("job_no")
+                                source_ref = first_item.get("source_reference")
+                                entered_curr = first_item.get("entered_curr")
+                                entered_amount = first_item.get("entered_amount")
+                                total_usd = first_item.get("total_usd")
+                                fecha_valoracion = first_item.get("fecha_valoracion")
+                            elif mcomprobante:
+                                first_item = mcomprobante[0]
+                                job_no = first_item.get("job_no")
+                                source_ref = first_item.get("source_reference")
+                                entered_curr = first_item.get("entered_curr")
+                                entered_amount = first_item.get("entered_amount")
+                                total_usd = first_item.get("total_usd")
+                                fecha_valoracion = first_item.get("fecha_valoracion")
+                            
                             archivo_info = PeriodoArchivoInfo(
                                 archivo_id=request_id[:8],
                                 request_id=request_id,
                                 filename=metadata.get("filename", "unknown"),
                                 estado="procesado",
+                                job_no=job_no,
+                                type=metadata.get("document_type"),
+                                source_reference=source_ref,
+                                source_ref_id=source_ref,
+                                entered_curr=entered_curr,
+                                entered_amount=entered_amount,
+                                total_usd=total_usd,
+                                fecha_valoracion=fecha_valoracion,
                                 processed_at=metadata.get("processed_at")
                             )
                             break
                     except Exception:
                         continue
+            
+            # 2. Si no se encontró en JSONs estructurados, buscar en processed_tracking.json
+            if not archivo_info:
+                try:
+                    tracking_file = Path("./processed_tracking.json")
+                    if tracking_file.exists():
+                        with open(tracking_file, 'r', encoding='utf-8') as f:
+                            tracking_data = json.load(f)
+                        
+                        if request_id in tracking_data:
+                            file_data = tracking_data[request_id]
+                            archivo_info = PeriodoArchivoInfo(
+                                archivo_id=request_id[:8],
+                                request_id=request_id,
+                                filename=file_data.get("filename", "unknown"),
+                                estado="procesado",
+                                job_no=None,
+                                type=None,
+                                source_reference=None,
+                                source_ref_id=None,
+                                entered_curr=None,
+                                entered_amount=None,
+                                total_usd=None,
+                                fecha_valoracion=None,
+                                processed_at=file_data.get("processed_at")
+                            )
+                except Exception:
+                    pass
             
             if archivo_info:
                 archivos.append(archivo_info)
@@ -1709,7 +2334,8 @@ async def get_periodo_detail(periodo_id: str):
 
 
 @app.put("/api/v1/periodos/{periodo_id}", response_model=PeriodoResponse, tags=["Periodos"])
-async def update_periodo(periodo_id: str, updates: Dict[str, Any]):
+@limiter.limit("20/minute")  # Máximo 20 requests por minuto por IP
+async def update_periodo(request: Request, periodo_id: str, updates: Dict[str, Any]):
     """
     Actualiza un periodo.
     

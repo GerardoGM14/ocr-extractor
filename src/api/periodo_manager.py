@@ -117,10 +117,25 @@ class PeriodoManager:
         return nuevo_periodo
     
     def get_periodo(self, periodo_id: str) -> Optional[Dict[str, Any]]:
-        """Obtiene un periodo por su ID."""
+        """
+        Obtiene un periodo por su ID.
+        Valida y corrige automáticamente si hay inconsistencia entre periodo_id y tipo.
+        """
         data = self._load_periodos()
         for periodo in data.get("periodos", []):
             if periodo.get("periodo_id") == periodo_id:
+                # Validar y corregir tipo si hay inconsistencia
+                tipo_actual = periodo.get("tipo", "")
+                # Extraer tipo del periodo_id (formato: "AAAA-MM-tipo")
+                if "-" in periodo_id:
+                    partes = periodo_id.split("-")
+                    if len(partes) >= 3:
+                        tipo_correcto = partes[-1].lower()
+                        if tipo_correcto in ["onshore", "offshore"] and tipo_actual != tipo_correcto:
+                            logger.warning(f"Corrigiendo tipo inconsistente en periodo {periodo_id}: '{tipo_actual}' -> '{tipo_correcto}'")
+                            periodo["tipo"] = tipo_correcto
+                            # Guardar corrección
+                            self._save_periodos(data)
                 return periodo
         return None
     
@@ -132,6 +147,7 @@ class PeriodoManager:
     ) -> List[Dict[str, Any]]:
         """
         Lista periodos con filtros opcionales.
+        Valida y corrige automáticamente inconsistencias entre periodo_id y tipo.
         
         Args:
             tipo: Filtrar por tipo ("onshore" | "offshore")
@@ -143,6 +159,25 @@ class PeriodoManager:
         """
         data = self._load_periodos()
         periodos = data.get("periodos", [])
+        
+        # Validar y corregir tipos inconsistentes
+        needs_save = False
+        for periodo in periodos:
+            periodo_id = periodo.get("periodo_id", "")
+            tipo_actual = periodo.get("tipo", "")
+            
+            # Extraer tipo del periodo_id (formato: "AAAA-MM-tipo")
+            if "-" in periodo_id:
+                partes = periodo_id.split("-")
+                if len(partes) >= 3:
+                    tipo_correcto = partes[-1].lower()
+                    if tipo_correcto in ["onshore", "offshore"] and tipo_actual != tipo_correcto:
+                        logger.warning(f"Corrigiendo tipo inconsistente en periodo {periodo_id}: '{tipo_actual}' -> '{tipo_correcto}'")
+                        periodo["tipo"] = tipo_correcto
+                        needs_save = True
+        
+        if needs_save:
+            self._save_periodos(data)
         
         # Aplicar filtros
         if tipo:
@@ -167,6 +202,7 @@ class PeriodoManager:
     def update_periodo(self, periodo_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Actualiza un periodo.
+        Valida que el tipo no sea inconsistente con el periodo_id.
         
         Args:
             periodo_id: ID del periodo
@@ -180,6 +216,19 @@ class PeriodoManager:
         
         for i, periodo in enumerate(periodos):
             if periodo.get("periodo_id") == periodo_id:
+                # Si se intenta actualizar el tipo, validar que sea consistente con periodo_id
+                if "tipo" in updates:
+                    # Extraer tipo del periodo_id (formato: "AAAA-MM-tipo")
+                    if "-" in periodo_id:
+                        partes = periodo_id.split("-")
+                        if len(partes) >= 3:
+                            tipo_correcto = partes[-1].lower()
+                            if tipo_correcto in ["onshore", "offshore"]:
+                                # Forzar el tipo correcto basado en periodo_id
+                                if updates["tipo"].lower() != tipo_correcto:
+                                    logger.warning(f"Tipo '{updates['tipo']}' no coincide con periodo_id '{periodo_id}'. Usando '{tipo_correcto}'")
+                                    updates["tipo"] = tipo_correcto
+                
                 periodos[i].update(updates)
                 self._save_periodos(data)
                 logger.info(f"Periodo actualizado: {periodo_id}")

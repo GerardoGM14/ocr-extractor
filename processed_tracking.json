@@ -10,5 +10,101 @@
       "month": "Diciembre"
     },
     "processed_at": "2025-11-03T14:41:40.164691"
+  },
+  "9789853a-eb61-4015-b8ab-124f1d7ce870": {
+    "request_id": "9789853a-eb61-4015-b8ab-124f1d7ce870",
+    "filename": "Invoice_26442-220-G57-GAM-00204.pdf",
+    "zip_filename": "Invoice_26442-220-G57-GAM-00204_20251102_103658_9789853a.zip",
+    "download_url": "http://192.168.0.63:8000/public/Invoice_26442-220-G57-GAM-00204_20251102_103658_9789853a.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-02T10:36:58.892728"
+  },
+  "9758037c-1fc3-41b7-a57a-f8dd1674e703": {
+    "request_id": "9758037c-1fc3-41b7-a57a-f8dd1674e703",
+    "filename": "Expense_Report_BECHTEL_2025.pdf",
+    "zip_filename": "Expense_Report_BECHTEL_2025_20251108_103658_9758037c.zip",
+    "download_url": "http://192.168.0.63:8000/public/Expense_Report_BECHTEL_2025_20251108_103658_9758037c.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-08T10:36:58.892991"
+  },
+  "8b899764-435b-4ab3-9006-4607c907ab31": {
+    "request_id": "8b899764-435b-4ab3-9006-4607c907ab31",
+    "filename": "Concur_Expense_Transportes.pdf",
+    "zip_filename": "Concur_Expense_Transportes_20251110_103658_8b899764.zip",
+    "download_url": "http://192.168.0.63:8000/public/Concur_Expense_Transportes_20251110_103658_8b899764.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-10T10:36:58.893238"
+  },
+  "92001493-1199-461f-bd80-077847385ab4": {
+    "request_id": "92001493-1199-461f-bd80-077847385ab4",
+    "filename": "Oracle_AP_Invoice_F581.pdf",
+    "zip_filename": "Oracle_AP_Invoice_F581_20251113_103658_92001493.zip",
+    "download_url": "http://192.168.0.63:8000/public/Oracle_AP_Invoice_F581_20251113_103658_92001493.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-13T10:36:58.893519"
+  },
+  "b2f7ea2b-4bf0-46f6-b348-0be5e84effba": {
+    "request_id": "b2f7ea2b-4bf0-46f6-b348-0be5e84effba",
+    "filename": "GL_Journal_Details_23367.pdf",
+    "zip_filename": "GL_Journal_Details_23367_20251106_103658_b2f7ea2b.zip",
+    "download_url": "http://192.168.0.63:8000/public/GL_Journal_Details_23367_20251106_103658_b2f7ea2b.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-06T10:36:58.893802"
+  },
+  "a8a5d856-d39f-4e34-9331-b98ff8a2250b": {
+    "request_id": "a8a5d856-d39f-4e34-9331-b98ff8a2250b",
+    "filename": "Invoice_Italian_FATTURA_333.pdf",
+    "zip_filename": "Invoice_Italian_FATTURA_333_20251109_103658_a8a5d856.zip",
+    "download_url": "http://192.168.0.63:8000/public/Invoice_Italian_FATTURA_333_20251109_103658_a8a5d856.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-09T10:36:58.893997"
+  },
+  "cc9f9d94-50e8-4f9f-b446-939010b6239d": {
+    "request_id": "cc9f9d94-50e8-4f9f-b446-939010b6239d",
+    "filename": "Attachment_Invoice_USD_120.pdf",
+    "zip_filename": "Attachment_Invoice_USD_120_20251103_103658_cc9f9d94.zip",
+    "download_url": "http://192.168.0.63:8000/public/Attachment_Invoice_USD_120_20251103_103658_cc9f9d94.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-03T10:36:58.894145"
+  },
+  "2e51bc7b-2947-400b-a12a-8f83d67eba59": {
+    "request_id": "2e51bc7b-2947-400b-a12a-8f83d67eba59",
+    "filename": "Bechtel_Expense_Report_0ON74Y.pdf",
+    "zip_filename": "Bechtel_Expense_Report_0ON74Y_20251102_103658_2e51bc7b.zip",
+    "download_url": "http://192.168.0.63:8000/public/Bechtel_Expense_Report_0ON74Y_20251102_103658_2e51bc7b.zip",
+    "metadata": {
+      "email": "gerardogonzalezm1403@gmail.com",
+      "year": 2025,
+      "month": "11"
+    },
+    "processed_at": "2025-11-02T10:36:58.894357"
   }
 }

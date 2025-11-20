@@ -5,6 +5,7 @@ venv/
 build/ExtractorOCR_Batch/
 dist/
 config/gemini_config.json
+public/
 
 # Carpetas con .gitkeep
 learning/knowledge/

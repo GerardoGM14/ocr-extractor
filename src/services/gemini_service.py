@@ -267,8 +267,9 @@ EXTRACTION REQUIREMENTS:
 6. Extract ALL dates in any format (DD/MM/YYYY, MM-DD-YYYY, etc.)
 7. Capture ALL currency symbols, amounts, totals visible in the document
 8. Include partial or unclear text - extract what you can (use [?] only if truly illegible)
-9. **PRIORITY: Extract highlighted/boxed/colored sections** - If you see text in colored boxes, highlighted areas, or visually emphasized sections (especially red boxes, yellow highlights, or bordered sections), extract them with special attention. These are often key calculations, summaries, or important validations.
-10. **PRIORITY: Extract calculations and formulas** - If you see mathematical expressions with +, -, =, ×, ÷, extract them completely. Examples: "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00"
+9. **PRIORITY: Extract highlighted/boxed/colored sections** - If you see text in colored boxes, highlighted areas, or visually emphasized sections (especially red boxes, yellow highlights, or bordered sections), extract them with special attention. These are often key calculations, summaries, or important validations. When you see red rectangular boxes or highlighted areas, extract ALL text and numbers within those boxes completely.
+10. **PRIORITY: Extract calculations and formulas** - If you see mathematical expressions with +, -, =, ×, ÷, extract them completely. Examples: "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00". Pay special attention to calculations that appear in colored boxes or highlighted areas - these are critical.
+11. **PRIORITY: GL Journal Details with highlighted values** - If this is a "GL Journal Details" document and you see red boxes highlighting specific "Entered Debits" values in a table, extract those highlighted values AND any calculation that sums them (e.g., "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00"). These highlighted values are the ONLY ones needed from this document type.
 
 SPECIFIC ITEMS TO EXTRACT WITH EXAMPLES:
 

@@ -7,9 +7,9 @@
   "api": {
     "uploads_folder": "uploads",
     "public_folder": "public",
-    "base_url": "https://localhost:8000",
+    "base_url": "http://192.168.0.63:8000",
     "ssl": {
-      "enabled": true,
+      "enabled": false,
       "cert_file": "ssl_certs/cert.pem",
       "key_file": "ssl_certs/key.pem"
     }
