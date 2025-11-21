@@ -19,6 +19,10 @@
     "folder": "learning",
     "auto_analyze": true
   },
+  "gemini": {
+    "use_structured_extraction": true,
+    "fallback_to_traditional": true
+  },
   "database": {
     "enabled": false,
     "driver": "ODBC Driver 17 for SQL Server",

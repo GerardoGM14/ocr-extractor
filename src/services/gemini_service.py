@@ -6,6 +6,7 @@ Responsabilidad: Llamadas a la API de Gemini para OCR
 import os
 import json
 import base64
+import re
 import time
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -270,6 +271,10 @@ EXTRACTION REQUIREMENTS:
 9. **PRIORITY: Extract highlighted/boxed/colored sections** - If you see text in colored boxes, highlighted areas, or visually emphasized sections (especially red boxes, yellow highlights, or bordered sections), extract them with special attention. These are often key calculations, summaries, or important validations. When you see red rectangular boxes or highlighted areas, extract ALL text and numbers within those boxes completely.
 10. **PRIORITY: Extract calculations and formulas** - If you see mathematical expressions with +, -, =, ×, ÷, extract them completely. Examples: "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00". Pay special attention to calculations that appear in colored boxes or highlighted areas - these are critical.
 11. **PRIORITY: GL Journal Details with highlighted values** - If this is a "GL Journal Details" document and you see red boxes highlighting specific "Entered Debits" values in a table, extract those highlighted values AND any calculation that sums them (e.g., "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00"). These highlighted values are the ONLY ones needed from this document type.
+12. **HIGHEST PRIORITY: Handwritten text with USD** - If you see ANY text written by hand (handwritten, manually written) that contains "USD" followed by a monetary value, extract it with HIGHEST PRIORITY. Handwritten values are often corrections, validations, or final amounts that override printed values. Examples: "USD 1,234.56" written by hand, "USD 500.00" in handwriting. 
+   - **CRITICAL**: When you detect handwritten text with "USD", include a marker like "[HANDWRITTEN]" or "[MANUAL]" before or after the value in your extraction, so it can be identified and prioritized. Example: "[HANDWRITTEN] USD 1,234.56" or "USD 1,234.56 [MANUAL]"
+   - If you see a value that appears to be written by hand (different style, appears to be an annotation or correction), mark it as handwritten even if you're not 100% certain
+   - Handwritten USD values take precedence over ANY printed values in the document
 
 SPECIFIC ITEMS TO EXTRACT WITH EXAMPLES:
 
@@ -679,3 +684,768 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
         except Exception as e:
             print(f"Error infiriendo line items: {e}")
         return None
+    
+    def extract_structured_data_from_image(self, image_path: str) -> Optional[Dict]:
+        """
+        Extrae texto OCR y datos estructurados directamente de una imagen en una sola llamada.
+        Combina OCR completo + identificación de tipo + extracción estructurada.
+        
+        Args:
+            image_path: Ruta a la imagen
+            
+        Returns:
+            Diccionario con:
+            - success: bool
+            - text: str (texto OCR completo)
+            - structured_data: dict (datos estructurados según tipo de documento)
+            - document_type: str (tipo identificado)
+            - model: str
+            - timestamp: float
+            - error: str (si hay error)
+        """
+        if not os.path.exists(image_path):
+            print(f"Image not found: {image_path}")
+            return {
+                "success": False,
+                "error": "Image not found",
+                "text": "",
+                "structured_data": {},
+                "document_type": "unknown",
+                "timestamp": time.time()
+            }
+        
+        try:
+            img = Image.open(image_path)
+            
+            # Verificar que la imagen sea válida
+            if img.size[0] == 0 or img.size[1] == 0:
+                print(f"Error: Imagen inválida (tamaño: {img.size})")
+                return {
+                    "success": False,
+                    "error": "Invalid image dimensions",
+                    "text": "",
+                    "structured_data": {},
+                    "document_type": "unknown",
+                    "timestamp": time.time()
+                }
+            
+            # Prompt comprehensivo que combina OCR + estructuración
+            prompt = self._create_ocr_and_structure_prompt()
+            
+            # Generar contenido con manejo de errores mejorado
+            try:
+                response = self.model.generate_content([prompt, img])
+            except Exception as api_error:
+                error_msg = str(api_error)
+                print(f"Error en llamada a Gemini API: {error_msg}")
+                if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
+                    return {
+                        "success": False,
+                        "error": f"API timeout/connection error: {error_msg}",
+                        "text": "",
+                        "structured_data": {},
+                        "document_type": "unknown",
+                        "timestamp": time.time()
+                    }
+                raise
+            
+            # Verificar si hay respuesta válida
+            if not response.text:
+                error_msg = "Empty response from Gemini"
+                finish_reason = None
+                
+                if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                    error_msg = f"Content filtered: {response.prompt_feedback.block_reason}"
+                elif hasattr(response, 'candidates') and response.candidates:
+                    for candidate in response.candidates:
+                        if hasattr(candidate, 'finish_reason'):
+                            finish_reason = candidate.finish_reason
+                            if finish_reason == 'SAFETY':
+                                error_msg = "Content blocked by safety filters"
+                            elif finish_reason == 'RECITATION':
+                                error_msg = "Content blocked due to recitation"
+                            break
+                
+                print(f"Warning: {error_msg} (finish_reason: {finish_reason})")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "text": "",
+                    "structured_data": {},
+                    "document_type": "unknown",
+                    "timestamp": time.time()
+                }
+            
+            # Parsear respuesta JSON
+            response_text = response.text.strip()
+            
+            # Intentar extraer JSON de la respuesta
+            try:
+                # Limpiar markdown code blocks si existen
+                if response_text.startswith('```'):
+                    # Remover ```json o ``` del inicio y fin
+                    response_text = response_text.strip('`')
+                    if response_text.startswith('json'):
+                        response_text = response_text[4:].strip()
+                    if response_text.endswith('```'):
+                        response_text = response_text[:-3].strip()
+                
+                # Parsear JSON
+                parsed_response = json.loads(response_text)
+                
+                # Extraer campos
+                ocr_text = parsed_response.get("ocr_text", "")
+                ocr_text_translated = parsed_response.get("ocr_text_translated", ocr_text)  # Fallback a ocr_text si no viene traducido
+                structured_data = parsed_response.get("structured_data", {})
+                document_type = parsed_response.get("document_type", "unknown")
+                
+                # CRITICAL: Validar que ocr_text NO sea un JSON string
+                # Si ocr_text contiene JSON (empieza con { o contiene "ocr_text":), extraer el texto real
+                if ocr_text and isinstance(ocr_text, str):
+                    ocr_text_stripped = ocr_text.strip()
+                    
+                    # Si ocr_text empieza con JSON, intentar extraer el texto real
+                    if ocr_text_stripped.startswith('{') or ocr_text_stripped.startswith('[\n'):
+                        try:
+                            # Intentar parsear como JSON
+                            json_check = json.loads(ocr_text)
+                            # Si es un objeto JSON y tiene "ocr_text" dentro, usar ese
+                            if isinstance(json_check, dict) and "ocr_text" in json_check:
+                                inner_text = json_check["ocr_text"]
+                                if inner_text and isinstance(inner_text, str):
+                                    ocr_text = inner_text
+                                    print(f"Warning: Extracted ocr_text from nested JSON structure")
+                        except (json.JSONDecodeError, ValueError, TypeError):
+                            # Si falla el parseo, buscar "ocr_text": "..." en el string
+                            import re
+                            match = re.search(r'"ocr_text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"', ocr_text)
+                            if match:
+                                extracted = match.group(1)
+                                # Unescape JSON strings
+                                extracted = extracted.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                                ocr_text = extracted
+                                print(f"Warning: Extracted ocr_text from JSON string using regex")
+                
+                # Limpiar texto OCR (pero preservar estructura de líneas y contenido)
+                cleaned_text = self._clean_extracted_text(ocr_text)
+                cleaned_translated = self._clean_extracted_text(ocr_text_translated)
+                
+                return {
+                    "success": True,
+                    "text": cleaned_text,
+                    "translated_text": cleaned_translated,  # Texto traducido
+                    "structured_data": structured_data,
+                    "document_type": document_type,
+                    "model": self.model_name,
+                    "timestamp": time.time()
+                }
+                
+            except json.JSONDecodeError as e:
+                # Si falla el parseo JSON, intentar extraer texto plano como fallback
+                print(f"Warning: No se pudo parsear JSON de respuesta. Error: {e}")
+                print(f"Respuesta recibida (primeros 500 chars): {response_text[:500]}")
+                
+                # Intentar usar el texto completo como OCR y crear estructura vacía
+                cleaned_text = self._clean_extracted_text(response_text)
+                
+                return {
+                    "success": True,  # Marcar como éxito porque al menos tenemos texto
+                    "text": cleaned_text,
+                    "translated_text": cleaned_text,  # Usar mismo texto si no hay traducción
+                    "structured_data": {},  # Estructura vacía, se llenará con data_mapper como fallback
+                    "document_type": "unknown",
+                    "model": self.model_name,
+                    "timestamp": time.time(),
+                    "warning": "JSON parsing failed, using text-only extraction"
+                }
+        
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error in Gemini structured extraction: {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "text": "",
+                "structured_data": {},
+                "document_type": "unknown",
+                "timestamp": time.time()
+            }
+    
+    def _create_ocr_and_structure_prompt(self) -> str:
+        """
+        Crea un prompt comprehensivo que combina OCR + extracción estructurada.
+        Este prompt le pide a Gemini que:
+        1. Extraiga TODO el texto visible (OCR completo)
+        2. Identifique el tipo de documento
+        3. Extraiga campos estructurados según el tipo
+        4. Retorne todo en formato JSON estructurado
+        """
+        return """You are an expert document processing system. Your task is to extract ALL text from this financial document AND structure the data according to the document type.
+
+CRITICAL: You must return a STRICT JSON object with this exact structure:
+{
+  "ocr_text": "ALL extracted text from the document as PLAIN TEXT (NOT JSON - just raw text with line breaks, complete, nothing missing)",
+  "ocr_text_translated": "Translated text to English as PLAIN TEXT (if original is not English/Spanish, otherwise same as ocr_text)",
+  "document_type": "comprobante|resumen|jornada|expense_report|concur_expense|unknown",
+  "structured_data": {
+    // See detailed structure below based on document_type
+  }
+}
+
+CRITICAL INSTRUCTIONS FOR ocr_text FIELD:
+1. The "ocr_text" field MUST contain ONLY plain text extracted from the document - NO JSON structures, NO nested objects, NO arrays, NO quotes around the text, NO JSON field names.
+2. DO NOT put JSON structures inside ocr_text - it should be plain text only.
+3. Example of CORRECT ocr_text: "BSQE\nBS0003\nRound Trips Toll Fees\nDate Visit\nMalaysia Currency\nUS Currency\n24-Jun-25\n41.35\n10\n29-Jun-25\n41.35\n10\n$26"
+4. Example of INCORRECT ocr_text: 
+   - "{\n  \"ocr_text\": \"BSQE...\" }" - WRONG!
+   - "\"ocr_text\": \"...\"" - WRONG!
+   - Any JSON structure - WRONG!
+5. Extract structured data ONLY in the "structured_data" section, NOT in ocr_text.
+6. The ocr_text value should be a simple string containing the raw text, not a JSON-encoded string. When you return the JSON response, the ocr_text field should look like: "ocr_text": "Actual text here\nwith newlines\nand content" - NOT "ocr_text": "{\"ocr_text\": \"...\"}"
+
+CRITICAL INSTRUCTIONS FOR structured_data:
+1. Extract each item ONLY ONCE per page - if you see the same value appearing multiple times in tables, extract it as separate rows but do NOT create duplicate identical entries.
+2. Only include data in structured_data if it appears in the OCR text you extracted - do NOT infer or create data that is not visible in the document.
+3. For mcomprobante_detalle: Extract each table row as a separate item only if it appears in the OCR text. Do NOT extract the same row multiple times.
+4. Avoid duplicate values - if a value appears once in OCR, it should appear once in structured_data (unless it's genuinely different rows in a table).
+5. Handle each page independently - extract data from THIS page only, not from other pages.
+6. DESCRIPTION FIELDS (tDescripcion, tdescription): MUST be CLEAN, PROFESSIONAL text extracted DIRECTLY from the document itself. 
+   - GOOD examples: "Toll", "Hotel", "Meal", "ICE VANILLA LATT", "ADD ESP SHT", "Room Charge", "Transportation Fee", "Grand Total USD", "TOTAL EXPENSES", "JENIS BARANG-BARANG" (if that's what the document shows)
+   - BAD examples (NEVER DO THIS): 
+     * "\"ocr_text\": \"BECHTEL JOBS NO.\"" - WRONG!
+     * "\"nImporte\":" - WRONG!
+     * "\"_myr_amount\":" - WRONG!
+     * "\"nPrecioTotal\": 5." - WRONG!
+     * "\"ocr_text\": \"...\"" - WRONG!
+     * Any JSON field names or structures - WRONG!
+   - HOW TO EXTRACT CORRECTLY: 
+     * Look at the ACTUAL document. Find the "Description" or "PARTICULARS" or "摘要" column in the table.
+     * Extract EXACTLY what is written in that column - if it says "ICE VANILLA LATT", extract "ICE VANILLA LATT". If it says "Toll", extract "Toll". If it says "Hotel", extract "Hotel".
+     * For receipt/coffee shop items: Extract item names like "ICE VANILLA LATT", "ADD ESP SHT", etc. exactly as shown.
+     * For expense summaries: Extract "Toll", "Hotel", "Meal" exactly as shown in Description column.
+     * For empty receipts: If there are table headers but no items filled, do NOT create items. Only extract items that actually have values in the table.
+   - DO NOT extract JSON structures, OCR metadata fields, technical field names, or anything that is NOT visible in the document itself.
+   - DO NOT extract table headers as item descriptions - only extract actual item descriptions from filled table rows.
+7. DO NOT include any technical/metadata fields in structured_data such as: "_currency", "_source_line", "_auto_extracted", "_currency_code", etc.
+   - These are internal processing fields and should NEVER appear in the final structured_data output
+   - Only include the fields specified in the schema (nCantidad, tDescripcion, nPrecioUnitario, nPrecioTotal, etc.)
+
+=== STEP 1: EXTRACT ALL TEXT (OCR) ===
+Extract 100% of ALL visible text from this document. Read EVERYTHING line by line, character by character:
+- Every row of every table completely (including Resource, Vendor, Assignment no., Report Number, Date, hrs, rates, amounts)
+- For expense summary tables: Extract ALL rows from ALL tables, including Item No., Description (Toll/Hotel/Meal), MYR amounts, USD amounts
+- For expense summary tables: Extract "Grand Total USD" values and "TOTAL EXPENSES" values completely
+- For Bechtel expense summaries: Extract job number from "BECHTEL JOBS NO.:" and project name from "Project:"
+- For hotel invoices: Extract ALL room charges, dates, guest names, invoice numbers, folio numbers, room numbers, arrival/departure dates, adult/child counts
+- For hotel invoices: Extract ALL line items including: Date, Description, Charge (MYR), Credits (MYR), Room Charges, Local Government Fees, Tourism Tax, Total MYR, Balance Due
+- For hotel invoices: Extract ALL details: Print Date, SST No., TTX Reg. No., Arrival, Departure, Adult/Child, Room No., Invoice No., Folio No., Conf. No., Page No., Cashier No., User ID
+- For hotel invoices: Extract guest information: Guest Name, Group Code, Travel Company Name, Travel Agent, Account No., full address
+- All text, numbers, symbols, codes
+- Headers, footers, stamps, watermarks, logos
+- All dates in any format (but validate - avoid phone numbers like 1300-80-8989)
+- All currency symbols and amounts (including handwritten USD values like "USD 192.25")
+- Highlighted/boxed/colored sections (especially red boxes, yellow highlights, highlighted totals like "Grand Total USD")
+- Handwritten text (mark with [HANDWRITTEN] if detected, especially handwritten USD values)
+- Calculations and formulas (e.g., "USD 4,301.00 + USD 616.00 = USD 6,369.00")
+- Labor details (Emp Name, Hours, Hrly Rate, Amount, BSQE codes)
+- Weekly totals (lines with multiple large monetary values at end of tables)
+- Cash flow values (Total Disbursement, Period Balance, Cumulative, Opening Balance, Total Receipts)
+- Departments and disciplines (Engineering, Operations, Maintenance, etc.)
+- Org codes, NC codes, Job sections
+- Hotel names, supplier names, company names in headers
+- ALL table headers and ALL table rows completely - if there are multiple tables on the page, extract ALL rows from ALL tables
+- Do NOT skip any text, even if it seems redundant
+- Do NOT summarize - extract EVERYTHING exactly as it appears
+- Use [unclear] only if truly illegible
+- For hotel invoices, ensure you extract ALL charges, dates, guest details, and totals
+- For expense summaries, ensure you extract ALL items from ALL tables, including Item Numbers, Descriptions, MYR and USD amounts
+
+=== STEP 2: IDENTIFY DOCUMENT TYPE ===
+Classify the document as one of (PRIORITY ORDER - check top to bottom):
+
+PRIORITY 1: "comprobante" if document contains ANY of these patterns:
+- "attachment to invoice" (HIGHEST PRIORITY - this is an invoice attachment, not expense report)
+- Invoice keywords: "invoice", "factura", "boleta", "bill", "recibo", "fattura", "invoice no", "invoice number", "invoice num"
+- Table headers in Spanish: "cant.", "descripción", "precio unitario", "importe"
+- Table headers in Malay/Chinese: "tarikh", "kuantiti", "harga", "jumlah", "no.", "jumlah/", "總計", "总计", "cash / invoice", "cash/invoice"
+- Chinese invoice keywords: "发票", "发票号码", "发票代码"
+- Receipt keywords: "receipt", "recibo", "NO. KUANTITI", "PARTICULARS", "BUTIR-BUTIR"
+- Other: "GL Journal Details", Oracle AP invoices, "Invoice Approval Report"
+
+PRIORITY 2: "concur_expense" if document contains:
+- "concur expense", "concur", "Line Item by Job Section"
+- Check BEFORE expense_report
+
+PRIORITY 3: "expense_report" if document contains:
+- "bechtel expense report", "expense report", "report key", "report number", "report date", "bechexprpt", "BECHEXPRPT", "report purpose", "bechtel owes"
+
+PRIORITY 4: "resumen" if document contains:
+- "summary", "resumen", "consolidado", "reimbursable expenditure"
+- "BECHTEL JOBS NO.:" with expense tables (Toll, Hotel, Meal)
+- Multiple expense tables with "Grand Total USD" or "TOTAL EXPENSES"
+- Documents showing multiple expense categories (Toll, Hotel, Meal) in separate tables
+
+PRIORITY 5: "jornada" if document contains:
+- "empl no", "full name", "labor", "total hours", "employee", "empl", "period", "hours worked"
+
+PRIORITY 6: "unknown" if none of the above match
+
+SPECIAL CASES (OVERRIDE RULES):
+- "ATTACHMENT TO INVOICE" → ALWAYS comprobante (highest priority)
+- "BECHTEL JOBS NO.:" with expense tables (Toll, Hotel, Meal) → resumen
+- Documents with multiple expense tables and "Grand Total USD" → resumen
+- Documents with "TOTAL EXPENSES" at the bottom → resumen
+- "GL Journal Details" with highlighted calculations → comprobante (extract ONLY highlighted values)
+- "GL Journal Details" without highlighted calculations → comprobante (extract all table rows as items)
+- Oracle AP screens → comprobante
+- "Invoice Approval Report" → comprobante (do NOT extract "Line Item Details" as items)
+
+=== STEP 3: EXTRACT STRUCTURED DATA ===
+Based on the document_type, extract structured fields:
+
+FOR ALL DOCUMENT TYPES - Extract these catalog tables:
+
+1. mdivisa (currencies): Array of currency codes found
+   Example: [{"tDivisa": "USD"}, {"tDivisa": "PEN"}]
+   DETECTION PATTERNS (check ALL of these):
+   a) Explicit currency codes: Look for "USD", "PEN", "EUR", "RM", "MYR", "CLP", "GBP", "JPY", "CNY", "COP", "MXN", "ARS", "BRL" as standalone words or followed directly by numbers (e.g., "USD6.40", "RM25.50")
+   b) Symbol detection:
+      - $ = USD (if $ appears before or after monetary values)
+      - ¥ = CNY (Chinese yuan) if document has Chinese characters, otherwise might be JPY
+      - 元 = CNY (Chinese yuan character - always CNY)
+   c) Chinese currency patterns:
+      - Numbers followed by "元" (yuan character) → CNY
+      - "总计" (total) or "金额" (amount) or "总金额" (total amount) or "合计" (total) followed by numbers and "元" → CNY
+      - "¥" symbol with Chinese text → CNY
+   d) Near total/amount keywords:
+      - Look for currency codes near "Total", "TOTAL", "Amount", "AMOUNT", "总计", "JUMLAH", "金额"
+      - Format: "Total USD 1,234.56" OR "USD Total 1,234.56" OR "总计 1,234.56 元"
+      - Prioritize currency found near totals
+   e) Context inference (if no explicit currency found):
+      - If document has Chinese characters and monetary values → CNY
+      - If document has "$" symbol and monetary values → USD
+      - If document is in English and has monetary values → USD
+      - If document is in Spanish and has monetary values → PEN (default for Spanish documents)
+   f) Multiple currencies: Extract ALL currencies found (e.g., if document shows "RM 19.50" and "USD 5.00", include both)
+
+2. mproveedor (suppliers): Array of supplier/company names
+   Example: [{"tRazonSocial": "Company Name SDN BHD"}]
+   Look for: "Supplier Name:", "Vendor:", "PO Trading Pa:", "Supplier Name", company names in headers
+   Include legal suffixes: SDN BHD, LLC, Inc, Company, S.A., S.L., SRL
+   IMPORTANT TRANSLATION FORMAT: If the company name is NOT in English or Spanish (e.g., Chinese, Italian, etc.), you MUST include BOTH the Spanish translation AND the original name in this EXACT format: "Spanish Translation (Original Name)"
+   - The Spanish translation goes FIRST
+   - The original name goes in parentheses SECOND
+   - Example: "蟠龙公司" → "Compañía Panlong (蟠龙公司)"
+   - Example: "辰州公司" → "Compañía Chenzhou (辰州公司)"
+   - Example: "联运公司" → "Compañía Lianyun (联运公司)"
+   - Example: "兴达公司" → "Compañía Xingda (兴达公司)"
+   - For English/Spanish names, keep as-is without translation
+
+3. mnaturaleza (categories): Array from: ['Alimentación','Hospedaje','Transporte','Combustible','Materiales','Servicios','Otros']
+   Example: [{"tNaturaleza": "Alimentación"}]
+   DETECTION PATTERNS (check in first 500 characters of document):
+   - Alimentación: 'MEAL', 'FOOD', 'ALIMENTACIÓN', 'ALIMENTACION', 'COMIDA', 'RESTAURANT', 'RESTAURANTE', 'CAFE', 'CAFÉ', 'MENU', 'MENÚ', 'TAKEAWAY', 'DELIVERY', 'ORDER', 'PEDIDO'
+   - Hospedaje: 'HOTEL', 'HOSPEDAJE', 'LODGING', 'ACCOMMODATION', 'ROOM', 'GUEST', 'CHECK-IN', 'CHECK-OUT'
+   - Transporte: 'TRANSPORT', 'TRANSPORTE', 'TAXI', 'TOLL', 'PEAJE', 'GASOLINE', 'GASOLINA', 'FUEL'
+   - Combustible: 'FUEL', 'COMBUSTIBLE', 'GASOLINE', 'GASOLINA', 'PETROL', 'DIESEL'
+   - Materiales: 'MATERIALS', 'MATERIALES', 'SUPPLIES', 'SUMINISTROS'
+   - Servicios: 'SERVICES', 'SERVICIOS', 'SERVICE', 'SERVICIO'
+   - Otros: Default if none of above match
+
+4. mdocumento_tipo: Document type catalog
+   Example: [{"iMDocumentoTipo": 1, "tTipo": "Comprobante"}]
+   Mapping: comprobante=1, resumen=2, jornada=3, expense_report=4, concur_expense=5
+
+5. midioma (language): Detect language from keywords and characters - CRITICAL: This MUST be extracted correctly
+   Example: [{"iMIdioma": 1, "tIdioma": "Español"}]
+   Mapping: es=Español(1), en=Inglés(2), it=Italiano(3), zh=Chino(4), other=Otro(5)
+   DETECTION PATTERNS (check ALL - highest priority first):
+   a) Chinese characters ([\u4e00-\u9fff]) → zh (Chino)
+   b) Spanish keywords: "factura", "boleta", "servicios", "empresa", "cliente", "proveedor", "total", "fecha", "descripción", "cantidad", "precio", "impuesto", "jornada", "empleado" → es (Español)
+   c) English keywords: "invoice", "summary", "bill", "services", "company", "client", "supplier", "total", "date", "description", "quantity", "price", "tax", "labor", "employee", "arrival", "departure", "charge", "payment" → en (Inglés)
+   d) Italian keywords: "fattura", "servizi", "azienda", "cliente", "fornitore", "totale", "data", "descrizione", "quantità", "prezzo", "imposta", "giornata", "dipendente" → it (Italiano)
+   e) Malay keywords: "tarikh", "jumlah", "terima", "disahkan", "makan", "kuantiti", "harga", "barang" → other (Otro)
+   f) Count matches: Language with most keyword matches wins (minimum 2 matches required, except for Chinese which is detected by characters)
+
+6. tSequentialNumber: Sequential codes like BSQE1234, OE0001, OR0001, ORU1234
+   EXTRACTION PATTERNS (check ALL):
+   a) Stamp name patterns: Look for "BSQE", "OTEM", "OTRE", "OTRU" (case insensitive)
+   b) Sequential number patterns:
+      - Same line: "BSQE1234", "OE0001", "OR0001", "ORU1234" (stamp + 4+ digits on same line)
+      - Separated lines: "OTEM\nOE0001" or "ORRE OR0001" (stamp on one line, code on next line within 200 chars)
+      - Format: (BS|OE|OR|ORU) followed by 4+ digits
+   c) Stamp to code mapping: OTEM → OE, OTRE → OR, OTRU → ORU, BSQE → BS
+   d) If stamp name found but no code: Look for any 4+ digit number near stamp (within 200 chars), then construct code using mapping
+   e) Priority: Extract sequential number if found anywhere in document header/top section
+
+FOR "comprobante" TYPE - Extract:
+{
+  "mcomprobante": [{
+    "tNumero": "invoice/boleta number - EXTRACT USING THESE PATTERNS (priority order):\n     1. Source Ref (GL Journal Details): 'Source Ref: 2336732507B0032' OR 'Source Ref: 2336732507B0032'\n     2. Oracle AP Invoice Num: 'Invoice Num F581-06891423' (format: FXXX-XXXXXXXX)\n     3. Invoice Number explicit: 'Invoice Number: 1234' OR 'Invoice No.: 18294'\n     4. BOLETA ELECTRÓNICA: 'BOLETA ELECTRÓNICA N° 0000155103' (Chilean format)\n     5. Chinese invoice number: '发票号码:25379166812000866769' (8+ digits) OR '发票代码:121082271141' (10+ digits)\n     6. N° format: 'N° 0000155103' (4+ digits after N°)\n     7. Folio: 'Folio No.: 18294' OR 'Folio: 18294'\n     8. Recibo: 'Recibo 221' (Spanish receipt format)\n     9. FATTURA NO.: 'FATTURA NO.: 333/25' (Italian format - can be same line or next line, format XXX/XX)\n     10. Generic Invoice: 'INVOICE No. XXXX', 'FATTURA N° XXX', 'CASH NO. XXX' (avoid 'Invoice Numb')\n     11. NO. near TOTAL: 'NO. 1234 TOTAL' (3+ digits near total keywords)\n     12. Chinese 号码: '号码' or '发票号码' or '发票代码' followed by 8+ digits\n     13. Generic with numbers: Any pattern with '总计', 'JUMLAH', 'No.', 'NO.', '#' followed by 4+ alphanumeric chars containing digits\n     IMPORTANT: Extract the FULL number/identifier, not partial. If multiple formats match, use highest priority.",
+    "tSerie": "series number or Contract no. if present (e.g., 'Contract no 12345')" or null,
+    "dFecha": "date in YYYY-MM-DD format - EXTRACT USING THESE PATTERNS:\n     - 'Date:' or 'Fecha:' or 'Tarikh:' followed by date\n     - Format 1: 'DD/MM/YYYY' or 'DD-MM-YYYY' (e.g., '28/05/2025', '28-05-2025')\n     - Format 2: 'May 28, 2025' or '28 May 2025'\n     - Format 3: '28-May-2025' or '30-JUN-2025'\n     - Format 4: 'JUL 23, 2025'\n     IMPORTANT VALIDATION: Do NOT extract phone numbers as dates:\n     - Avoid '1300-80-8989' (phone number)\n     - Numbers with >8 digits when removing separators are likely NOT dates\n     - If pattern looks like date but has >8 digits total, it's probably a phone number\n     - Validate: date should have max 8 digits (2+2+4) or reasonable month/day values",
+    "fEmision": "emission date in YYYY-MM-DD format (same as dFecha if not separately specified)" or null,
+    "nPrecioTotal": number (total amount - EXTRACT USING THESE PATTERNS in priority order):\n     1. HANDWRITTEN USD VALUES (HIGHEST PRIORITY): If [HANDWRITTEN] USD 5.00 appears, use that amount (e.g., 5.00), NOT printed RM/MYR amounts\n     2. Highlighted values in red boxes: 'TOTAL AMOUNT IN US$ ... $ 120.60' (prioritize values in red boxes)\n     3. Italian invoices: 'TOTAL' on one line, then '$ XXX.XX' on following lines - take the LAST value (final total after stamp duty)\n     4. Grand Total explicit: 'Grand Total' or 'GRAND TOTAL' followed by number\n     5. Oracle AP: 'Invoice Amount USD 655740.75' or 'Invoice Invoice Amount USD 655740.75' or 'Invoice Amount 655740.75'\n     6. Chinese/Malay totals: '总计' or 'JUMLAH RM' followed by number\n     7. Generic totals: 'Total Sale', 'TOTAL', 'Total Amount', 'Grand Total', 'Amount Due' followed by currency and number\n     8. Subtotal: 'Sub-Total' or 'Subtotal' followed by currency and number\n     9. OCR corrections: Fix spaces as decimals (32 40 → 32.40), hyphens as decimals (25-20 → 25.20)\n     10. If no total found, sum all items in mcomprobante_detalle as fallback,
+    "tCliente": "client name from 'Attn.:' or 'Attn' field" or null,
+    "tStampname": "Extract stamp name using patterns: 'BSQE', 'OTEM', 'OTRE', 'OTRU' (case insensitive, can be on same line or nearby lines)" or null,
+    "tsequentialnumber": "Extract sequential number using patterns: 'BSQE1234', 'OE0001', 'OR0001', 'ORU1234' OR separated format 'OTEM\\nOE0001' (stamp on one line, code on next within 200 chars). Format: (BS|OE|OR|ORU) followed by 4+ digits. If stamp found but no code, look for 4+ digit number near stamp and construct using mapping: OTEM→OE, OTRE→OR, OTRU→ORU, BSQE→BS" or null,
+    // For Oracle AP invoices, also extract:
+    "tInvoiceAmount": "Invoice Amount" or null,
+    "tTaxAmount": "Tax Amount" or null,
+    "tDueDate": "Due Date in YYYY-MM-DD" or null,
+    "tGrossAmount": "Gross Amount" or null,
+    "tPaymentCurrency": "Payment Currency code" or null,
+    "tPaymentMethod": "Payment Method (Wire, Check, etc.)" or null,
+    "tSupplierNum": "Supplier Num" or null,
+    "tOperatingUnit": "Operating Unit" or null,
+    "tSupplierSite": "Supplier Site" or null,
+    "tInvoiceDate": "Invoice Date in YYYY-MM-DD" or null
+  }],
+  "mcomprobante_detalle": [{
+    "nCantidad": number,
+    "tDescripcion": "item description - Extract EXACTLY what the document shows in the Description/Particulars/摘要 column of the table. Examples: 'ICE VANILLA LATT', 'ADD ESP SHT', 'Toll', 'Hotel', 'Meal', 'Room Charge', etc. Look at the ACTUAL table row - if it says 'ICE VANILLA LATT' in the description column, extract 'ICE VANILLA LATT'. If it says 'Toll', extract 'Toll'. DO NOT extract JSON field names like '\"ocr_text\"', '\"nImporte\"', '\"nPrecioTotal\"', '\"_myr_amount\"' - these are WRONG. Only extract what is actually visible in the document table. For empty receipts with no items filled, do NOT create items.",
+    "nPrecioUnitario": number,
+    "nPrecioTotal": number
+  }],
+  // EXTRACTION RULES FOR mcomprobante_detalle:
+  // CRITICAL: tDescripcion must be EXACTLY what the document shows, NOT JSON field names
+  // 1. For receipts/coffee shop: Extract item names from table (e.g., "ICE VANILLA LATT", "ADD ESP SHT") exactly as shown in the Description/Item column
+  // 2. For "Attachment to Invoice": Extract ALL table rows with columns: Resource, Vendor, Assignment no., Report Number, Date, hrs, rates, amounts
+  //    - Look for "Total Amount" column values (prioritize values in red boxes)
+  //    - Format: Resource Name - Vendor Name as description
+  // 3. For "Invoice Approval Report": Do NOT extract "Line Item Details" as items (those are data columns like Line Amount, Nat Class, Job, Sub Job, Cost Code - NOT purchase items)
+  // 4. Do NOT extract "Invoice Group Detail" section as items (skip lines matching pattern like "BSQEUSD 751671 33025")
+  // 5. For GL Journal Details WITHOUT highlighted calculations: Extract all table rows as items, use ONLY nPrecioUnitario (Entered Debits in USD), do NOT include nPrecioTotal
+  // 6. For GL Journal Details WITH highlighted calculations: Extract ONLY highlighted values (see SPECIAL PRIORITIES #4)
+  // 7. For Labor details (BSQE SERVICE CHARGES): Extract rows with pattern "Emp Name ... Hours <h> Hrly Rate <r> ... Amount <a>"
+  //    - nCantidad = hours, nPrecioUnitario = rate, nPrecioTotal = amount, tDescripcion = "Employee Name INSPECTING"
+  // 8. For Spanish table format: "1 7 de julio 2025 90,000 90,000" → cantidad, descripción, precio unitario, importe
+  // 9. For empty receipts/forms: If a receipt has table headers but NO items filled in (only row numbers 1-10), do NOT create items - only extract items that actually have values filled in
+  // 10. OCR corrections: Fix spaces as decimals (32 40 → 32.40), hyphens as decimals (25-20 → 25.20)
+  // 11. For Italian invoices: If "TOTAL" is on one line and "$ XXX.XX" values on following lines, take the LAST value (final total after stamp duty)
+  // 12. DO NOT extract table headers, column names, or empty rows as items
+}
+
+FOR "resumen" TYPE - Extract:
+{
+  "mresumen": [{
+    "tjobno": "job number - EXTRACT USING PATTERNS:\n     - 'BECHTEL JOBS NO.: 26443' → extract '26443' or full job code\n     - Format: '26442-OFFSHORE', '26443-331-----', '26443-331'\n     - Look for pattern: digits followed by dash and alphanumeric (e.g., '26442-OFFSHORE')\n     - Can appear in table rows or header",
+    "ttype": "Extract type from patterns: 'Supplier Quality', 'Other Reimbursables', 'Week XX Total', 'Cash Flow - XXX', 'Toll', 'Hotel', 'Meal', 'Expense Summary', or null if not found",
+    "tsourcereference": "source reference code - EXTRACT USING PATTERNS:\n     - Alphanumeric codes 10+ characters (e.g., 'Yanacocha AWTP Onshore', alphanumeric strings in table rows)\n     - Project names from headers (e.g., 'Project: Yanacocha AWTP Onshore')\n     - Look for patterns: [A-Z0-9]{10,} (alphanumeric codes)\n     - Often appears in table rows as first column or near job numbers",
+    "tsourcerefid": "source ref ID - EXTRACT USING PATTERNS:\n     - Week numbers: 'Week 1', 'Week 2', etc.\n     - Item numbers from tables: 'Item No. 1', 'Item No. 2'\n     - Source reference IDs: alphanumeric strings (5+ chars) following source reference\n     - Often appears after source reference code in table rows" or null,
+    "tdescription": "description - CLEAN, PROFESSIONAL text extracted from the document. Examples: 'Toll', 'Hotel', 'Meal', 'Expense Summary', 'Grand Total USD', 'TOTAL EXPENSES', etc. Extract ONLY the meaningful description from the document row or table, NOT the raw OCR text, NOT JSON fields (like '\"ocr_text\"', '\"nImporte\"', '\"_myr_amount\"'), NOT technical metadata. If the table shows 'Description: Toll', extract 'Toll'. If it shows 'Description: Meal', extract 'Meal'. For totals, extract 'Grand Total USD' or 'TOTAL EXPENSES'. Keep it simple and clean.",
+    "nImporte": number (USD amount - prioritize USD column values, use USD not MYR for nImporte),
+    "tStampname": "BSQE|OTEM|OTRE|OTRU" or null,
+    "tsequentialnumber": "sequential code" or null,
+    // Additional metadata fields:
+    "_weekly_total": true if weekly total, or null,
+    "_week_number": "week number" or null,
+    "_cash_flow": true if cash flow value, or null,
+    "_cash_flow_type": "Total Disbursement|Period Balance|Cumulative Cash Flow|Opening Balance|Total Receipts" or null,
+    "_calculation": true if highlighted calculation, or null,
+    "_calculation_text": "calculation text" or null,
+    "_highlighted": true if highlighted value (e.g., "Grand Total USD" or "TOTAL EXPENSES"), or null,
+    "_handwritten": true if handwritten value, or null,
+    "_priority": true if handwritten (highest priority), or null,
+    // For expense summaries with tables:
+    "_myr_amount": number (MYR amount if present in table) or null,
+    "_item_number": "Item No. from table" or null
+  }],
+  // IMPORTANT: For expense summary documents with multiple tables (like Bechtel expense summaries):
+  // Extract EACH row from EACH table as a separate mresumen entry
+  // Example: If you see 3 tables, extract ALL rows from table 1, then ALL rows from table 2, then ALL rows from table 3
+  // Each row should have: tdescription (Toll/Hotel/Meal), nImporte (USD amount), tjobno (job number from header), etc.
+  // "Grand Total USD" values should also be extracted as separate mresumen entries with _highlighted: true
+  
+  // Weekly totals: lines with ONLY numbers (no item descriptions) containing 2+ large monetary values
+  // These appear at the end of tables and represent totals by week
+  "weekly_totals": [{
+    "tjobno": null,
+    "ttype": "Week XX Total",
+    "tsourcereference": null,
+    "tsourcerefid": "Week XX",
+    "tdescription": "Total Week XX",
+    "nImporte": number,
+    "tStampname": null,
+    "tsequentialnumber": null,
+    "_weekly_total": true,
+    "_week_number": "week number"
+  }] or [],
+  // Cash Flow values: extract ALL cash flow related values
+  "cash_flow": [{
+    "tjobno": null,
+    "ttype": "Cash Flow - Total Disbursement|Period Balance|Cumulative Cash Flow|Opening Balance|Total Receipts",
+    "tsourcereference": null,
+    "tsourcerefid": "Week XX" if applicable,
+    "tdescription": "Cash Flow description with amount",
+    "nImporte": number (NEGATIVE if in parentheses like (305,350), POSITIVE otherwise),
+    "tStampname": null,
+    "tsequentialnumber": null,
+    "_cash_flow": true,
+    "_cash_flow_type": "Total Disbursement|Period Balance|Cumulative Cash Flow|Opening Balance|Total Receipts"
+  }] or []
+}
+
+FOR "expense_report" TYPE - Extract:
+{
+  "mcomprobante": [{
+    "tNumero": "Report Number (e.g., '0ON74Y')",
+    "dFecha": "Report Date in YYYY-MM-DD (convert from 'Jul 23, 2025' format)",
+    "nPrecioTotal": number (Report Total amount - PRIORITY if in red box/highlighted),
+    "tEmployeeID": "Employee ID (e.g., '063573')",
+    "tEmployeeName": "Employee Name (e.g., 'AYALA SEHLKE, ANA MARIA')",
+    "tOrgCode": "Org Code (e.g., 'HXH0009')",
+    "tReportPurpose": "Report Purpose (e.g., 'Viaje a turno')",
+    "tReportName": "Report Name" or null,
+    "tDefaultApprover": "Default Approver" or null,
+    "tFinalApprover": "Final Approver" or null,
+    "tPolicy": "Policy (e.g., 'Assignment Long Term')" or null,
+    "tBechtelOwesEmployee": number (Bechtel owes Employee amount) or null,
+    "tBechtelOwesCard": number (Bechtel owes Card amount) or null,
+    "tReportKey": "Report Key" or null,
+    "tDocumentIdentifier": "BECHEXPRPT_{EmployeeID}_{ReportNumber}" or null,
+    "tStampname": "BSQE|OTEM|OTRE|OTRU|OTHBP" or null,
+    "tsequentialnumber": "sequential code" or null
+  }],
+  "mresumen": [{
+    // Same structure as resumen type, with expense report specific data
+    "tjobno": "Org Code",
+    "ttype": "Expense Report",
+    "tsourcereference": "Report Number",
+    "tsourcerefid": "Report Key",
+    "tdescription": "Report description with purpose",
+    "nImporte": number,
+    "tStampname": "stamp name" or null,
+    "tsequentialnumber": "sequential number" or null
+  }],
+  // For OnShore documents:
+  "departments": [{
+    "name": "Engineering|Operations|Maintenance|Safety|Environmental|Human Resources|Finance|IT Services|Other Services",
+    "amount": number (if associated with monetary value) or null,
+    "pattern_found": "pattern that matched" or null,
+    "org_code": "organization code if mapped" or null
+  }] or [],
+  "disciplines": [{
+    "name": "Engineering|Operations|Maintenance|Safety|Environmental|Project Management|Quality Control|Procurement|Construction|Logistics",
+    "value": number (if associated with value) or null,
+    "pattern_found": "pattern that matched" or null,
+    "nc_code": "NC Code if mapped (e.g., 611=Engineering, 612=Operations)" or null
+  }] or []
+}
+
+FOR "concur_expense" TYPE - Extract:
+{
+  "mcomprobante": [{
+    "tNumero": "Report identifier or sequential number",
+    "dFecha": "Transaction Date in YYYY-MM-DD (convert from 'Jun 23, 2025' format)",
+    "nPrecioTotal": number (Report Total - MOST IMPORTANT),
+    "tJobSection": "Line Item by Job Section code (e.g., '26443-331-----')",
+    "tExpenseType": "Expense Type (e.g., 'Leave (Any) Taxi/Ground Trans - LT')",
+    "tMerchant": "Merchant name (e.g., 'RV Transportes Ltda.')",
+    "tLocation": "Location (e.g., 'Quilpué', 'Santiago')",
+    "tNCCode": "NC Code (e.g., '611')",
+    "tReportName": "Concur Expense - [Name]" or null,
+    "tPaymentCurrency": "Payment Currency (CLP, USD, etc.)" or null,
+    "tStampname": "stamp name" or null,
+    "tsequentialnumber": "sequential number" or null
+  }],
+  "mresumen": [{
+    // Extract ALL totals from Concur Expense Reports:
+    // - Report Total (MOST IMPORTANT)
+    // - Subtotal
+    // - Total for XXX (e.g., "Total for 611: 180,000.00")
+    // - Amount Less Tax
+    // - Tax (even if 0)
+    "tjobno": "Job Section code",
+    "ttype": "Concur Expense - Report Total|Subtotal|Total for XXX|Amount Less Tax|Tax",
+    "tsourcereference": "sequential number",
+    "tsourcerefid": null,
+    "tdescription": "Total description",
+    "nImporte": number,
+    "tStampname": "stamp name" or null,
+    "tsequentialnumber": "sequential number" or null
+  }],
+  "mcomprobante_detalle": [{
+    "nCantidad": 1 (default),
+    "tDescripcion": "expense description with merchant and location",
+    "nPrecioUnitario": number,
+    "nPrecioTotal": number,
+    "tTransactionDate": "Transaction Date in YYYY-MM-DD" or null,
+    "tExpenseType": "Expense Type" or null,
+    "tMerchant": "Merchant name" or null,
+    "tLocation": "Location" or null,
+    "tNCCode": "NC Code" or null
+  }]
+}
+
+FOR "jornada" TYPE - Extract:
+{
+  "mjornada": [{
+    "dFecha": "date in YYYY-MM-DD",
+    "fRegistro": "Period (e.g., 'JUL 2025')" or null,
+    "nTotalHoras": number (total hours for period) or null,
+    "tEmpleado": "employee name" or null,
+    "tEmpleadoID": "employee ID" or null,
+    "nHoras": number (hours worked) or null,
+    "nTarifa": number (rate) or null,
+    "nTotal": number (total) or null
+  }],
+  "mjornada_empleado": [{
+    // Individual employee entries with detailed hours
+    "tNumero": "employee number (6 digits)",
+    "tNombre": "employee full name (e.g., 'LASTNAME, FIRSTNAME')",
+    "tOrganizacion": "organization code (alphanumeric, 4+ chars)" or null,
+    "dFecha": "date in YYYY-MM-DD" or null,
+    "nHoras": number or null,
+    "nTarifa": number or null,
+    "nTotal": number or null
+  }] or [],
+  // For jornada documents, also extract highlighted totals (red boxes)
+  "mresumen": [{
+    // Highlighted totals from jornada documents (values in red boxes)
+    "tjobno": null,
+    "ttype": "Jornada Highlighted Total",
+    "tsourcereference": null,
+    "tsourcerefid": null,
+    "tdescription": "Highlighted total from jornada",
+    "nImporte": number,
+    "tStampname": null,
+    "tsequentialnumber": null,
+    "_highlighted": true,
+    "_jornada_total": true
+  }] or []
+}
+
+=== SPECIAL PRIORITIES ===
+1. HANDWRITTEN VALUES: If you see handwritten text with "USD" followed by amount (e.g., "USD 5.00", "USD 192.25" written by hand), mark it with [HANDWRITTEN] in ocr_text and prioritize it. These values have HIGHEST PRIORITY and override ANY printed values.
+   - For receipts/coffee shop: If you see handwritten "USD 5.00" on a receipt, use that as nPrecioTotal in mcomprobante, NOT the printed "RM 20.65" total.
+   - Extract the handwritten USD value in ocr_text AND use it as nPrecioTotal in structured data (mcomprobante).
+   - You can also store the original RM/MYR amount separately if needed, but the handwritten USD is the PRIMARY total.
+   - Example: If receipt shows "RM 20.65" printed and "[HANDWRITTEN] USD 5.00" written by hand, use USD 5.00 as nPrecioTotal.
+2. HIGHLIGHTED VALUES: Values in red boxes, yellow highlights, or visually emphasized sections are PRIORITY - extract them completely. Especially important for:
+   - "TOTAL AMOUNT IN US$" values in red boxes at bottom of tables (Attachment to Invoice)
+   - "TOTAL $ XXX.XX" in red boxes (Italian invoices)
+   - Report Total amounts in red boxes (Expense Reports)
+3. CALCULATIONS: Extract calculations like "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00" completely. Extract both individual values (4,301.00, 616.00, 1,452.00) AND final total (6,369.00).
+4. GL JOURNAL DETAILS: If document is "GL Journal Details" WITH highlighted calculations (red box), extract ONLY the highlighted calculation values, NOT all table rows. If WITHOUT highlighted calculations, extract all table rows as items (use ONLY nPrecioUnitario, NOT nPrecioTotal).
+5. ATTACHMENT TO INVOICE: For "ATTACHMENT TO INVOICE" documents, prioritize "TOTAL AMOUNT IN US$" values in red boxes at the bottom of tables. Extract ALL table rows including Resource, Vendor, Assignment no., Report Number, Date, hrs, rates, and amounts.
+6. ITALIAN INVOICES (FATTURA): Pay special attention to red boxes or highlighted areas containing invoice numbers (e.g., "FATTURA NO.: 333/25") and total amounts. If "TOTAL" is on one line and "$ XXX.XX" values on following lines, take the LAST value (final total after stamp duty).
+7. WEEKLY TOTALS (OnShore): Extract lines with multiple large monetary values at the end of tables (e.g., "7,816,974.79 305,349.84 6,333,781.02"). These are usually weekly totals. Look for lines with ONLY numbers (>=2 large values >=1000) and no item descriptions.
+8. CASH FLOW VALUES (OnShore): Extract "Total Disbursement", "Period Balance", "Cumulative Cash Flow", "Opening Balance", "Total Receipts" values from cash flow tables. Include negative values correctly (from parentheses like (305,350) → -305350).
+9. DEPARTMENTS & DISCIPLINES (OnShore): Extract department names (Engineering, Operations, Maintenance, Safety, Environmental, Human Resources, Finance, IT Services, Other Services) and discipline names (Project Management, Quality Control, Procurement, Construction, Logistics) from tables, headers, or classification sections. Map NC Codes (611=Engineering, 612=Operations, etc.).
+10. INVOICE APPROVAL REPORT: Do NOT extract "Line Item Details" as items. Those are data columns (Line Amount, Nat Class, Job, Sub Job, Cost Code), NOT purchase items. Only extract actual purchase items if they exist elsewhere.
+11. INVOICE GROUP DETAIL: Do NOT extract "Invoice Group Detail" section as items. Skip lines matching pattern like "BSQEUSD 751671 33025" or containing "INV Group ID".
+12. LABOR DETAILS: For "BSQE SERVICE CHARGES" or labor tables with "Emp Name", extract rows with pattern: Employee Name + BSQE code + date + Hours + Hrly Rate + Currency + Amount. Map: hours → nCantidad, rate → nPrecioUnitario, amount → nPrecioTotal, description → "Employee Name INSPECTING".
+13. EXPENSE SUMMARY TABLES: For documents with multiple expense tables (like Bechtel expense summaries with Toll/Hotel/Meal):
+    - Extract EVERY row from EVERY table as a separate mresumen entry
+    - Include Item No. if present in the table
+    - CRITICAL FOR DESCRIPTIONS: Look at the actual "Description" column in the table. If it says "Toll", extract "Toll". If it says "Hotel", extract "Hotel". If it says "Meal", extract "Meal". Extract ONLY what the document shows in the Description column, NOT JSON structures, NOT OCR metadata.
+    - Use USD amount as nImporte (prioritize USD over MYR)
+    - Store MYR amount in _myr_amount if needed
+    - Extract job number from header (e.g., "BECHTEL JOBS NO.: 26443") as tjobno
+    - Extract project name (e.g., "Project: Yanacocha AWTP Onshore") as tsourcereference
+    - For "Grand Total USD" rows: Extract "Grand Total USD" as tdescription (literally from the document), extract the USD amount as nImporte, set _highlighted: true
+    - For "TOTAL EXPENSES" rows: Extract "TOTAL EXPENSES" as tdescription (literally from the document), extract the USD amount as nImporte, set _highlighted: true and highest priority
+    - Do NOT skip any rows - extract ALL items from ALL tables completely
+
+=== DATE FORMAT CONVERSION ===
+Convert ALL dates to YYYY-MM-DD format. Accept these input formats:
+- DD/MM/YYYY → YYYY-MM-DD (e.g., "28/05/2025" → "2025-05-28")
+- MM-DD-YYYY → YYYY-MM-DD (e.g., "05-28-2025" → "2025-05-28")
+- "May 28, 2025" → 2025-05-28
+- "28-May-2025" → 2025-05-28
+- "30-JUN-2025" → 2025-06-30
+- "JUL 23, 2025" → 2025-07-23
+- "Date: 28 May 2025" → 2025-05-28
+- "Fecha: 28/05/2025" → 2025-05-28
+- "Tarikh: 28/05/2025" → 2025-05-28
+- Any other format → convert to YYYY-MM-DD
+
+IMPORTANT: Validate dates - do NOT extract phone numbers as dates. Examples to avoid:
+- "1300-80-8989" (phone number, not date)
+- Numbers with more than 8 digits when removing separators are likely NOT dates
+- If a pattern looks like DD/MM/YYYY or MM-DD-YYYY but has >8 digits total, it's probably a phone number
+- Validate month values: should be 01-12 (not 13-99)
+- Validate day values: should be reasonable (01-31, considering month)
+
+=== OCR CORRECTIONS ===
+Apply these corrections to extracted numbers:
+- Fix spaces as decimal points: "32 40" → 32.40, "12 74" → 12.74
+- Fix hyphens as decimal points: "25-20" → 25.20, "6-50" → 6.50
+- Normalize decimal separators: ensure consistent decimal format
+- Remove thousand separators: "1,234.56" → 1234.56 (keep as number, not string)
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON. No explanations, no markdown, just the JSON object.
+- The "ocr_text" field should be a SIMPLE STRING with the raw text, NOT a JSON-encoded string
+  * CORRECT: "ocr_text": "BSQE\nBS0003\nActual text here..."
+  * WRONG: "ocr_text": "{\"ocr_text\": \"...\"}"
+- All description fields (tDescripcion, tdescription) must contain ONLY text from the document, NEVER JSON field names
+  * CORRECT: "tDescripcion": "ICE VANILLA LATT"
+  * WRONG: "tDescripcion": "\"nPrecioTotal\": 5."
+- All numbers must be actual numbers (not strings)
+- Dates must be in YYYY-MM-DD format
+- Arrays must be properly formatted
+- If a field is not found, use null (not empty string)
+- For arrays, use [] if empty, not null
+- Negative values: use negative numbers (e.g., -305350), not strings with parentheses
+- Apply OCR corrections (spaces/hyphens as decimals) before returning numbers
+- For empty receipts/forms with no items filled: Return empty arrays for mcomprobante_detalle, do NOT create items from headers or row numbers
+
+Example response structure:
+{
+  "ocr_text": "Complete extracted text here...",
+  "ocr_text_translated": "Complete translated text to English (if original is not English/Spanish, otherwise same as ocr_text)",
+  "document_type": "comprobante",
+  "structured_data": {
+    "mdivisa": [{"tDivisa": "USD"}],
+    "mproveedor": [{"tRazonSocial": "Company Name"}],
+    "mnaturaleza": [{"tNaturaleza": "Alimentación"}],
+    "mdocumento_tipo": [{"iMDocumentoTipo": 1, "tTipo": "Comprobante"}],
+    "midioma": [{"iMIdioma": 2, "tIdioma": "Inglés"}],
+    "mcomprobante": [...],
+    "mcomprobante_detalle": [...]
+  }
+}
+
+=== STEP 4: TRANSLATE TEXT (if needed) ===
+After extracting the OCR text, translate it to English IF the original language is NOT English or Spanish:
+- If original language is Italian, Chinese, Malay, or any other language → translate to English
+- If original language is English or Spanish → keep ocr_text_translated the same as ocr_text
+- Maintain all formatting, numbers, dates, and technical terms exactly as they appear
+- Only translate natural language parts
+- Preserve structure, line breaks, and special characters
+
+=== STEP 4: TRANSLATE TEXT (if needed) ===
+After extracting the OCR text, translate it to English IF the original language is NOT English or Spanish:
+- If original language is Italian, Chinese, Malay, or any other language → translate to English
+- If original language is English or Spanish → keep ocr_text_translated the same as ocr_text
+- Maintain all formatting, numbers, dates, and technical terms exactly as they appear
+- Only translate natural language parts
+- Preserve structure, line breaks, and special characters
+
+CRITICAL: Extract EVERYTHING. Leave NOTHING behind. Return complete, accurate JSON. Prioritize highlighted/handwritten values.
+
+=== CRITICAL: COMPLETE EXTRACTION REQUIREMENT ===
+You MUST extract ALL fields completely. Do NOT return partial data:
+- If document is "comprobante": Extract mcomprobante (with tNumero, dFecha, nPrecioTotal, tStampname, tsequentialnumber) AND mcomprobante_detalle (ALL items from tables)
+- If document is "resumen": Extract mresumen (with tjobno, ttype, tsourcereference, tsourcerefid, tdescription, nImporte, tStampname, tsequentialnumber) - ALL rows from ALL tables
+- If document is "jornada": Extract mjornada AND mjornada_empleado (ALL employees with hours)
+- ALWAYS extract catalog tables: mdivisa, mproveedor, mnaturaleza, mdocumento_tipo, midioma
+- ALWAYS extract stamp info: tStampname (BSQE/OTEM/OTRE/OTRU) and tsequentialnumber (BS1234/OE0001/etc.)
+- If ANY field can be extracted from the document, extract it. Do NOT skip fields just because they seem optional.
+
+DO NOT return empty structured_data {} unless the document is completely blank. If the document has ANY text, extract what you can find.
+
+IMPORTANT REMINDERS:
+- Handwritten USD values have HIGHEST PRIORITY - they override any printed values
+- Values in red boxes/highlights are CRITICAL - extract them completely
+- For GL Journal Details with calculations, extract ONLY highlighted values, not all table rows
+- For Invoice Approval Report, do NOT extract "Line Item Details" as items
+- For Invoice Group Detail, do NOT extract as items
+- Weekly totals: lines with ONLY numbers (>=2 large values >=1000)
+- Cash Flow: extract negative values correctly (from parentheses)
+- Departments & Disciplines: map NC Codes (611=Engineering, 612=Operations, etc.)
+- All dates must be converted to YYYY-MM-DD format
+- All numbers must be actual numbers, not strings
+- Use null for missing fields, [] for empty arrays"""

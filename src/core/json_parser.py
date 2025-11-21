@@ -77,7 +77,7 @@ class JSONParser:
             },
             "hoja": {
                 "tJson": hoja_data.get("tJson"),
-                "tJsonTraducido": None,  # Se completará con traducción
+                "tJsonTraducido": hoja_data.get("tJsonTraducido"),  # Usar traducción de hoja_data
                 "lFormato": hoja_data.get("lFormato"),
                 "iMIdioma": hoja_data.get("iMIdioma"),
                 "iMDocumentoTipo": hoja_data.get("iMDocumentoTipo"),
@@ -90,6 +90,9 @@ class JSONParser:
             json_2["additional_data"] = {}
         
         # Asegurar que todas las tablas estén presentes (incluso si vacías)
+        # PRIORIDAD: Usar datos de additional_data si vienen de Gemini (estructurados)
+        # Solo usar datos tradicionales si Gemini no proporcionó datos estructurados
+        
         # Tablas principales (datos de transacción)
         default_tables = {
             "mresumen": [],

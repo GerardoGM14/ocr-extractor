@@ -7,6 +7,7 @@ from typing import List, Dict, Optional, Any
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import time
 
 from .pdf_processor import PDFProcessor
 from .file_manager import FileManager
@@ -133,52 +134,129 @@ class OCRExtractor:
             JSON de la página o None si hay error
         """
         try:
-            # 1. OCR con Gemini
-            ocr_result = self.gemini_service.process_image_with_retry(
-                str(img_path)
-            )
+            # NUEVO ENFOQUE: Intentar extracción estructurada directa desde imagen
+            # Si falla, usar método tradicional como fallback
+            # Leer configuración desde config.json
+            use_structured_extraction = True  # Por defecto habilitado
+            try:
+                import json
+                from pathlib import Path
+                config_path = Path("config/config.json")
+                if config_path.exists():
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                    gemini_config = config.get("gemini", {})
+                    use_structured_extraction = gemini_config.get("use_structured_extraction", True)
+            except Exception:
+                pass  # Si falla la lectura, usar valor por defecto
             
-            # Si el OCR falla, crear un resultado vacío pero válido
-            if not ocr_result or not ocr_result.get("success"):
-                print(f"Advertencia: OCR falló para página {page_num}, generando JSON vacío")
-                # Crear resultado OCR vacío pero válido
-                ocr_result = {
-                    "success": False,
-                    "text": "",
-                    "model": self.gemini_service.model_name if hasattr(self.gemini_service, 'model_name') else "unknown",
-                    "error": ocr_result.get("error") if ocr_result else "OCR failed"
-                }
+            if use_structured_extraction and hasattr(self.gemini_service, 'extract_structured_data_from_image'):
+                try:
+                    # 1. Extracción estructurada directa (OCR + estructuración en una llamada)
+                    structured_result = self.gemini_service.extract_structured_data_from_image(
+                        str(img_path)
+                    )
+                    
+                    if structured_result and structured_result.get("success"):
+                        # Extraer datos del resultado estructurado
+                        ocr_text = structured_result.get("text", "")
+                        translated_text = structured_result.get("translated_text", ocr_text)  # Texto traducido de Gemini
+                        document_type = structured_result.get("document_type", "unknown")
+                        gemini_structured_data = structured_result.get("structured_data", {})
+                        
+                        # Crear resultado OCR compatible con formato anterior
+                        ocr_result = {
+                            "success": True,
+                            "text": ocr_text,
+                            "model": structured_result.get("model", self.gemini_service.model_name),
+                            "timestamp": structured_result.get("timestamp", time.time())
+                        }
+                        
+                        # 2. Crear JSON 1 (Raw)
+                        raw_json = self.json_parser.create_raw_json(
+                            ocr_result, page_num, pdf_name
+                        )
+                        
+                        # 3. Mapear a estructura usando data_mapper (para validación y limpieza)
+                        hoja_data = self.data_mapper.map_to_hoja_structure(ocr_result)
+                        
+                        # 4. Combinar datos estructurados de Gemini con validación de data_mapper
+                        # El data_mapper ahora actúa como validador/limpiador
+                        additional_data = self.data_mapper.validate_and_enhance_structured_data(
+                            gemini_structured_data, ocr_text, document_type
+                        )
+                        
+                        if additional_data is None:
+                            additional_data = {}
+                        
+                        # 5. Usar texto traducido de Gemini (ya viene traducido si era necesario)
+                        # Gemini ya tradujo el texto si no era inglés/español
+                        hoja_data["tJsonTraducido"] = translated_text
+                        
+                        # Saltar al flujo común (pero ya tenemos la traducción)
+                        # No ejecutar el método tradicional
+                        
+                    else:
+                        # Si falla la extracción estructurada, usar método tradicional
+                        print(f"Advertencia: Extracción estructurada falló para página {page_num}, usando método tradicional")
+                        use_structured_extraction = False
+                        
+                except Exception as e:
+                    # Si hay error, usar método tradicional
+                    print(f"Advertencia: Error en extracción estructurada para página {page_num}: {e}. Usando método tradicional.")
+                    use_structured_extraction = False
             
-            # 2. Crear JSON 1 (Raw) - siempre se crea, aunque esté vacío
-            raw_json = self.json_parser.create_raw_json(
-                ocr_result, page_num, pdf_name
-            )
-            
-            # 3. Mapear a estructura - siempre se mapea, aunque el texto esté vacío
-            hoja_data = self.data_mapper.map_to_hoja_structure(ocr_result)
-            
-            # 4. Extraer datos estructurados según tipo - siempre retorna dict (puede estar vacío)
-            ocr_text = ocr_result.get("text", "")
-            document_type = self.data_mapper.identify_document_type(ocr_text)
-            additional_data = self.data_mapper.extract_structured_data(ocr_text, document_type)
-            # Asegurar que additional_data nunca sea None
-            if additional_data is None:
-                additional_data = {}
+            # MÉTODO TRADICIONAL (fallback o si está deshabilitado)
+            if not use_structured_extraction:
+                # 1. OCR con Gemini
+                ocr_result = self.gemini_service.process_image_with_retry(
+                    str(img_path)
+                )
+                
+                # Si el OCR falla, crear un resultado vacío pero válido
+                if not ocr_result or not ocr_result.get("success"):
+                    print(f"Advertencia: OCR falló para página {page_num}, generando JSON vacío")
+                    # Crear resultado OCR vacío pero válido
+                    ocr_result = {
+                        "success": False,
+                        "text": "",
+                        "model": self.gemini_service.model_name if hasattr(self.gemini_service, 'model_name') else "unknown",
+                        "error": ocr_result.get("error") if ocr_result else "OCR failed"
+                    }
+                
+                # 2. Crear JSON 1 (Raw) - siempre se crea, aunque esté vacío
+                raw_json = self.json_parser.create_raw_json(
+                    ocr_result, page_num, pdf_name
+                )
+                
+                # 3. Mapear a estructura - siempre se mapea, aunque el texto esté vacío
+                hoja_data = self.data_mapper.map_to_hoja_structure(ocr_result)
+                
+                # 4. Extraer datos estructurados según tipo - siempre retorna dict (puede estar vacío)
+                ocr_text = ocr_result.get("text", "")
+                document_type = self.data_mapper.identify_document_type(ocr_text)
+                additional_data = self.data_mapper.extract_structured_data(ocr_text, document_type)
+                # Asegurar que additional_data nunca sea None
+                if additional_data is None:
+                    additional_data = {}
             
             # 5. Traducir si es necesario (solo si NO es español ni inglés)
-            language_code = hoja_data.get("_language_code", "en")
-            translated_text = None
-            
-            if language_code not in ['es', 'en'] and ocr_text:
-                try:
-                    translated_text = self.gemini_service.translate_text(ocr_text, language_code)
-                    hoja_data["tJsonTraducido"] = translated_text if translated_text else ocr_text
-                except Exception:
-                    # Si falla la traducción, usar texto original
+            # NOTA: Si usamos extracción estructurada, la traducción ya viene de Gemini
+            # Solo traducir si usamos el método tradicional
+            if "tJsonTraducido" not in hoja_data:
+                language_code = hoja_data.get("_language_code", "en")
+                translated_text = None
+                
+                if language_code not in ['es', 'en'] and ocr_text:
+                    try:
+                        translated_text = self.gemini_service.translate_text(ocr_text, language_code)
+                        hoja_data["tJsonTraducido"] = translated_text if translated_text else ocr_text
+                    except Exception:
+                        # Si falla la traducción, usar texto original
+                        hoja_data["tJsonTraducido"] = ocr_text
+                else:
+                    # Español e inglés no se traducen, se mantienen igual
                     hoja_data["tJsonTraducido"] = ocr_text
-            else:
-                # Español e inglés no se traducen, se mantienen igual
-                hoja_data["tJsonTraducido"] = ocr_text
             
             # 6. Limpiar campo temporal antes de crear JSON
             if "_language_code" in hoja_data:

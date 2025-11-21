@@ -78,6 +78,7 @@ class BatchProcessResponse(BaseModel):
     procesados: int
     jobs: List[BatchJobInfo]
     errores: Optional[List[Dict[str, Any]]] = None
+    message: Optional[str] = None  # Mensaje adicional (ej: "No hay archivos pendientes")
 
 
 class ErrorResponse(BaseModel):
@@ -93,6 +94,33 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     timestamp: datetime
+
+
+# ===== Auth Models =====
+
+class LoginRequest(BaseModel):
+    """Request para login."""
+    email: EmailStr = Field(..., description="Email del usuario para autenticación")
+
+
+class LoginResponse(BaseModel):
+    """Respuesta del login."""
+    success: bool
+    token: Optional[str] = None
+    email: str
+    message: str
+    expires_at: Optional[str] = None  # ISO format datetime
+
+
+class LogoutRequest(BaseModel):
+    """Request para logout."""
+    token: Optional[str] = Field(None, description="Token a invalidar (opcional si se envía en header)")
+
+
+class LogoutResponse(BaseModel):
+    """Respuesta del logout."""
+    success: bool
+    message: str
 
 
 class UploadedFileInfo(BaseModel):

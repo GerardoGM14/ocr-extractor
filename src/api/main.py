@@ -11,13 +11,16 @@ import tempfile
 import logging
 import json
 import asyncio
+import secrets
 from pathlib import Path
 from typing import Optional, Dict, Any, AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timedelta
+from threading import Lock
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.requests import Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -60,7 +63,12 @@ from .models import (
     # Batch Models
     BatchProcessRequest,
     BatchProcessResponse,
-    BatchJobInfo
+    BatchJobInfo,
+    # Auth Models
+    LoginRequest,
+    LoginResponse,
+    LogoutRequest,
+    LogoutResponse
 )
 from .dependencies import (
     get_ocr_extractor,
@@ -117,6 +125,8 @@ app.add_middleware(
         "http://localhost:8080",
         "https://localhost:8000",
         "http://localhost:8000",
+        "https://newmont-pdf.netlify.app",
+        "http://192.168.0.55:5173/",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -128,6 +138,109 @@ app.add_middleware(
 # Middleware de autenticación (preparado pero desactivado)
 auth_middleware = AuthMiddleware()
 # app.middleware("http")(auth_middleware)  # Descomentar cuando se active auth
+
+# ===== Sistema de Autenticación Simple =====
+# Almacenamiento en memoria de tokens activos
+_active_tokens: Dict[str, Dict[str, Any]] = {}  # token -> {email, expires_at, created_at}
+_tokens_lock = Lock()
+TOKEN_EXPIRATION_HOURS = 24  # Tokens expiran después de 24 horas
+
+
+def generate_auth_token() -> str:
+    """Genera un token de autenticación seguro."""
+    return secrets.token_urlsafe(32)
+
+
+def create_auth_token(email: str) -> str:
+    """
+    Crea un token de autenticación para un email.
+    
+    Args:
+        email: Email del usuario
+        
+    Returns:
+        Token generado
+    """
+    token = generate_auth_token()
+    expires_at = datetime.now() + timedelta(hours=TOKEN_EXPIRATION_HOURS)
+    
+    with _tokens_lock:
+        _active_tokens[token] = {
+            "email": email.lower().strip(),
+            "expires_at": expires_at.isoformat(),
+            "created_at": datetime.now().isoformat()
+        }
+    
+    logger.info(f"Token creado para email: {email}")
+    return token
+
+
+def validate_auth_token(token: str) -> Optional[str]:
+    """
+    Valida un token de autenticación y retorna el email asociado.
+    
+    Args:
+        token: Token a validar
+        
+    Returns:
+        Email asociado al token, o None si el token es inválido/expirado
+    """
+    if not token:
+        return None
+    
+    with _tokens_lock:
+        token_data = _active_tokens.get(token)
+        
+        if not token_data:
+            return None
+        
+        # Verificar expiración
+        expires_at = datetime.fromisoformat(token_data["expires_at"])
+        if datetime.now() > expires_at:
+            # Token expirado, eliminarlo
+            _active_tokens.pop(token, None)
+            logger.info(f"Token expirado eliminado: {token[:8]}...")
+            return None
+        
+        return token_data["email"]
+
+
+def revoke_auth_token(token: str) -> bool:
+    """
+    Revoca (invalida) un token de autenticación.
+    
+    Args:
+        token: Token a revocar
+        
+    Returns:
+        True si se revocó, False si no existía
+    """
+    with _tokens_lock:
+        if token in _active_tokens:
+            del _active_tokens[token]
+            logger.info(f"Token revocado: {token[:8]}...")
+            return True
+        return False
+
+
+def cleanup_expired_tokens():
+    """Limpia tokens expirados del almacenamiento."""
+    now = datetime.now()
+    expired_count = 0
+    
+    with _tokens_lock:
+        tokens_to_remove = []
+        for token, data in _active_tokens.items():
+            expires_at = datetime.fromisoformat(data["expires_at"])
+            if now > expires_at:
+                tokens_to_remove.append(token)
+        
+        for token in tokens_to_remove:
+            del _active_tokens[token]
+            expired_count += 1
+    
+    if expired_count > 0:
+        logger.info(f"Limpiados {expired_count} tokens expirados")
 
 
 def _normalize_month(month: str) -> str:
@@ -195,24 +308,194 @@ async def health_check():
     )
 
 
+# ===== Auth Endpoints =====
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_current_user_email(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> Optional[str]:
+    """
+    Dependencia para obtener el email del usuario autenticado desde el token.
+    
+    Args:
+        credentials: Credenciales HTTP Bearer (opcional)
+        
+    Returns:
+        Email del usuario autenticado, o None si no hay token válido
+        
+    Uso:
+        @app.post("/api/v1/endpoint")
+        async def my_endpoint(user_email: str = Depends(get_current_user_email)):
+            if not user_email:
+                raise HTTPException(status_code=401, detail="No autenticado")
+            # Usar user_email...
+    """
+    if not credentials:
+        return None
+    
+    token = credentials.credentials
+    email = validate_auth_token(token)
+    return email
+
+
+@app.post("/api/v1/login", response_model=LoginResponse, tags=["Auth"])
+async def login(request: LoginRequest):
+    """
+    Endpoint de login que valida el email contra la lista de correos autorizados.
+    
+    Si el email está autorizado, genera un token de sesión que puede usarse
+    en otros endpoints en lugar de proporcionar el email cada vez.
+    
+    Args:
+        request: LoginRequest con el email del usuario
+        
+    Returns:
+        LoginResponse con token de autenticación y fecha de expiración
+        
+    Ejemplo:
+        POST /api/v1/login
+        {
+            "email": "usuario@newmont.com"
+        }
+        
+        Respuesta:
+        {
+            "success": true,
+            "token": "abc123...",
+            "email": "usuario@newmont.com",
+            "message": "Login exitoso",
+            "expires_at": "2025-11-19T14:30:00"
+        }
+    """
+    email = request.email.lower().strip()
+    
+    # Validar que el email esté autorizado
+    if not is_email_allowed(email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": f"Correo no autorizado: {email}. Acceso denegado.",
+                "success": False
+            }
+        )
+    
+    # Limpiar tokens expirados antes de crear uno nuevo
+    cleanup_expired_tokens()
+    
+    # Crear token de autenticación
+    token = create_auth_token(email)
+    token_data = _active_tokens.get(token)
+    
+    return LoginResponse(
+        success=True,
+        token=token,
+        email=email,
+        message="Login exitoso. Usa este token en el header 'Authorization: Bearer <token>' para autenticarte.",
+        expires_at=token_data["expires_at"] if token_data else None
+    )
+
+
+@app.post("/api/v1/logout", response_model=LogoutResponse, tags=["Auth"])
+async def logout(
+    request: Optional[LogoutRequest] = None,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token: Optional[str] = Query(None, description="Token a invalidar (opcional, también puede enviarse en body o header)")
+):
+    """
+    Endpoint de logout que invalida el token de sesión.
+    
+    El token puede enviarse de 3 formas (en orden de prioridad):
+    1. En el header: Authorization: Bearer <token>
+    2. En el body: {"token": "<token>"}
+    3. Como query parameter: ?token=<token>
+    
+    Args:
+        request: LogoutRequest con token en body (opcional)
+        credentials: Credenciales HTTP Bearer con el token (opcional)
+        token: Token como query parameter (opcional)
+        
+    Returns:
+        LogoutResponse confirmando el logout
+        
+    Ejemplos:
+        # Opción 1: Header
+        POST /api/v1/logout
+        Headers: Authorization: Bearer abc123...
+        
+        # Opción 2: Body
+        POST /api/v1/logout
+        Body: {"token": "abc123..."}
+        
+        # Opción 3: Query parameter
+        POST /api/v1/logout?token=abc123...
+    """
+    # Obtener token de cualquiera de las 3 fuentes (en orden de prioridad)
+    token_to_revoke = None
+    
+    # 1. Intentar desde header Authorization
+    if credentials:
+        token_to_revoke = credentials.credentials
+    
+    # 2. Intentar desde body
+    if not token_to_revoke and request and request.token:
+        token_to_revoke = request.token
+    
+    # 3. Intentar desde query parameter
+    if not token_to_revoke and token:
+        token_to_revoke = token
+    
+    # Validar que se proporcionó token
+    if not token_to_revoke:
+        return LogoutResponse(
+            success=False,
+            message="No se proporcionó token. Envía el token en el header 'Authorization: Bearer <token>', en el body como '{\"token\": \"<token>\"}', o como query parameter '?token=<token>'."
+        )
+    
+    # Revocar token
+    revoked = revoke_auth_token(token_to_revoke)
+    
+    if revoked:
+        return LogoutResponse(
+            success=True,
+            message="Logout exitoso. Token invalidado."
+        )
+    else:
+        return LogoutResponse(
+            success=False,
+            message="Token no encontrado o ya invalidado."
+        )
+
+
 @app.post("/api/v1/upload-pdf", response_model=UploadPDFResponse, tags=["Upload"])
 async def upload_pdf(
     pdf_file: UploadFile = File(..., description="Archivo PDF a subir"),
     email: str = Form(..., description="Email del usuario"),
     year: int = Form(..., description="Año a procesar (2000-2100)"),
-    month: str = Form(..., description="Mes a procesar (ej: 'Marzo' o '3')")
+    month: str = Form(..., description="Mes a procesar (ej: 'Marzo' o '3')"),
+    periodo_id: Optional[str] = Form(default=None, description="ID del periodo para asociar este archivo (opcional, ej: '2025-11-onshore')")
 ):
     """
     Sube y valida un PDF para procesamiento posterior.
+    
+    Puedes asociar el archivo a un periodo desde el momento de la subida,
+    o hacerlo después al procesarlo.
     
     Args:
         pdf_file: Archivo PDF a subir
         email: Email del usuario
         year: Año a procesar
         month: Mes a procesar (string o int)
+        periodo_id: ID del periodo para asociar este archivo (opcional)
         
     Returns:
         UploadPDFResponse con file_id para usar en process-pdf
+        
+    Notas:
+        - Si proporcionas periodo_id, el archivo se asociará automáticamente al periodo al procesarlo
+        - Si no proporcionas periodo_id, puedes especificarlo al procesar con process-pdf o process-batch
+        - También puedes usar process-all para procesar todos los archivos de un periodo automáticamente
     """
     # Validar que sea PDF
     if not pdf_file.filename.lower().endswith('.pdf'):
@@ -245,6 +528,39 @@ async def upload_pdf(
             detail={"error": f"Error leyendo archivo: {str(e)}"}
         )
     
+    # Validar periodo_id si se proporciona
+    if periodo_id:
+        periodo_manager = get_periodo_manager()
+        periodo_data = periodo_manager.get_periodo(periodo_id)
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": f"Periodo '{periodo_id}' no encontrado. Verifica que el periodo exista antes de asociar archivos."}
+            )
+        
+        # Validar que año y mes coincidan con el periodo
+        periodo_str = periodo_data.get("periodo", "")
+        if "/" in periodo_str:
+            mes_str, anio_str = periodo_str.split("/")
+            try:
+                periodo_year = int(anio_str)
+                periodo_month_num = int(mes_str)
+                periodo_month_normalized = _normalize_month(mes_str)
+                
+                if periodo_year != year:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={"error": f"El año del archivo ({year}) no coincide con el año del periodo ({periodo_year})"}
+                    )
+                
+                if periodo_month_normalized != normalized_month:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={"error": f"El mes del archivo ({normalized_month}) no coincide con el mes del periodo ({periodo_month_normalized})"}
+                    )
+            except ValueError:
+                logger.warning(f"No se pudo validar año/mes del periodo {periodo_id}")
+    
     # Guardar PDF y metadata
     upload_manager = get_upload_manager()
     metadata = {
@@ -252,6 +568,10 @@ async def upload_pdf(
         "year": year,
         "month": normalized_month
     }
+    
+    # Agregar periodo_id a metadata si se proporcionó
+    if periodo_id:
+        metadata["periodo_id"] = periodo_id
     
     try:
         file_id = upload_manager.save_uploaded_pdf(
@@ -338,8 +658,16 @@ async def process_pdf(
             detail={"error": f"Correo no autorizado: {email}. Acceso denegado para procesar este archivo."}
         )
     
+    # Obtener periodo_id de metadata si no se proporcionó explícitamente
+    # (puede haber sido especificado en upload-pdf)
+    periodo_id_to_use = periodo_id
+    if not periodo_id_to_use:
+        periodo_id_to_use = metadata.get("metadata", {}).get("periodo_id")
+    
     logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento - file_id: {file_id}")
     logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
+    if periodo_id_to_use:
+        logger.info(f"[{request_id}] Periodo asociado: {periodo_id_to_use}")
     
     # Crear job y agregarlo a la cola
     worker_manager = get_worker_manager()
@@ -356,7 +684,7 @@ async def process_pdf(
         },
         save_files=save_files,
         output_folder=output_folder,
-        periodo_id=periodo_id
+        periodo_id=periodo_id_to_use
     )
     
     # Agregar job a la cola
@@ -684,9 +1012,109 @@ async def stream_process_status(request_id: str):
     )
 
 
+def _get_archivo_info_from_json(request_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Obtiene información completa de un archivo desde los JSONs estructurados.
+    Similar a lo que se hace en get_periodo_detail.
+    
+    Args:
+        request_id: ID del request
+        
+    Returns:
+        Diccionario con información del archivo (PeriodoArchivoInfo) o None
+    """
+    try:
+        file_manager = get_file_manager()
+        base_output = file_manager.get_output_folder() or "./output"
+        structured_folder = Path(base_output) / "api" / "structured"
+        
+        if not structured_folder.exists():
+            return None
+        
+        # Buscar JSONs estructurados de este request_id
+        for json_file in structured_folder.glob("*_structured.json"):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                
+                metadata = json_data.get("metadata", {})
+                if metadata.get("request_id") != request_id:
+                    continue
+                
+                # Extraer información del archivo (igual que en get_periodo_detail)
+                additional_data = json_data.get("additional_data", {})
+                
+                # Buscar job_no, source_reference, etc.
+                mresumen = additional_data.get("mresumen", [])
+                mcomprobante = additional_data.get("mcomprobante", [])
+                
+                job_no = None
+                source_ref = None
+                entered_curr = None
+                entered_amount = None
+                total_usd = None
+                fecha_valoracion = None
+                
+                # Intentar extraer de mresumen o mcomprobante
+                if mresumen:
+                    first_item = mresumen[0]
+                    if isinstance(first_item, dict):
+                        job_no = first_item.get("tjobno") or first_item.get("job_no")
+                        source_ref = first_item.get("source_reference")
+                        entered_curr = first_item.get("tDivisa")
+                        entered_amount = first_item.get("nMonto")
+                        if entered_curr and entered_curr.upper() == "USD" and entered_amount:
+                            total_usd = float(entered_amount)
+                        fecha_valoracion = first_item.get("fecha_valoracion")
+                
+                if mcomprobante and not job_no:
+                    first_item = mcomprobante[0]
+                    if isinstance(first_item, dict):
+                        job_no = first_item.get("_stamp_name") or first_item.get("tSequentialNumber")
+                        source_ref = first_item.get("tNumero")
+                
+                # Buscar total_usd en mresumen si no se encontró
+                if not total_usd and mresumen:
+                    for item in mresumen:
+                        if isinstance(item, dict):
+                            monto = item.get("nMonto")
+                            divisa = item.get("tDivisa")
+                            if monto and divisa and divisa.upper() == "USD":
+                                total_usd = float(monto)
+                                break
+                
+                return {
+                    "archivo_id": request_id[:8],
+                    "request_id": request_id,
+                    "filename": metadata.get("filename", "unknown"),
+                    "estado": "procesado",
+                    "progress": 100,
+                    "status": "completed",
+                    "job_no": job_no,
+                    "type": metadata.get("document_type"),
+                    "source_reference": source_ref,
+                    "source_ref_id": source_ref,
+                    "entered_curr": entered_curr,
+                    "entered_amount": entered_amount,
+                    "total_usd": total_usd,
+                    "fecha_valoracion": fecha_valoracion,
+                    "processed_at": metadata.get("processed_at")
+                }
+            except Exception:
+                continue
+        
+        return None
+    except Exception:
+        return None
+
+
 async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
     """
     Generator para streaming de estado de todos los jobs de un periodo.
+    
+    Versión simplificada:
+    - Durante procesamiento: solo envía progreso en %
+    - Cuando finaliza: envía información completa del archivo (como PeriodoArchivoInfo)
     
     Args:
         periodo_id: ID del periodo a monitorear
@@ -699,7 +1127,7 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
     last_jobs_state = {}
     timeout_seconds = 1800  # 30 minutos máximo
     start_time = time.time()
-    poll_interval = 1.0  # Polling cada 1 segundo (batch puede ser más lento)
+    poll_interval = 0.5  # Polling cada 0.5 segundos para actualizaciones más rápidas
     
     # Verificar que el periodo existe
     periodo_data = periodo_manager.get_periodo(periodo_id)
@@ -711,8 +1139,15 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         yield f"data: {json.dumps(error_data)}\n\n"
         return
     
-    # Obtener request_ids asociados al periodo
-    request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+    # Obtener request_ids asociados al periodo (jobs completados)
+    request_ids_completados = set(periodo_manager.get_archivos_from_periodo(periodo_id))
+    
+    # Obtener jobs activos del worker_manager (queued/processing) con este periodo_id
+    jobs_activos = worker_manager.get_jobs_by_periodo_id(periodo_id)
+    request_ids_activos = {job.request_id for job in jobs_activos}
+    
+    # Combinar ambos: jobs completados + jobs activos
+    request_ids = list(request_ids_completados | request_ids_activos)
     
     if not request_ids:
         # No hay jobs aún, pero el periodo existe
@@ -729,41 +1164,95 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         yield f"data: {json.dumps(initial_data)}\n\n"
         # Esperar a que se agreguen jobs (timeout más corto si no hay jobs)
         await asyncio.sleep(2)
-        request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+        # Reintentar después de esperar
+        request_ids_completados = set(periodo_manager.get_archivos_from_periodo(periodo_id))
+        jobs_activos = worker_manager.get_jobs_by_periodo_id(periodo_id)
+        request_ids_activos = {job.request_id for job in jobs_activos}
+        request_ids = list(request_ids_completados | request_ids_activos)
         if not request_ids:
             return
     
-    # Función helper para obtener estado consolidado
+    # Función helper para obtener estado consolidado (simplificado)
     def get_consolidated_status():
         jobs_info = []
         status_counts = {"completed": 0, "processing": 0, "queued": 0, "failed": 0}
         
-        for req_id in request_ids:
+        # Obtener todos los request_ids (completados + activos)
+        request_ids_completados = set(periodo_manager.get_archivos_from_periodo(periodo_id))
+        jobs_activos = worker_manager.get_jobs_by_periodo_id(periodo_id)
+        request_ids_activos = {job.request_id for job in jobs_activos}
+        all_request_ids = list(request_ids_completados | request_ids_activos)
+        
+        for req_id in all_request_ids:
             job = worker_manager.get_job_status(req_id)
             if job:
-                job_info = {
-                    "request_id": job.request_id,
-                    "status": job.status,
-                    "progress": job.progress,
-                    "message": job.message,
-                    "pages_processed": job.pages_processed,
-                    "error": job.error
-                }
+                # Job activo en worker_manager
+                if job.status in ["queued", "processing"]:
+                    # Durante procesamiento: solo progreso
+                    job_info = {
+                        "request_id": job.request_id,
+                        "progress": job.progress,  # Solo progreso en %
+                        "status": job.status
+                    }
+                elif job.status == "completed":
+                    # Job completado: obtener info completa del archivo
+                    archivo_info = _get_archivo_info_from_json(req_id)
+                    if archivo_info:
+                        job_info = archivo_info
+                        job_info["progress"] = 100
+                    else:
+                        # Fallback si no se encuentra la info aún
+                        job_info = {
+                            "request_id": job.request_id,
+                            "progress": 100,
+                            "status": "completed",
+                            "estado": "procesado"
+                        }
+                else:
+                    # Failed
+                    job_info = {
+                        "request_id": job.request_id,
+                        "progress": job.progress,
+                        "status": job.status,
+                        "error": job.error
+                    }
+                
                 jobs_info.append(job_info)
                 if job.status in status_counts:
                     status_counts[job.status] += 1
             else:
-                # Job no encontrado (puede haber sido eliminado)
-                jobs_info.append({
-                    "request_id": req_id,
-                    "status": "not_found",
-                    "progress": 0,
-                    "message": "Job no encontrado"
-                })
+                # Job no encontrado en worker_manager
+                # Verificar si está en archivos_asociados (completado)
+                req_id_str = str(req_id)
+                request_ids_completados_str = {str(rid) for rid in request_ids_completados}
+                
+                if req_id_str in request_ids_completados_str:
+                    # Está en archivos_asociados = completado
+                    # Obtener información completa del archivo
+                    archivo_info = _get_archivo_info_from_json(req_id)
+                    if archivo_info:
+                        jobs_info.append(archivo_info)
+                    else:
+                        # Fallback
+                        jobs_info.append({
+                            "request_id": req_id,
+                            "progress": 100,
+                            "status": "completed",
+                            "estado": "procesado",
+                            "filename": "unknown"
+                        })
+                    status_counts["completed"] += 1
+                else:
+                    # No está ni en worker_manager ni en archivos_asociados
+                    jobs_info.append({
+                        "request_id": req_id,
+                        "status": "not_found",
+                        "progress": 0
+                    })
         
         return {
             "periodo_id": periodo_id,
-            "total_jobs": len(request_ids),
+            "total_jobs": len(all_request_ids),
             "completed": status_counts["completed"],
             "processing": status_counts["processing"],
             "queued": status_counts["queued"],
@@ -790,7 +1279,12 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
             break
         
         # Actualizar lista de request_ids (pueden agregarse nuevos jobs)
-        current_request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+        # Combinar jobs completados + jobs activos
+        current_request_ids_completados = set(periodo_manager.get_archivos_from_periodo(periodo_id))
+        current_jobs_activos = worker_manager.get_jobs_by_periodo_id(periodo_id)
+        current_request_ids_activos = {job.request_id for job in current_jobs_activos}
+        current_request_ids = list(current_request_ids_completados | current_request_ids_activos)
+        
         if set(current_request_ids) != set(request_ids):
             request_ids = current_request_ids
         
@@ -801,15 +1295,23 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         has_changes = False
         for job in current_state["jobs"]:
             req_id = job["request_id"]
-            current_status = job["status"]
-            current_progress = job["progress"]
+            # Obtener status (puede estar en "status" o "estado")
+            current_status = job.get("status") or job.get("estado", "unknown")
+            current_progress = job.get("progress", 0)
             
             if req_id not in last_jobs_state:
                 has_changes = True
                 break
             
             last_status, last_progress = last_jobs_state[req_id]
+            
+            # Detectar cambios de estado o progreso
             if current_status != last_status or current_progress != last_progress:
+                has_changes = True
+                break
+            
+            # Si cambió de processing/queued a completed, forzar actualización inmediata
+            if last_status in ["queued", "processing"] and current_status in ["completed", "procesado"]:
                 has_changes = True
                 break
         
@@ -817,14 +1319,20 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         if len(current_state["jobs"]) != len(last_jobs_state):
             has_changes = True
         
-        # Enviar actualización si hay cambios o cada 3 segundos (heartbeat)
-        if has_changes or (time.time() - start_time) % 3 < poll_interval:
+        # Enviar actualización si hay cambios o cada 2 segundos (heartbeat más frecuente)
+        if has_changes or (time.time() - start_time) % 2 < poll_interval:
             yield f"data: {json.dumps(current_state)}\n\n"
-            last_jobs_state = {job["request_id"]: (job["status"], job["progress"]) for job in current_state["jobs"]}
+            # Actualizar estado guardado (usar status o estado según esté disponible)
+            last_jobs_state = {}
+            for job in current_state["jobs"]:
+                req_id = job["request_id"]
+                status = job.get("status") or job.get("estado", "unknown")
+                progress = job.get("progress", 0)
+                last_jobs_state[req_id] = (status, progress)
         
         # Verificar si todos los jobs terminaron
         all_finished = all(
-            job["status"] in ["completed", "failed", "not_found"]
+            (job.get("status") or job.get("estado", "unknown")) in ["completed", "procesado", "failed", "not_found"]
             for job in current_state["jobs"]
         )
         
@@ -837,6 +1345,225 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
             break
         
         await asyncio.sleep(poll_interval)
+
+
+@app.post("/api/v1/periodos/{periodo_id}/process-all", response_model=BatchProcessResponse, tags=["Periodos"])
+async def process_all_periodo_files(periodo_id: str):
+    """
+    Procesa automáticamente todos los archivos pendientes de un periodo.
+    
+    Este endpoint detecta automáticamente los archivos subidos que:
+    - Coinciden con el año y mes del periodo
+    - No están procesados aún
+    - Tienen email autorizado
+    - No están ya asociados al periodo
+    
+    Los archivos se procesan en batch (hasta 3 workers simultáneos).
+    
+    Args:
+        periodo_id: ID del periodo (ej: "2025-11-onshore")
+        
+    Returns:
+        BatchProcessResponse con lista de jobs creados (cada uno con su request_id)
+    """
+    try:
+        periodo_manager = get_periodo_manager()
+        upload_manager = get_upload_manager()
+        worker_manager = get_worker_manager()
+        
+        # 1. Obtener información del periodo
+        periodo_data = periodo_manager.get_periodo(periodo_id)
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo '{periodo_id}' no encontrado"
+            )
+        
+        # Extraer año y mes del periodo
+        # Formato periodo: "MM/AAAA" (ej: "11/2025")
+        periodo_str = periodo_data.get("periodo", "")
+        if "/" not in periodo_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Formato de periodo inválido: '{periodo_str}'. Debe ser 'MM/AAAA'"
+            )
+        
+        mes_str, anio_str = periodo_str.split("/")
+        try:
+            periodo_year = int(anio_str)
+            periodo_month_num = int(mes_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se pudo parsear año/mes del periodo: '{periodo_str}'"
+            )
+        
+        # Normalizar mes a nombre (ej: "11" -> "Noviembre")
+        periodo_month_normalized = _normalize_month(mes_str)
+        
+        # Obtener archivos ya asociados al periodo (para evitar duplicados)
+        archivos_asociados = periodo_manager.get_archivos_from_periodo(periodo_id)
+        archivos_asociados_set = set(archivos_asociados)
+        
+        # 2. Buscar archivos subidos que coincidan con el periodo
+        all_uploaded_files = upload_manager.list_uploaded_files(processed=False)
+        
+        # Filtrar archivos que:
+        # - Coincidan con año y mes del periodo
+        # - No estén procesados
+        # - Tengan email autorizado
+        # - No estén ya asociados al periodo
+        pending_file_ids = []
+        errores_validacion = []
+        
+        for file_data in all_uploaded_files:
+            file_id = file_data.get("file_id")
+            if not file_id:
+                continue
+            
+            metadata = file_data.get("metadata", {})
+            file_year = metadata.get("year")
+            file_month = metadata.get("month")
+            file_email = metadata.get("email")
+            
+            # Verificar año y mes
+            if file_year != periodo_year:
+                continue
+            
+            # Normalizar mes del archivo para comparar
+            file_month_normalized = _normalize_month(str(file_month)) if file_month else None
+            if file_month_normalized != periodo_month_normalized:
+                continue
+            
+            # Verificar email autorizado
+            if not file_email or not is_email_allowed(file_email):
+                errores_validacion.append({
+                    "file_id": file_id,
+                    "error": f"Correo no autorizado: {file_email}"
+                })
+                continue
+            
+            # Verificar que no esté procesado
+            if file_data.get("processed", False):
+                continue
+            
+            # Verificar que no esté ya asociado al periodo
+            # (buscamos por request_id en archivos_asociados)
+            request_id_existente = file_data.get("request_id")
+            if request_id_existente and request_id_existente in archivos_asociados_set:
+                continue
+            
+            # Archivo válido para procesar
+            pending_file_ids.append(file_id)
+        
+        if not pending_file_ids:
+            # No hay archivos pendientes
+            return BatchProcessResponse(
+                success=True,
+                total=0,
+                procesados=0,
+                jobs=[],
+                errores=None,
+                message=f"No se encontraron archivos pendientes para el periodo {periodo_id}"
+            )
+        
+        # 3. Procesar archivos en batch
+        logger.info(f"Procesando {len(pending_file_ids)} archivos pendientes del periodo {periodo_id}")
+        
+        jobs_creados = []
+        errores_procesamiento = []
+        
+        for file_id in pending_file_ids:
+            try:
+                # Obtener PDF y metadata
+                pdf_path = upload_manager.get_uploaded_pdf_path(file_id)
+                metadata = upload_manager.get_uploaded_metadata(file_id)
+                
+                if not pdf_path or not metadata:
+                    errores_procesamiento.append({
+                        "file_id": file_id,
+                        "error": f"Error obteniendo archivo o metadata para file_id '{file_id}'"
+                    })
+                    continue
+                
+                # Obtener datos del PDF subido
+                pdf_filename = metadata["filename"]
+                email = metadata["metadata"]["email"]
+                year = metadata["metadata"]["year"]
+                normalized_month = metadata["metadata"]["month"]
+                
+                # Crear request_id único para este job
+                request_id = str(uuid.uuid4())
+                
+                logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento (periodo: {periodo_id}) - file_id: {file_id}")
+                logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
+                
+                # Crear job con periodo_id
+                job = ProcessingJob(
+                    request_id=request_id,
+                    file_id=file_id,
+                    pdf_path=Path(pdf_path),
+                    metadata={
+                        "filename": pdf_filename,
+                        "email": email,
+                        "year": year,
+                        "month": normalized_month
+                    },
+                    save_files=True,  # Siempre guardar archivos
+                    output_folder="api",
+                    periodo_id=periodo_id  # Asociar automáticamente al periodo
+                )
+                
+                # Agregar job a la cola
+                worker_manager.add_job(job)
+                
+                # Determinar estado inicial
+                initial_status = "queued"
+                initial_message = "Esperando en cola de procesamiento..."
+                
+                # Si hay workers disponibles, el job puede empezar inmediatamente
+                if worker_manager.get_active_jobs_count() < worker_manager.max_workers:
+                    initial_status = "processing"
+                    initial_message = "Iniciando procesamiento..."
+                    job.status = "processing"
+                    job.message = "Iniciando procesamiento..."
+                
+                # Agregar a la lista de jobs creados
+                jobs_creados.append(BatchJobInfo(
+                    file_id=file_id,
+                    request_id=request_id,
+                    status=initial_status,
+                    message=initial_message
+                ))
+                
+            except Exception as e:
+                logger.error(f"Error procesando file_id '{file_id}' en process-all: {e}")
+                errores_procesamiento.append({
+                    "file_id": file_id,
+                    "error": f"Error inesperado: {str(e)}"
+                })
+        
+        # Combinar errores de validación y procesamiento
+        todos_errores = errores_validacion + errores_procesamiento
+        
+        logger.info(f"Process-all completado para periodo {periodo_id}: {len(jobs_creados)} jobs creados, {len(todos_errores)} errores")
+        
+        return BatchProcessResponse(
+            success=True,
+            total=len(pending_file_ids),
+            procesados=len(jobs_creados),
+            jobs=jobs_creados,
+            errores=todos_errores if todos_errores else None
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error en process-all para periodo {periodo_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error procesando archivos del periodo: {str(e)}"
+        )
 
 
 @app.get("/api/v1/periodos/{periodo_id}/process-status-stream", tags=["Periodos"])

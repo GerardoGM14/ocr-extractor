@@ -303,6 +303,9 @@ class DataMapper:
                     elif isinstance(result[key], list) and isinstance(value, list):
                         result[key].extend(value)
         
+        # PRIORIDAD MÁXIMA: Extraer valores escritos a mano con USD (tienen prioridad sobre todo)
+        handwritten_usd_values = self._extract_handwritten_usd_values(ocr_text)
+        
         # Extraer cálculos destacados (cuadros rojos, boxes, etc.)
         highlighted_calculations = self._extract_highlighted_calculations(ocr_text)
         
@@ -319,13 +322,45 @@ class DataMapper:
             if gl_highlighted_values:
                 highlighted_calculations.extend(gl_highlighted_values)
         
+        # Combinar todos los valores destacados, poniendo los escritos a mano PRIMERO (máxima prioridad)
+        all_highlighted = []
+        if handwritten_usd_values:
+            all_highlighted.extend(handwritten_usd_values)
         if highlighted_calculations:
+            all_highlighted.extend(highlighted_calculations)
+        
+        if all_highlighted:
             # Agregar a mresumen si está vacío o crear campo específico
+            # Los valores escritos a mano ya están primero (máxima prioridad)
             if 'mresumen' not in result or not result.get('mresumen'):
-                result['mresumen'] = highlighted_calculations
+                result['mresumen'] = all_highlighted
             else:
-                # Agregar a mresumen existente
-                result['mresumen'].extend(highlighted_calculations)
+                # Si ya existe mresumen, poner los valores escritos a mano PRIMERO
+                # y luego agregar los demás (evitando duplicados)
+                existing_mresumen = result['mresumen']
+                # Combinar: primero los escritos a mano, luego los existentes, luego los destacados
+                # (evitar duplicados por monto)
+                existing_amounts = {item.get("nImporte") or item.get("nMonto", 0) for item in existing_mresumen}
+                
+                # Agregar valores escritos a mano primero (si no están duplicados)
+                new_mresumen = []
+                for hv in handwritten_usd_values:
+                    amount = hv.get("nImporte", 0)
+                    if amount not in existing_amounts:
+                        new_mresumen.append(hv)
+                        existing_amounts.add(amount)
+                
+                # Agregar valores existentes
+                new_mresumen.extend(existing_mresumen)
+                
+                # Agregar otros valores destacados (si no están duplicados)
+                for hc in highlighted_calculations:
+                    amount = hc.get("nMonto") or hc.get("nImporte", 0)
+                    if amount not in existing_amounts:
+                        new_mresumen.append(hc)
+                        existing_amounts.add(amount)
+                
+                result['mresumen'] = new_mresumen
         
         # Extracción general de valores monetarios (para cualquier tipo de documento)
         # Esto captura TODOS los valores económicos, sin importar el formato
@@ -355,6 +390,200 @@ class DataMapper:
         # IMPORTANTE: Siempre retornar un diccionario, aunque esté vacío
         # Esto asegura que siempre se genere un JSON estructurado, incluso sin datos
         return result
+    
+    def validate_and_enhance_structured_data(self, gemini_structured_data: Dict, 
+                                           ocr_text: str, document_type: str) -> Dict:
+        """
+        Valida y mejora los datos estructurados que vienen de Gemini.
+        Actúa como validador/limpiador en lugar de extractor completo.
+        
+        Args:
+            gemini_structured_data: Datos estructurados extraídos por Gemini
+            ocr_text: Texto OCR completo (para validación)
+            document_type: Tipo de documento identificado
+            
+        Returns:
+            Diccionario con datos validados y mejorados
+        """
+        # CRITICAL CHANGE: Si Gemini ya fue llamado (gemini_structured_data is not None, even if empty {}),
+        # confiar en lo que Gemini retornó y NO ejecutar métodos tradicionales
+        # Esto evita errores y duplicados cuando Gemini retorna datos parciales
+        if gemini_structured_data is None:
+            # Solo usar método tradicional si Gemini NO fue llamado en absoluto (None)
+            # Esto solo debería pasar en el flujo tradicional (fallback)
+            return self.extract_structured_data(ocr_text, document_type)
+        
+        # Si gemini_structured_data es {} (dict vacío) o tiene datos (parciales o completos),
+        # validar y limpiar SOLO lo que Gemini retornó - NO ejecutar extracción tradicional
+        validated_data = {}
+        
+        # Validar tablas ancla (catálogos) - solo si Gemini las proporcionó
+        catalog_keys = ["mdivisa", "mproveedor", "mnaturaleza", "mdocumento_tipo", "midioma"]
+        for key in catalog_keys:
+            if key in gemini_structured_data:
+                validated_data[key] = self._validate_catalog_table(
+                    gemini_structured_data[key], key
+                )
+        
+        # Validar datos específicos según tipo de documento - solo si Gemini los proporcionó
+        if document_type == "comprobante":
+            if "mcomprobante" in gemini_structured_data:
+                validated_data["mcomprobante"] = self._validate_comprobante_list(
+                    gemini_structured_data["mcomprobante"], ocr_text
+                )
+            if "mcomprobante_detalle" in gemini_structured_data:
+                validated_data["mcomprobante_detalle"] = self._validate_detalle_list(
+                    gemini_structured_data["mcomprobante_detalle"]
+                )
+        
+        elif document_type == "resumen":
+            if "mresumen" in gemini_structured_data:
+                validated_data["mresumen"] = self._validate_resumen_list(
+                    gemini_structured_data["mresumen"], ocr_text
+                )
+        
+        elif document_type in ["expense_report", "concur_expense"]:
+            if "mcomprobante" in gemini_structured_data:
+                validated_data["mcomprobante"] = self._validate_comprobante_list(
+                    gemini_structured_data["mcomprobante"], ocr_text
+                )
+            if "mcomprobante_detalle" in gemini_structured_data:
+                validated_data["mcomprobante_detalle"] = self._validate_detalle_list(
+                    gemini_structured_data["mcomprobante_detalle"]
+                )
+        
+        elif document_type == "jornada":
+            if "mjornada" in gemini_structured_data:
+                validated_data["mjornada"] = self._validate_jornada_list(
+                    gemini_structured_data["mjornada"]
+                )
+        
+        # CRITICAL: Si Gemini ya fue llamado (gemini_structured_data is not None),
+        # NO ejecutar métodos tradicionales NUNCA - ni para catálogos, ni para datos estructurados
+        # Aceptar lo que Gemini retornó (incluso si está vacío o parcial)
+        # El objetivo es que Gemini maneje TODO a través del prompt mejorado
+        # Solo validar y limpiar campos técnicos (campos que empiezan con _)
+        
+        # CRITICAL: Si Gemini ya fue llamado, NO ejecutar extract_stamp_info
+        # Gemini debería haber extraído stamp info a través del prompt mejorado
+        # Solo validar que los datos de Gemini estén presentes
+        # Si Gemini no extrajo stamp info, eso está bien - confiamos en lo que Gemini retornó
+        
+        return validated_data if validated_data else {}
+    
+    def _validate_catalog_table(self, items: List[Dict], table_name: str) -> List[Dict]:
+        """Valida una tabla de catálogo."""
+        if not isinstance(items, list):
+            return []
+        validated = []
+        for item in items:
+            if isinstance(item, dict):
+                validated.append(item)
+        return validated
+    
+    def _validate_comprobante_list(self, items: List[Dict], ocr_text: str) -> List[Dict]:
+        """Valida lista de comprobantes."""
+        if not isinstance(items, list):
+            return []
+        validated = []
+        for item in items:
+            if isinstance(item, dict):
+                # Validar campos numéricos
+                if "nPrecioTotal" in item and isinstance(item["nPrecioTotal"], str):
+                    try:
+                        item["nPrecioTotal"] = float(item["nPrecioTotal"].replace(",", ""))
+                    except:
+                        item["nPrecioTotal"] = None
+                validated.append(item)
+        return validated
+    
+    def _validate_detalle_list(self, items: List[Dict]) -> List[Dict]:
+        """Valida lista de detalles de comprobante."""
+        if not isinstance(items, list):
+            return []
+        validated = []
+        for item in items:
+            if isinstance(item, dict):
+                # Eliminar campos técnicos/metadata que no deben aparecer en structured_data
+                fields_to_remove = ["_currency", "_source_line", "_auto_extracted", "_currency_code", "_stamp_name", "_oracle_"]
+                for field in fields_to_remove:
+                    # Remover campos que empiezan con el prefijo
+                    keys_to_remove = [k for k in item.keys() if k.startswith(field)]
+                    for key in keys_to_remove:
+                        del item[key]
+                
+                # Validar que tDescripcion no contenga JSON o campos técnicos
+                # (Gemini debería ya haber extraído texto limpio, pero validamos por si acaso)
+                if "tDescripcion" in item and isinstance(item["tDescripcion"], str):
+                    desc = item["tDescripcion"]
+                    # Si la descripción contiene estructuras JSON claramente incorrectas, marcar como error
+                    # Pero NO hacer limpieza automática - Gemini debería haberlo hecho bien desde el principio
+                    if desc.strip().startswith('"ocr_text"') or desc.strip().startswith('"nImporte"') or desc.strip().startswith('"_myr_amount"'):
+                        # Esto indica un error en la extracción de Gemini, pero no lo limpiamos aquí
+                        # Solo logueamos para debugging
+                        pass
+                
+                # Validar campos numéricos
+                for num_field in ["nCantidad", "nPrecioUnitario", "nPrecioTotal"]:
+                    if num_field in item and isinstance(item[num_field], str):
+                        try:
+                            item[num_field] = float(item[num_field].replace(",", ""))
+                        except:
+                            item[num_field] = 0.0
+                validated.append(item)
+        return validated
+    
+    def _validate_resumen_list(self, items: List[Dict], ocr_text: str = "") -> List[Dict]:
+        """Valida lista de resumen."""
+        if not isinstance(items, list):
+            return []
+        validated = []
+        for item in items:
+            if isinstance(item, dict):
+                # Eliminar campos técnicos/metadata que no deben aparecer en structured_data
+                fields_to_remove = ["_currency", "_source_line", "_auto_extracted", "_currency_code", "_stamp_name", "_oracle_"]
+                for field in fields_to_remove:
+                    # Remover campos que empiezan con el prefijo
+                    keys_to_remove = [k for k in item.keys() if k.startswith(field)]
+                    for key in keys_to_remove:
+                        del item[key]
+                
+                # Validar que tdescription no contenga JSON o campos técnicos
+                # (Gemini debería ya haber extraído texto limpio, pero validamos por si acaso)
+                if "tdescription" in item and isinstance(item["tdescription"], str):
+                    desc = item["tdescription"]
+                    # Si la descripción contiene estructuras JSON claramente incorrectas, marcar como error
+                    # Pero NO hacer limpieza automática - Gemini debería haberlo hecho bien desde el principio
+                    if desc.strip().startswith('"ocr_text"') or desc.strip().startswith('"nImporte"') or desc.strip().startswith('"_myr_amount"'):
+                        # Esto indica un error en la extracción de Gemini, pero no lo limpiamos aquí
+                        # Solo logueamos para debugging
+                        pass
+                
+                # Validar campos numéricos
+                if "nImporte" in item and isinstance(item["nImporte"], str):
+                    try:
+                        item["nImporte"] = float(item["nImporte"].replace(",", ""))
+                    except:
+                        item["nImporte"] = None
+                validated.append(item)
+        return validated
+    
+    def _validate_jornada_list(self, items: List[Dict]) -> List[Dict]:
+        """Valida lista de jornada."""
+        if not isinstance(items, list):
+            return []
+        validated = []
+        for item in items:
+            if isinstance(item, dict):
+                # Validar campos numéricos
+                for num_field in ["nHoras", "nTarifa", "nTotal"]:
+                    if num_field in item and isinstance(item[num_field], str):
+                        try:
+                            item[num_field] = float(item[num_field].replace(",", ""))
+                        except:
+                            item[num_field] = 0.0
+                validated.append(item)
+        return validated
     
     def _extract_catalog_data(self, ocr_text: str, doc_type: str = None) -> Dict:
         """Extrae información de tablas ancla/catálogo."""
@@ -1665,6 +1894,199 @@ class DataMapper:
             })
         
         return highlighted_values
+    
+    def _extract_handwritten_usd_values(self, ocr_text: str) -> List[Dict]:
+        """
+        Extrae valores escritos a mano (handwritten) que contengan "USD".
+        Estos valores tienen PRIORIDAD MÁXIMA sobre otros valores extraídos.
+        
+        El OCR puede detectar texto escrito a mano y el prompt le indica que lo marque
+        con [HANDWRITTEN] o [MANUAL]. Buscamos estos marcadores y también contextos
+        que sugieren escritura manual.
+        
+        Args:
+            ocr_text: Texto extraído del OCR
+            
+        Returns:
+            Lista de diccionarios con valores escritos a mano en formato mresumen
+        """
+        handwritten_values = []
+        
+        # PRIORIDAD 1: Buscar marcadores explícitos [HANDWRITTEN] o [MANUAL] que el OCR puede incluir
+        # Patrones: "[HANDWRITTEN] USD 1,234.56" o "USD 1,234.56 [MANUAL]"
+        explicit_markers = [
+            r'\[HANDWRITTEN\]\s*USD\s+([\d,]+\.\d{2})',
+            r'\[MANUAL\]\s*USD\s+([\d,]+\.\d{2})',
+            r'USD\s+([\d,]+\.\d{2})\s*\[HANDWRITTEN\]',
+            r'USD\s+([\d,]+\.\d{2})\s*\[MANUAL\]',
+            r'\[HANDWRITTEN\]\s*USD\s+([\d,]+,\d{2})',
+            r'\[MANUAL\]\s*USD\s+([\d,]+,\d{2})',
+        ]
+        
+        for pattern in explicit_markers:
+            matches = re.finditer(pattern, ocr_text, re.IGNORECASE)
+            for match in matches:
+                try:
+                    amount_str = match.group(1).replace(',', '')
+                    # Si tiene coma como separador decimal, reemplazar
+                    if ',' in amount_str and '.' not in amount_str:
+                        amount_str = amount_str.replace(',', '.')
+                    amount = float(amount_str)
+                    
+                    handwritten_values.append({
+                        "tjobno": None,
+                        "ttype": "Handwritten USD Value",
+                        "tsourcereference": None,
+                        "tsourcerefid": None,
+                        "tdescription": f"Valor escrito a mano (marcado): USD {amount:,.2f}",
+                        "nImporte": amount,
+                        "tStampname": None,
+                        "tsequentialnumber": None,
+                        "_handwritten": True,
+                        "_priority": True  # Máxima prioridad
+                    })
+                except (ValueError, AttributeError):
+                    continue
+        
+        # PRIORIDAD 2: Buscar valores USD en contextos que sugieren escritura manual
+        # Buscar patrones como "USD" seguido de valores monetarios
+        usd_patterns = [
+            r'USD\s+([\d,]+\.\d{2})',
+            r'USD([\d,]+\.\d{2})',
+            r'USD\s+([\d,]+,\d{2})',
+        ]
+        
+        # Buscar en líneas individuales para detectar contexto
+        lines = ocr_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Buscar indicadores de texto escrito a mano en el contexto
+            is_handwritten_context = any(indicator in line.lower() for indicator in [
+                'handwritten', 'manually written', 'written by hand', 'a mano',
+                'correction', 'corrección', 'note', 'nota', 'annotation', 'anotación',
+                '[handwritten]', '[manual]'
+            ])
+            
+            # Buscar valores USD en la línea
+            for pattern in usd_patterns:
+                matches = re.finditer(pattern, line, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        amount_str = match.group(1).replace(',', '')
+                        # Si tiene coma como separador decimal, reemplazar
+                        if ',' in amount_str and '.' not in amount_str:
+                            amount_str = amount_str.replace(',', '.')
+                        amount = float(amount_str)
+                        
+                        # Si el contexto sugiere escritura manual O si el valor aparece
+                        # en una línea que parece ser una anotación/corrección, priorizarlo
+                        if is_handwritten_context or self._looks_like_handwritten_note(line):
+                            # Verificar que no esté ya en la lista (evitar duplicados)
+                            if not any(hv.get("nImporte") == amount for hv in handwritten_values):
+                                handwritten_values.append({
+                                    "tjobno": None,
+                                    "ttype": "Handwritten USD Value",
+                                    "tsourcereference": None,
+                                    "tsourcerefid": None,
+                                    "tdescription": f"Valor escrito a mano: USD {amount:,.2f}",
+                                    "nImporte": amount,
+                                    "tStampname": None,
+                                    "tsequentialnumber": None,
+                                    "_handwritten": True,
+                                    "_priority": True  # Marcar como prioridad
+                                })
+                    except (ValueError, AttributeError):
+                        continue
+        
+        # Si no encontramos valores explícitamente marcados como escritos a mano,
+        # buscar valores USD que aparezcan solos o en contextos que sugieren anotaciones manuales
+        if not handwritten_values:
+            # Buscar líneas que contengan solo "USD" y un valor (sin mucho contexto adicional)
+            # Estas suelen ser anotaciones manuales
+            for line in lines:
+                line = line.strip()
+                if not line or len(line) > 100:  # Líneas muy largas probablemente no son anotaciones
+                    continue
+                
+                # Si la línea contiene principalmente "USD" y un número, puede ser escrito a mano
+                usd_simple_match = re.search(r'USD\s+([\d,]+\.\d{2})', line, re.IGNORECASE)
+                if usd_simple_match and len(line.split()) <= 5:  # Línea corta = probable anotación
+                    try:
+                        amount_str = usd_simple_match.group(1).replace(',', '')
+                        amount = float(amount_str)
+                        
+                        # Verificar que no sea parte de una tabla estructurada
+                        if not self._looks_like_table_row(line):
+                            handwritten_values.append({
+                                "tjobno": None,
+                                "ttype": "Handwritten USD Value",
+                                "tsourcereference": None,
+                                "tsourcerefid": None,
+                                "tdescription": f"Valor USD posiblemente escrito a mano: {amount:,.2f}",
+                                "nImporte": amount,
+                                "tStampname": None,
+                                "tsequentialnumber": None,
+                                "_handwritten": True,
+                                "_priority": True
+                            })
+                    except (ValueError, AttributeError):
+                        continue
+        
+        return handwritten_values
+    
+    def _looks_like_handwritten_note(self, line: str) -> bool:
+        """
+        Determina si una línea parece ser una anotación escrita a mano.
+        
+        Args:
+            line: Línea de texto a evaluar
+            
+        Returns:
+            True si parece ser una anotación manual
+        """
+        line_lower = line.lower()
+        
+        # Indicadores de anotación manual
+        indicators = [
+            'note', 'nota', 'annotation', 'anotación', 'correction', 'corrección',
+            'manual', 'hand', 'written', 'escribir', 'anotar'
+        ]
+        
+        return any(indicator in line_lower for indicator in indicators)
+    
+    def _looks_like_table_row(self, line: str) -> bool:
+        """
+        Determina si una línea parece ser parte de una tabla estructurada.
+        
+        Args:
+            line: Línea de texto a evaluar
+            
+        Returns:
+            True si parece ser una fila de tabla
+        """
+        # Las filas de tabla suelen tener múltiples campos separados por espacios
+        # o contener patrones estructurados
+        parts = line.split()
+        
+        # Si tiene muchos campos (más de 5), probablemente es una tabla
+        if len(parts) > 5:
+            return True
+        
+        # Si contiene patrones típicos de tablas (códigos, fechas, múltiples números)
+        table_patterns = [
+            r'\d{4}-\d{2}-\d{2}',  # Fechas
+            r'[A-Z]{2,}\d+',  # Códigos alfanuméricos
+            r'\d+\.\d{2}\s+\d+\.\d{2}',  # Múltiples valores monetarios
+        ]
+        
+        for pattern in table_patterns:
+            if re.search(pattern, line):
+                return True
+        
+        return False
     
     def _extract_jornada_data(self, ocr_text: str) -> Dict[str, List[Dict]]:
         """Extrae datos de jornadas (horas trabajadas por empleados)."""

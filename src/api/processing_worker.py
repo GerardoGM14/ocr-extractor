@@ -7,7 +7,7 @@ import threading
 import queue
 import time
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from datetime import datetime
 from pathlib import Path
 import uuid
@@ -157,6 +157,14 @@ class ProcessingWorkerManager:
                     if percentage is not None:
                         job.progress = percentage
                     job.message = message
+                    
+                    # Extraer número de páginas procesadas del mensaje
+                    # Formato esperado: "Página X completada (47/164)"
+                    import re
+                    pages_match = re.search(r'\((\d+)/(\d+)\)', message)
+                    if pages_match:
+                        pages_processed = int(pages_match.group(1))
+                        job.pages_processed = pages_processed
             
             # Procesar PDF
             with self.jobs_lock:
@@ -377,6 +385,22 @@ class ProcessingWorkerManager:
         """Retorna el número de jobs en procesamiento."""
         with self.jobs_lock:
             return sum(1 for job in self.jobs.values() if job.status == "processing")
+    
+    def get_jobs_by_periodo_id(self, periodo_id: str) -> List[ProcessingJob]:
+        """
+        Obtiene todos los jobs activos asociados a un periodo.
+        
+        Args:
+            periodo_id: ID del periodo
+            
+        Returns:
+            Lista de ProcessingJob con el periodo_id especificado
+        """
+        with self.jobs_lock:
+            return [
+                job for job in self.jobs.values()
+                if job.periodo_id == periodo_id
+            ]
     
     def cleanup_old_jobs(self, max_age_hours: int = 24):
         """
