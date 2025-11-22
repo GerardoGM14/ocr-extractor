@@ -7,6 +7,7 @@ dist/
 # config/gemini_config.json
 public/
 config/gemini_config.json
+config/
 
 # Carpetas con .gitkeep
 learning/knowledge/
