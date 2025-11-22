@@ -164,10 +164,93 @@ class OCRExtractor:
                         document_type = structured_result.get("document_type", "unknown")
                         gemini_structured_data = structured_result.get("structured_data", {})
                         
+                        # DEBUG: Verificar qué recibimos de Gemini
+                        print(f"Info: Page {page_num} - Received from Gemini: ocr_text length={len(ocr_text) if ocr_text else 0}, starts_with_json={ocr_text.strip().startswith('{') if ocr_text else False}, structured_data keys={len(gemini_structured_data) if gemini_structured_data else 0}")
+                        
+                        # CRITICAL: Si ocr_text contiene JSON anidado, extraer TODO (texto limpio Y structured_data)
+                        # Esto es necesario porque a veces gemini_service no extrae correctamente el JSON anidado
+                        if ocr_text and isinstance(ocr_text, str) and ocr_text.strip().startswith('{'):
+                            print(f"Info: Page {page_num} - ocr_text contains JSON, extracting clean text and structured_data...")
+                            try:
+                                import json
+                                json_check = json.loads(ocr_text)
+                                if isinstance(json_check, dict):
+                                    # PRIORIDAD 1: Extraer structured_data del JSON anidado (SIEMPRE tiene prioridad)
+                                    if "structured_data" in json_check:
+                                        nested_structured = json_check["structured_data"]
+                                        if isinstance(nested_structured, dict) and nested_structured:
+                                            # Reemplazar completamente gemini_structured_data con los datos del JSON anidado
+                                            gemini_structured_data = nested_structured.copy()
+                                            keys_count = len(nested_structured)
+                                            total_items = sum(len(v) if isinstance(v, list) else 1 for v in nested_structured.values() if v)
+                                            print(f"Info: Extracted structured_data from ocr_text JSON for page {page_num} ({keys_count} keys, {total_items} items)")
+                                    
+                                    # PRIORIDAD 2: Extraer el texto limpio de "ocr_text" interno
+                                    if "ocr_text" in json_check:
+                                        inner_text = json_check["ocr_text"]
+                                        if inner_text and isinstance(inner_text, str):
+                                            # Si el texto interno también es JSON, extraer recursivamente
+                                            if inner_text.strip().startswith('{'):
+                                                try:
+                                                    inner_json = json.loads(inner_text)
+                                                    if isinstance(inner_json, dict) and "ocr_text" in inner_json:
+                                                        ocr_text = inner_json["ocr_text"]
+                                                    else:
+                                                        ocr_text = inner_text
+                                                except:
+                                                    ocr_text = inner_text
+                                            else:
+                                                ocr_text = inner_text
+                                            print(f"Info: Extracted clean ocr_text from nested JSON for page {page_num} ({len(ocr_text)} chars)")
+                                    
+                                    # PRIORIDAD 3: Actualizar document_type si está en el JSON anidado
+                                    if "document_type" in json_check:
+                                        nested_doc_type = json_check["document_type"]
+                                        if nested_doc_type and nested_doc_type != "unknown":
+                                            document_type = nested_doc_type
+                                            print(f"Info: Extracted document_type from nested JSON: {document_type}")
+                                    
+                                    # PRIORIDAD 4: Actualizar translated_text si está en el JSON anidado
+                                    if "ocr_text_translated" in json_check:
+                                        nested_translated = json_check["ocr_text_translated"]
+                                        if nested_translated and isinstance(nested_translated, str):
+                                            # Si también es JSON, extraer recursivamente
+                                            if nested_translated.strip().startswith('{'):
+                                                try:
+                                                    inner_translated_json = json.loads(nested_translated)
+                                                    if isinstance(inner_translated_json, dict) and "ocr_text_translated" in inner_translated_json:
+                                                        translated_text = inner_translated_json["ocr_text_translated"]
+                                                    elif isinstance(inner_translated_json, dict) and "ocr_text" in inner_translated_json:
+                                                        translated_text = inner_translated_json["ocr_text"]
+                                                    else:
+                                                        translated_text = nested_translated
+                                                except:
+                                                    translated_text = nested_translated
+                                            else:
+                                                translated_text = nested_translated
+                                            print(f"Info: Extracted ocr_text_translated from nested JSON for page {page_num}")
+                            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                                # Si el JSON está mal formado, usar texto vacío y continuar inmediatamente
+                                # NO intentar múltiples extracciones que pueden colgar el servidor
+                                print(f"Warning: Could not parse ocr_text as JSON for page {page_num}: {e}. Using empty text and continuing.")
+                                ocr_text = ""
+                                translated_text = ""
+                                gemini_structured_data = {}
+                        
+                        # CRITICAL: Si ocr_text o translated_text todavía contienen JSON después de la extracción,
+                        # usar texto vacío y continuar (NO intentar limpieza recursiva que puede colgar el servidor)
+                        if ocr_text and isinstance(ocr_text, str) and ocr_text.strip().startswith('{'):
+                            print(f"Warning: ocr_text still contains JSON after extraction for page {page_num}. Using empty text and continuing to next page.")
+                            ocr_text = ""
+                        
+                        if translated_text and isinstance(translated_text, str) and translated_text.strip().startswith('{'):
+                            print(f"Warning: translated_text still contains JSON after extraction for page {page_num}. Using empty text and continuing to next page.")
+                            translated_text = "" if not ocr_text else ocr_text
+                        
                         # Crear resultado OCR compatible con formato anterior
                         ocr_result = {
                             "success": True,
-                            "text": ocr_text,
+                            "text": ocr_text,  # Ahora debería ser texto limpio, no JSON (o texto vacío si falló)
                             "model": structured_result.get("model", self.gemini_service.model_name),
                             "timestamp": structured_result.get("timestamp", time.time())
                         }
@@ -182,12 +265,28 @@ class OCRExtractor:
                         
                         # 4. Combinar datos estructurados de Gemini con validación de data_mapper
                         # El data_mapper ahora actúa como validador/limpiador
+                        # DEBUG: Verificar qué datos tenemos antes de validar
+                        if gemini_structured_data:
+                            keys_count = len(gemini_structured_data)
+                            items_summary = {k: len(v) if isinstance(v, list) else 1 for k, v in gemini_structured_data.items() if v}
+                            print(f"Info: Before validation - gemini_structured_data has {keys_count} keys: {items_summary}")
+                        else:
+                            print(f"Warning: gemini_structured_data is empty/None for page {page_num}")
+                        
                         additional_data = self.data_mapper.validate_and_enhance_structured_data(
                             gemini_structured_data, ocr_text, document_type
                         )
                         
                         if additional_data is None:
                             additional_data = {}
+                        
+                        # DEBUG: Verificar que additional_data tenga datos después de validación
+                        if additional_data:
+                            keys_count = len(additional_data)
+                            items_summary = {k: len(v) if isinstance(v, list) else 1 for k, v in additional_data.items() if v}
+                            print(f"Info: After validation - additional_data has {keys_count} keys: {items_summary}")
+                        else:
+                            print(f"Warning: additional_data is empty for page {page_num} after validation. gemini_structured_data had {len(gemini_structured_data) if gemini_structured_data else 0} keys")
                         
                         # 5. Usar texto traducido de Gemini (ya viene traducido si era necesario)
                         # Gemini ya tradujo el texto si no era inglés/español

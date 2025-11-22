@@ -417,46 +417,85 @@ class DataMapper:
         # validar y limpiar SOLO lo que Gemini retornó - NO ejecutar extracción tradicional
         validated_data = {}
         
+        # DEBUG: Verificar qué datos tenemos
+        if gemini_structured_data:
+            keys_list = list(gemini_structured_data.keys())
+            print(f"Info: validate_and_enhance_structured_data received {len(keys_list)} keys: {keys_list}")
+        else:
+            print(f"Warning: validate_and_enhance_structured_data received empty/None gemini_structured_data")
+        
         # Validar tablas ancla (catálogos) - solo si Gemini las proporcionó
         catalog_keys = ["mdivisa", "mproveedor", "mnaturaleza", "mdocumento_tipo", "midioma"]
         for key in catalog_keys:
             if key in gemini_structured_data:
-                validated_data[key] = self._validate_catalog_table(
+                validated_list = self._validate_catalog_table(
                     gemini_structured_data[key], key
                 )
+                # CRITICAL: Siempre agregar la lista validada, incluso si está vacía
+                # Esto asegura que los datos de Gemini se preserven
+                validated_data[key] = validated_list
+                print(f"Info: Validated catalog {key}: {len(validated_list)} items")
         
         # Validar datos específicos según tipo de documento - solo si Gemini los proporcionó
         if document_type == "comprobante":
             if "mcomprobante" in gemini_structured_data:
-                validated_data["mcomprobante"] = self._validate_comprobante_list(
+                validated_list = self._validate_comprobante_list(
                     gemini_structured_data["mcomprobante"], ocr_text
                 )
+                # CRITICAL: Siempre agregar la lista validada, incluso si está vacía
+                validated_data["mcomprobante"] = validated_list
+                print(f"Info: Validated mcomprobante: {len(validated_list)} items")
             if "mcomprobante_detalle" in gemini_structured_data:
-                validated_data["mcomprobante_detalle"] = self._validate_detalle_list(
+                validated_list = self._validate_detalle_list(
                     gemini_structured_data["mcomprobante_detalle"]
                 )
+                # CRITICAL: Siempre agregar la lista validada, incluso si está vacía
+                validated_data["mcomprobante_detalle"] = validated_list
+                print(f"Info: Validated mcomprobante_detalle: {len(validated_list)} items")
         
         elif document_type == "resumen":
             if "mresumen" in gemini_structured_data:
-                validated_data["mresumen"] = self._validate_resumen_list(
+                validated_list = self._validate_resumen_list(
                     gemini_structured_data["mresumen"], ocr_text
                 )
+                # CRITICAL: Siempre agregar la lista validada, incluso si está vacía
+                validated_data["mresumen"] = validated_list
+                print(f"Info: Validated mresumen: {len(validated_list)} items")
         
         elif document_type in ["expense_report", "concur_expense"]:
             if "mcomprobante" in gemini_structured_data:
-                validated_data["mcomprobante"] = self._validate_comprobante_list(
+                validated_list = self._validate_comprobante_list(
                     gemini_structured_data["mcomprobante"], ocr_text
                 )
+                validated_data["mcomprobante"] = validated_list
+                print(f"Info: Validated mcomprobante (expense_report/concur_expense): {len(validated_list)} items")
             if "mcomprobante_detalle" in gemini_structured_data:
-                validated_data["mcomprobante_detalle"] = self._validate_detalle_list(
+                validated_list = self._validate_detalle_list(
                     gemini_structured_data["mcomprobante_detalle"]
                 )
+                validated_data["mcomprobante_detalle"] = validated_list
+                print(f"Info: Validated mcomprobante_detalle (expense_report/concur_expense): {len(validated_list)} items")
         
         elif document_type == "jornada":
             if "mjornada" in gemini_structured_data:
-                validated_data["mjornada"] = self._validate_jornada_list(
+                validated_list = self._validate_jornada_list(
                     gemini_structured_data["mjornada"]
                 )
+                validated_data["mjornada"] = validated_list
+                print(f"Info: Validated mjornada: {len(validated_list)} items")
+            if "mjornada_empleado" in gemini_structured_data:
+                validated_list = self._validate_jornada_empleado_list(
+                    gemini_structured_data["mjornada_empleado"]
+                )
+                validated_data["mjornada_empleado"] = validated_list
+                print(f"Info: Validated mjornada_empleado: {len(validated_list)} items")
+            # Para jornada, también validar mresumen si Gemini lo extrajo (para costos/totales)
+            if "mresumen" in gemini_structured_data:
+                validated_list = self._validate_resumen_list(
+                    gemini_structured_data["mresumen"], ocr_text
+                )
+                validated_data["mresumen"] = validated_list
+                print(f"Info: Validated mresumen (jornada): {len(validated_list)} items")
         
         # CRITICAL: Si Gemini ya fue llamado (gemini_structured_data is not None),
         # NO ejecutar métodos tradicionales NUNCA - ni para catálogos, ni para datos estructurados
@@ -468,6 +507,14 @@ class DataMapper:
         # Gemini debería haber extraído stamp info a través del prompt mejorado
         # Solo validar que los datos de Gemini estén presentes
         # Si Gemini no extrajo stamp info, eso está bien - confiamos en lo que Gemini retornó
+        
+        # DEBUG: Verificar qué se está retornando
+        if validated_data:
+            keys_count = len(validated_data)
+            items_summary = {k: len(v) if isinstance(v, list) else 1 for k, v in validated_data.items() if v}
+            print(f"Info: validate_and_enhance_structured_data returning {keys_count} keys: {items_summary}")
+        else:
+            print(f"Warning: validate_and_enhance_structured_data returning empty dict. gemini_structured_data had {len(gemini_structured_data) if gemini_structured_data else 0} keys")
         
         return validated_data if validated_data else {}
     
@@ -570,6 +617,23 @@ class DataMapper:
     
     def _validate_jornada_list(self, items: List[Dict]) -> List[Dict]:
         """Valida lista de jornada."""
+        if not isinstance(items, list):
+            return []
+        validated = []
+        for item in items:
+            if isinstance(item, dict):
+                # Validar campos numéricos
+                for num_field in ["nHoras", "nTarifa", "nTotal", "nTotalHoras"]:
+                    if num_field in item and isinstance(item[num_field], str):
+                        try:
+                            item[num_field] = float(item[num_field].replace(",", ""))
+                        except:
+                            item[num_field] = 0.0
+                validated.append(item)
+        return validated
+    
+    def _validate_jornada_empleado_list(self, items: List[Dict]) -> List[Dict]:
+        """Valida lista de jornada_empleado."""
         if not isinstance(items, list):
             return []
         validated = []
