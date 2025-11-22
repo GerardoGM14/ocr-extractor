@@ -18,6 +18,14 @@ class UploadPDFResponse(BaseModel):
     file_size_bytes: int
 
 
+class DeleteUploadResponse(BaseModel):
+    """Respuesta al eliminar un PDF subido."""
+    success: bool
+    message: str
+    file_id: str
+    filename: Optional[str] = None
+
+
 class PageResult(BaseModel):
     """Resultado de procesamiento de una página."""
     page_number: int
@@ -274,7 +282,7 @@ class PeriodoInfo(BaseModel):
     periodo_id: str
     periodo: str  # "10/2025"
     tipo: str  # "onshore" | "offshore"
-    estado: str  # "procesado" | "vacio" | "pendiente" | "procesando" | "cerrado"
+    estado: str  # "vacio" | "Pendiente" | "Procesando" | "Procesado" | "Subiendo" | "cerrado"
     registros: int
     ultimo_procesamiento: Optional[str] = None
     created_at: str

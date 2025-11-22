@@ -33,6 +33,7 @@ from .models import (
     HealthResponse,
     PageResult,
     UploadPDFResponse,
+    DeleteUploadResponse,
     UploadedFilesResponse,
     ProcessedFilesResponse,
     UploadedFileInfo,
@@ -593,6 +594,85 @@ async def upload_pdf(
         uploaded_at=datetime.now(),
         metadata=metadata,
         file_size_bytes=len(pdf_content)
+    )
+
+
+@app.delete("/api/v1/upload-pdf/{file_id}", response_model=DeleteUploadResponse, tags=["Upload"])
+async def delete_uploaded_pdf(file_id: str):
+    """
+    Elimina un PDF subido y su metadata.
+    
+    Este endpoint elimina tanto el archivo PDF como su metadata asociada.
+    Si el archivo está asociado a un periodo, también se removerá de ese periodo.
+    
+    Args:
+        file_id: ID del archivo a eliminar (obtenido de upload-pdf)
+        
+    Returns:
+        DeleteUploadResponse confirmando la eliminación
+        
+    Notas:
+        - Solo se pueden eliminar archivos que aún no han sido procesados
+        - Si el archivo está en proceso, se recomienda esperar a que termine antes de eliminarlo
+    """
+    upload_manager = get_upload_manager()
+    
+    # Verificar que el archivo existe
+    if not upload_manager.file_exists(file_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": f"Archivo con file_id '{file_id}' no encontrado"}
+        )
+    
+    # Obtener metadata antes de eliminar (para información de respuesta y periodo)
+    metadata = upload_manager.get_uploaded_metadata(file_id)
+    filename = None
+    periodo_id = None
+    request_id = None
+    
+    if metadata:
+        filename = metadata.get("filename")
+        periodo_id = metadata.get("metadata", {}).get("periodo_id")
+        request_id = metadata.get("request_id")  # Si ya fue procesado, tiene request_id
+        
+        # Verificar si está procesado
+        is_processed = metadata.get("processed", False)
+        if is_processed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "No se puede eliminar un archivo que ya ha sido procesado",
+                    "file_id": file_id,
+                    "request_id": request_id,
+                    "message": "Los archivos procesados no pueden ser eliminados por seguridad"
+                }
+            )
+    
+    # Si tiene periodo_id y request_id (fue procesado y asociado), remover del periodo
+    if periodo_id and request_id:
+        try:
+            periodo_manager = get_periodo_manager()
+            periodo_manager.remove_archivo_from_periodo(periodo_id, request_id)
+            logger.info(f"Archivo {file_id} removido del periodo {periodo_id}")
+        except Exception as e:
+            logger.warning(f"Error removiendo archivo {file_id} del periodo {periodo_id}: {e}")
+    
+    # Eliminar archivo y metadata
+    success = upload_manager.delete_uploaded_pdf(file_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Error eliminando archivo. Algunos archivos pueden no haberse eliminado correctamente"}
+        )
+    
+    logger.info(f"Archivo eliminado: {file_id} ({filename})")
+    
+    return DeleteUploadResponse(
+        success=True,
+        message=f"Archivo '{filename or file_id}' eliminado correctamente",
+        file_id=file_id,
+        filename=filename
     )
 
 
@@ -2903,18 +2983,63 @@ async def list_periodos(
             except Exception:
                 return date_str  # Si falla, retornar original
         
-        periodos = [
-            PeriodoInfo(
-                periodo_id=p["periodo_id"],
-                periodo=p["periodo"],
-                tipo=p["tipo"],
-                estado=p["estado"],
-                registros=p["registros"],
-                ultimo_procesamiento=format_date(p.get("ultimo_procesamiento")),
-                created_at=format_date(p.get("created_at"))
+        # Calcular estado dinámicamente para cada periodo
+        upload_manager = get_upload_manager()
+        uploaded_files = upload_manager.list_uploaded_files(processed=False)
+        
+        # Crear diccionario de periodo_id -> cantidad de archivos pendientes
+        periodo_pendientes = {}
+        for uploaded_file in uploaded_files:
+            file_metadata = uploaded_file.get("metadata", {})
+            file_periodo_id = file_metadata.get("periodo_id")
+            if file_periodo_id:
+                periodo_pendientes[file_periodo_id] = periodo_pendientes.get(file_periodo_id, 0) + 1
+        
+        # Obtener jobs activos por periodo para determinar estado "Procesando"
+        worker_manager = get_worker_manager()
+        periodos_con_jobs_activos = set()
+        for periodo_id_temp in [p["periodo_id"] for p in periodos_data]:
+            jobs_activos_temp = worker_manager.get_jobs_by_periodo_id(periodo_id_temp)
+            if any(job.status in ["queued", "processing"] for job in jobs_activos_temp):
+                periodos_con_jobs_activos.add(periodo_id_temp)
+        
+        periodos = []
+        for p in periodos_data:
+            periodo_id = p["periodo_id"]
+            # Contar archivos procesados
+            archivos_procesados = len(p.get("archivos_asociados", []))
+            # Contar archivos pendientes
+            archivos_pendientes = periodo_pendientes.get(periodo_id, 0)
+            total_archivos = archivos_procesados + archivos_pendientes
+            
+            # Calcular estado según los 4 estados posibles
+            estado_calculado = "vacio"
+            if total_archivos == 0:
+                estado_calculado = "vacio"
+            elif periodo_id in periodos_con_jobs_activos:
+                # Hay jobs activos (queued/processing)
+                estado_calculado = "Procesando"
+            elif archivos_procesados == total_archivos and archivos_procesados > 0:
+                # Todos los archivos están procesados
+                estado_calculado = "Procesado"
+            elif archivos_pendientes > 0:
+                # Hay archivos subidos pero no procesados
+                estado_calculado = "Pendiente"
+            else:
+                # Fallback
+                estado_calculado = "Pendiente"
+            
+            periodos.append(
+                PeriodoInfo(
+                    periodo_id=periodo_id,
+                    periodo=p["periodo"],
+                    tipo=p["tipo"],
+                    estado=estado_calculado,
+                    registros=p["registros"],
+                    ultimo_procesamiento=format_date(p.get("ultimo_procesamiento")),
+                    created_at=format_date(p.get("created_at"))
+                )
             )
-            for p in periodos_data
-        ]
         
         return PeriodosListResponse(
             success=True,
@@ -3093,6 +3218,63 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                     archivos.append(archivo_pendiente)
                     request_ids_incluidos.add(file_id)
         
+        # Calcular estado del periodo basado en los 4 estados posibles
+        # 1. "Procesando" - si hay jobs activos (queued/processing)
+        # 2. "Procesado" - si todos los archivos están completados
+        # 3. "Pendiente" - si hay archivos subidos pero no procesados
+        # 4. "Subiendo" - si hay archivos recién subidos (menos de 5 segundos desde upload)
+        
+        worker_manager = get_worker_manager()
+        jobs_activos = worker_manager.get_jobs_by_periodo_id(periodo_id)
+        
+        # Contar estados de archivos
+        archivos_procesados = sum(1 for a in archivos if a.estado == "procesado")
+        archivos_pendientes = sum(1 for a in archivos if a.estado == "pendiente")
+        total_archivos = len(archivos)
+        
+        # Verificar si hay archivos "Subiendo" (subidos pero sin job creado aún)
+        # Un archivo está "Subiendo" si:
+        # - Está subido (en uploaded_files)
+        # - No tiene job activo asociado
+        # - No está procesado
+        archivos_subiendo = 0
+        file_ids_subidos = {uf.get("file_id") for uf in uploaded_files 
+                           if uf.get("metadata", {}).get("periodo_id") == periodo_id}
+        file_ids_con_job = {job.file_id for job in jobs_activos}
+        
+        for file_id in file_ids_subidos:
+            # Si el archivo está subido pero no tiene job, está "Subiendo"
+            if file_id not in file_ids_con_job:
+                metadata_file = upload_manager.get_uploaded_metadata(file_id)
+                if metadata_file and not metadata_file.get("processed", False):
+                    archivos_subiendo += 1
+        
+        # Verificar si hay jobs activos (queued o processing)
+        tiene_jobs_activos = any(
+            job.status in ["queued", "processing"] 
+            for job in jobs_activos
+        )
+        
+        # Calcular estado según prioridad
+        estado_calculado = "vacio"
+        if total_archivos == 0:
+            estado_calculado = "vacio"
+        elif archivos_subiendo > 0:
+            # Hay archivos recién subidos (estado "Subiendo")
+            estado_calculado = "Subiendo"
+        elif tiene_jobs_activos:
+            # Hay jobs en cola o procesando
+            estado_calculado = "Procesando"
+        elif archivos_procesados == total_archivos and archivos_procesados > 0:
+            # Todos los archivos están procesados
+            estado_calculado = "Procesado"
+        elif archivos_pendientes > 0:
+            # Hay archivos subidos pero no procesados
+            estado_calculado = "Pendiente"
+        else:
+            # Fallback
+            estado_calculado = "Pendiente"
+        
         # Función helper para formatear fechas
         def format_date(date_str: Optional[str]) -> Optional[str]:
             """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
@@ -3108,7 +3290,7 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             periodo_id=periodo_data["periodo_id"],
             periodo=periodo_data["periodo"],
             tipo=periodo_data["tipo"],
-            estado=periodo_data["estado"],
+            estado=estado_calculado,  # Usar estado calculado dinámicamente
             registros=periodo_data["registros"],
             ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
             created_at=format_date(periodo_data.get("created_at"))
