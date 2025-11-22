@@ -3056,6 +3056,43 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             if archivo_info:
                 archivos.append(archivo_info)
         
+        # Agregar archivos subidos (no procesados) que tengan este periodo_id en metadata
+        upload_manager = get_upload_manager()
+        uploaded_files = upload_manager.list_uploaded_files(processed=False)
+        
+        # Obtener request_ids ya incluidos para evitar duplicados
+        request_ids_incluidos = {archivo.request_id for archivo in archivos}
+        
+        for uploaded_file in uploaded_files:
+            file_metadata = uploaded_file.get("metadata", {})
+            file_periodo_id = file_metadata.get("periodo_id")
+            
+            # Solo incluir si el periodo_id coincide y no está ya procesado
+            if file_periodo_id == periodo_id:
+                file_id = uploaded_file.get("file_id")
+                filename = uploaded_file.get("filename", "unknown")
+                
+                # Usar file_id como identificador temporal (no tiene request_id aún)
+                # Verificar que no esté ya en la lista
+                if file_id not in request_ids_incluidos:
+                    archivo_pendiente = PeriodoArchivoInfo(
+                        archivo_id=file_id[:8] if len(file_id) >= 8 else file_id,
+                        request_id=file_id,  # Usar file_id como identificador temporal
+                        filename=filename,
+                        estado="pendiente",
+                        job_no=None,
+                        type=None,
+                        source_reference=None,
+                        source_ref_id=None,
+                        entered_curr=None,
+                        entered_amount=None,
+                        total_usd=None,
+                        fecha_valoracion=None,
+                        processed_at=None
+                    )
+                    archivos.append(archivo_pendiente)
+                    request_ids_incluidos.add(file_id)
+        
         # Función helper para formatear fechas
         def format_date(date_str: Optional[str]) -> Optional[str]:
             """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
