@@ -1,5 +1,5 @@
 {
-    "api_key": "AIzaSyBaY1TZ3mSaFhFU9XCRxFnu1mG_t3t4eqc",
+    "api_key": "AIzaSyCeCUifgXM_CMvWtdkV6ki9RgoU01RGB6o",
     "model": "gemini-2.0-flash",
     "timeout": 300,
     "max_retries": 3,
