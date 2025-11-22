@@ -1136,7 +1136,9 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
             "error": f"Periodo '{periodo_id}' no encontrado",
             "periodo_id": periodo_id
         }
-        yield f"data: {json.dumps(error_data)}\n\n"
+        error_event = f"data: {json.dumps(error_data)}\n\n"
+        yield error_event
+        await asyncio.sleep(0)
         return
     
     # Obtener request_ids asociados al periodo (jobs completados)
@@ -1161,7 +1163,9 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
             "jobs": [],
             "message": "No hay archivos procesados en este periodo aún"
         }
-        yield f"data: {json.dumps(initial_data)}\n\n"
+        no_jobs_event = f"data: {json.dumps(initial_data)}\n\n"
+        yield no_jobs_event
+        await asyncio.sleep(0)
         # Esperar a que se agreguen jobs (timeout más corto si no hay jobs)
         await asyncio.sleep(2)
         # Reintentar después de esperar
@@ -1262,8 +1266,11 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
     
     # Enviar estado inicial
     initial_state = get_consolidated_status()
-    yield f"data: {json.dumps(initial_state)}\n\n"
-    last_jobs_state = {job["request_id"]: (job["status"], job["progress"]) for job in initial_state["jobs"]}
+    initial_event = f"data: {json.dumps(initial_state)}\n\n"
+    yield initial_event
+    # Ceder control al event loop para forzar envío inmediato
+    await asyncio.sleep(0)
+    last_jobs_state = {job["request_id"]: (job.get("status") or job.get("estado", "unknown"), job.get("progress", 0)) for job in initial_state["jobs"]}
     
     # Monitorear cambios
     while True:
@@ -1275,7 +1282,9 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
                 "error": "Timeout: conexión SSE cerrada después de 30 minutos",
                 "message": "El procesamiento puede continuar, pero la conexión SSE ha expirado"
             }
-            yield f"data: {json.dumps(timeout_data)}\n\n"
+            timeout_event = f"data: {json.dumps(timeout_data)}\n\n"
+            yield timeout_event
+            await asyncio.sleep(0)
             break
         
         # Actualizar lista de request_ids (pueden agregarse nuevos jobs)
@@ -1291,7 +1300,7 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         # Obtener estado actual
         current_state = get_consolidated_status()
         
-        # Verificar si hay cambios
+        # Verificar si hay cambios (esto debe hacerse PRIMERO para enviar eventos durante procesamiento)
         has_changes = False
         for job in current_state["jobs"]:
             req_id = job["request_id"]
@@ -1319,9 +1328,13 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         if len(current_state["jobs"]) != len(last_jobs_state):
             has_changes = True
         
-        # Enviar actualización si hay cambios o cada 2 segundos (heartbeat más frecuente)
+        # Enviar actualización si hay cambios o cada 2 segundos (heartbeat para mantener conexión viva)
+        # IMPORTANTE: Esto envía eventos DURANTE el procesamiento, no solo al final
         if has_changes or (time.time() - start_time) % 2 < poll_interval:
-            yield f"data: {json.dumps(current_state)}\n\n"
+            event_data = f"data: {json.dumps(current_state)}\n\n"
+            yield event_data
+            # Ceder control al event loop para forzar envío inmediato (evitar buffering)
+            await asyncio.sleep(0)
             # Actualizar estado guardado (usar status o estado según esté disponible)
             last_jobs_state = {}
             for job in current_state["jobs"]:
@@ -1330,18 +1343,37 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
                 progress = job.get("progress", 0)
                 last_jobs_state[req_id] = (status, progress)
         
-        # Verificar si todos los jobs terminaron
-        all_finished = all(
-            (job.get("status") or job.get("estado", "unknown")) in ["completed", "procesado", "failed", "not_found"]
-            for job in current_state["jobs"]
-        )
+        # Verificar si todos los jobs terminaron DESPUÉS de enviar la actualización
+        # Esto asegura que se envíen todos los eventos de progreso antes del evento final
+        all_finished = False
+        if current_state["total_jobs"] > 0:
+            # Normalizar status de cada job para verificación
+            job_statuses = []
+            for job in current_state["jobs"]:
+                # Obtener status (puede estar en "status" o "estado")
+                job_status = job.get("status") or job.get("estado", "unknown")
+                # Normalizar: "procesado" -> "completed" para consistencia
+                if job_status == "procesado":
+                    job_status = "completed"
+                job_statuses.append(job_status)
+            
+            # Verificar si todos terminaron (completed, failed, o not_found)
+            all_finished = all(
+                status in ["completed", "failed", "not_found"]
+                for status in job_statuses
+            )
         
-        if all_finished and current_state["total_jobs"] > 0:
-            # Enviar estado final y cerrar
+        # Si todos terminaron, enviar evento final y cerrar conexión
+        if all_finished:
             final_state = current_state.copy()
             final_state["finished"] = True
             final_state["message"] = f"Todos los jobs del periodo han terminado: {current_state['completed']} completados, {current_state['failed']} fallidos"
-            yield f"data: {json.dumps(final_state)}\n\n"
+            # Asegurar que el estado del periodo sea "completed" en el objeto
+            final_state["periodo_status"] = "completed"
+            final_event = f"data: {json.dumps(final_state)}\n\n"
+            yield final_event
+            # Ceder control al event loop para forzar envío inmediato
+            await asyncio.sleep(0)
             break
         
         await asyncio.sleep(poll_interval)
@@ -1597,9 +1629,11 @@ async def stream_periodo_status(periodo_id: str):
         _stream_periodo_status(periodo_id),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Deshabilitar buffering en nginx
+            "X-Accel-Buffering": "no",  # Deshabilitar buffering en nginx
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "X-Content-Type-Options": "nosniff"
         }
     )
 

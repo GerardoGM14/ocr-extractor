@@ -5,8 +5,8 @@
       "periodo": "11/2025",
       "tipo": "onshore",
       "estado": "pendiente",
-      "registros": 41,
-      "ultimo_procesamiento": "2025-11-21T18:12:07.870650",
+      "registros": 45,
+      "ultimo_procesamiento": "2025-11-22T10:26:35.320753",
       "archivos_asociados": [
         "9789853a-eb61-4015-b8ab-124f1d7ce870",
         "9758037c-1fc3-41b7-a57a-f8dd1674e703",
@@ -48,7 +48,11 @@
         "fa747482-a6d8-4d04-a49c-4e1d77a37c5c",
         "a541e13e-1370-42c7-8197-122e3819c757",
         "ee19c4a2-20e2-4367-86a1-a28f7134b7a9",
-        "3979ae0f-1710-4639-a413-b340639b8721"
+        "3979ae0f-1710-4639-a413-b340639b8721",
+        "9a6bee34-d19e-46e7-a422-f469ac2f5265",
+        "47345bc7-e481-41c5-a692-68f0de5365e0",
+        "ac5c0576-6e21-49fe-8ad8-9df2f36c569b",
+        "d1d8197b-f75c-4b25-be65-2428b5ffed4e"
       ],
       "created_at": "2025-10-09T15:35:12.457424"
     },
