@@ -3047,16 +3047,16 @@ async def list_periodos(
                 estado_calculado = "vacio"
             elif periodo_id in periodos_con_jobs_activos:
                 # Hay jobs activos (queued/processing)
-                estado_calculado = "Procesando"
+                estado_calculado = "procesando"
             elif archivos_procesados == total_archivos and archivos_procesados > 0:
                 # Todos los archivos están procesados
-                estado_calculado = "Procesado"
+                estado_calculado = "procesado"
             elif archivos_pendientes > 0:
                 # Hay archivos subidos pero no procesados
-                estado_calculado = "Pendiente"
+                estado_calculado = "pendiente"
             else:
                 # Fallback
-                estado_calculado = "Pendiente"
+                estado_calculado = "pendiente"
             
             periodos.append(
                 PeriodoInfo(
@@ -3290,19 +3290,19 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             estado_calculado = "vacio"
         elif archivos_subiendo > 0:
             # Hay archivos recién subidos (estado "Subiendo")
-            estado_calculado = "Subiendo"
+            estado_calculado = "subiendo"
         elif tiene_jobs_activos:
             # Hay jobs en cola o procesando
-            estado_calculado = "Procesando"
+            estado_calculado = "procesando"
         elif archivos_procesados == total_archivos and archivos_procesados > 0:
             # Todos los archivos están procesados
-            estado_calculado = "Procesado"
+            estado_calculado = "procesado"
         elif archivos_pendientes > 0:
             # Hay archivos subidos pero no procesados
-            estado_calculado = "Pendiente"
+            estado_calculado = "pendiente"
         else:
             # Fallback
-            estado_calculado = "Pendiente"
+            estado_calculado = "pendiente"
         
         # Función helper para formatear fechas
         def format_date(date_str: Optional[str]) -> Optional[str]:
