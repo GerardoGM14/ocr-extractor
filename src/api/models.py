@@ -283,7 +283,7 @@ class PeriodoInfo(BaseModel):
     periodo_id: str
     periodo: str  # "10/2025"
     tipo: str  # "onshore" | "offshore"
-    estado: str  # "vacio" | "Pendiente" | "Procesando" | "Procesado" | "Subiendo" | "cerrado"
+    estado: str  # "vacio" | "pendiente" | "procesando" | "procesado" | "subiendo" | "cerrado"
     registros: int
     ultimo_procesamiento: Optional[str] = None
     created_at: str

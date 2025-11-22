@@ -3024,7 +3024,7 @@ async def list_periodos(
             if file_periodo_id:
                 periodo_pendientes[file_periodo_id] = periodo_pendientes.get(file_periodo_id, 0) + 1
         
-        # Obtener jobs activos por periodo para determinar estado "Procesando"
+        # Obtener jobs activos por periodo para determinar estado "procesando"
         worker_manager = get_worker_manager()
         periodos_con_jobs_activos = set()
         for periodo_id_temp in [p["periodo_id"] for p in periodos_data]:
@@ -3248,10 +3248,10 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                     request_ids_incluidos.add(file_id)
         
         # Calcular estado del periodo basado en los 4 estados posibles
-        # 1. "Procesando" - si hay jobs activos (queued/processing)
-        # 2. "Procesado" - si todos los archivos están completados
-        # 3. "Pendiente" - si hay archivos subidos pero no procesados
-        # 4. "Subiendo" - si hay archivos recién subidos (menos de 5 segundos desde upload)
+        # 1. "procesando" - si hay jobs activos (queued/processing)
+        # 2. "procesado" - si todos los archivos están completados
+        # 3. "pendiente" - si hay archivos subidos pero no procesados
+        # 4. "subiendo" - si hay archivos recién subidos (menos de 5 segundos desde upload)
         
         worker_manager = get_worker_manager()
         jobs_activos = worker_manager.get_jobs_by_periodo_id(periodo_id)
@@ -3261,8 +3261,8 @@ async def get_periodo_detail(request: Request, periodo_id: str):
         archivos_pendientes = sum(1 for a in archivos if a.estado == "pendiente")
         total_archivos = len(archivos)
         
-        # Verificar si hay archivos "Subiendo" (subidos pero sin job creado aún)
-        # Un archivo está "Subiendo" si:
+        # Verificar si hay archivos "subiendo" (subidos pero sin job creado aún)
+        # Un archivo está "subiendo" si:
         # - Está subido (en uploaded_files)
         # - No tiene job activo asociado
         # - No está procesado
@@ -3272,7 +3272,7 @@ async def get_periodo_detail(request: Request, periodo_id: str):
         file_ids_con_job = {job.file_id for job in jobs_activos}
         
         for file_id in file_ids_subidos:
-            # Si el archivo está subido pero no tiene job, está "Subiendo"
+            # Si el archivo está subido pero no tiene job, está "subiendo"
             if file_id not in file_ids_con_job:
                 metadata_file = upload_manager.get_uploaded_metadata(file_id)
                 if metadata_file and not metadata_file.get("processed", False):
@@ -3289,7 +3289,7 @@ async def get_periodo_detail(request: Request, periodo_id: str):
         if total_archivos == 0:
             estado_calculado = "vacio"
         elif archivos_subiendo > 0:
-            # Hay archivos recién subidos (estado "Subiendo")
+            # Hay archivos recién subidos (estado "subiendo")
             estado_calculado = "subiendo"
         elif tiene_jobs_activos:
             # Hay jobs en cola o procesando
