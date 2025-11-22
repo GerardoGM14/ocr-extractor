@@ -116,6 +116,7 @@ class LoginResponse(BaseModel):
     success: bool
     token: Optional[str] = None
     email: str
+    nombre: str  # Nombre formateado extraído del email (ej: "victor.cabeza@newmont.com" -> "Victor Cabeza")
     message: str
     expires_at: Optional[str] = None  # ISO format datetime
 

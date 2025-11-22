@@ -152,6 +152,31 @@ def generate_auth_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def format_name_from_email(email: str) -> str:
+    """
+    Extrae y formatea el nombre desde un email.
+    
+    Ejemplo:
+        "victor.cabeza@newmont.com" -> "Victor Cabeza"
+        "mariadelosangeles.abanto@newmont.com" -> "Mariadelosangeles Abanto"
+    
+    Args:
+        email: Email del usuario
+        
+    Returns:
+        Nombre formateado con primera letra en mayúscula
+    """
+    # Extraer la parte antes del @
+    email_part = email.split('@')[0] if '@' in email else email
+    
+    # Dividir por punto y capitalizar cada palabra
+    name_parts = email_part.split('.')
+    formatted_parts = [part.capitalize() for part in name_parts if part]
+    
+    # Unir con espacio
+    return ' '.join(formatted_parts)
+
+
 def create_auth_token(email: str) -> str:
     """
     Crea un token de autenticación para un email.
@@ -389,10 +414,14 @@ async def login(request: LoginRequest):
     token = create_auth_token(email)
     token_data = _active_tokens.get(token)
     
+    # Extraer y formatear nombre del email
+    nombre = format_name_from_email(email)
+    
     return LoginResponse(
         success=True,
         token=token,
         email=email,
+        nombre=nombre,
         message="Login exitoso. Usa este token en el header 'Authorization: Bearer <token>' para autenticarte.",
         expires_at=token_data["expires_at"] if token_data else None
     )
