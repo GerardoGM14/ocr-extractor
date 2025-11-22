@@ -146,6 +146,11 @@ class UploadedFileInfo(BaseModel):
     excel_download_url: Optional[str] = None  # URL para descargar el Excel consolidado
 
 
+class BulkExportRequest(BaseModel):
+    """Request para exportar múltiples archivos por request_id."""
+    request_ids: List[str] = Field(..., description="Array de request_ids a exportar", min_items=1)
+
+
 class UploadedFilesResponse(BaseModel):
     """Respuesta con lista de archivos subidos."""
     success: bool

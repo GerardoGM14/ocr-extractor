@@ -69,7 +69,9 @@ from .models import (
     LoginRequest,
     LoginResponse,
     LogoutRequest,
-    LogoutResponse
+    LogoutResponse,
+    # Export Models
+    BulkExportRequest
 )
 from .dependencies import (
     get_ocr_extractor,
@@ -2376,6 +2378,149 @@ async def export_zip(request_id: str):
     return RedirectResponse(url=f"/public/{zip_filename}", status_code=302)
 
 
+@app.post("/api/v1/export-bulk", tags=["Export"])
+async def export_bulk_files(request: BulkExportRequest):
+    """
+    Exporta múltiples archivos seleccionados mediante checkbox.
+    
+    Recibe un array de request_ids y genera un ZIP maestro que contiene:
+    - Todos los ZIPs individuales de cada request_id seleccionado
+    - Todos los Excels individuales de cada request_id seleccionado (si existen)
+    
+    Args:
+        request: BulkExportRequest con array de request_ids
+        
+    Returns:
+        Redirección a /public/{timestamp}_bulk_export.zip
+    """
+    from fastapi.responses import RedirectResponse
+    import zipfile
+    
+    upload_manager = get_upload_manager()
+    processed_tracker = get_processed_tracker()
+    archive_manager = get_archive_manager()
+    
+    request_ids = request.request_ids
+    
+    if not request_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El array de request_ids no puede estar vacío"
+        )
+    
+    # Buscar zip_filename y excel_filename para cada request_id
+    archivos_para_exportar = []
+    
+    # Buscar en archivos procesados desde upload-pdf
+    uploaded_files = upload_manager.list_uploaded_files(processed=True)
+    for f in uploaded_files:
+        request_id = f.get("request_id")
+        if request_id and request_id in request_ids:
+            zip_filename = f.get("zip_filename")
+            excel_filename = f.get("excel_filename")
+            filename = f.get("filename", "unknown")
+            
+            if zip_filename or excel_filename:
+                archivos_para_exportar.append({
+                    "request_id": request_id,
+                    "filename": filename,
+                    "zip_filename": zip_filename,
+                    "excel_filename": excel_filename
+                })
+    
+    # Buscar también en archivos procesados directamente (por si acaso)
+    direct_files = processed_tracker.get_processed_files()
+    for f in direct_files:
+        request_id = f.get("request_id")
+        if request_id and request_id in request_ids:
+            # Verificar que no esté ya en la lista
+            if not any(a["request_id"] == request_id for a in archivos_para_exportar):
+                zip_filename = f.get("zip_filename")
+                excel_filename = f.get("excel_filename")
+                filename = f.get("filename", "unknown")
+                
+                if zip_filename or excel_filename:
+                    archivos_para_exportar.append({
+                        "request_id": request_id,
+                        "filename": filename,
+                        "zip_filename": zip_filename,
+                        "excel_filename": excel_filename
+                    })
+    
+    if not archivos_para_exportar:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontraron archivos ZIP/Excel para los request_ids proporcionados"
+        )
+    
+    # Crear ZIP maestro con todos los archivos
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_maestro_filename = f"{timestamp}_bulk_export.zip"
+    zip_maestro_path = archive_manager.public_folder / zip_maestro_filename
+    
+    archivos_agregados = 0
+    archivos_no_encontrados = []
+    
+    try:
+        with zipfile.ZipFile(zip_maestro_path, 'w', zipfile.ZIP_DEFLATED) as zip_maestro:
+            for archivo_info in archivos_para_exportar:
+                # Agregar ZIP si existe
+                if archivo_info.get("zip_filename"):
+                    zip_filename = archivo_info["zip_filename"]
+                    zip_path = archive_manager.public_folder / zip_filename
+                    
+                    if zip_path.exists():
+                        # Agregar al ZIP maestro (en la raíz, sin subcarpetas)
+                        zip_maestro.write(zip_path, zip_filename)
+                        archivos_agregados += 1
+                        logger.info(f"[Bulk Export] Agregado ZIP: {zip_filename}")
+                    else:
+                        archivos_no_encontrados.append(f"ZIP: {zip_filename}")
+                
+                # Agregar Excel si existe
+                if archivo_info.get("excel_filename"):
+                    excel_filename = archivo_info["excel_filename"]
+                    excel_path = archive_manager.public_folder / excel_filename
+                    
+                    if excel_path.exists():
+                        # Agregar al ZIP maestro (en la raíz, sin subcarpetas)
+                        zip_maestro.write(excel_path, excel_filename)
+                        archivos_agregados += 1
+                        logger.info(f"[Bulk Export] Agregado Excel: {excel_filename}")
+                    else:
+                        archivos_no_encontrados.append(f"Excel: {excel_filename}")
+        
+        if archivos_agregados == 0:
+            # Si no se agregó ningún archivo, eliminar el ZIP vacío
+            zip_maestro_path.unlink()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontraron archivos físicos para exportar. Archivos no encontrados: {', '.join(archivos_no_encontrados)}"
+            )
+        
+        logger.info(f"[Bulk Export] ZIP maestro creado: {zip_maestro_filename} ({archivos_agregados} archivos)")
+        
+        if archivos_no_encontrados:
+            logger.warning(f"[Bulk Export] Algunos archivos no se encontraron: {', '.join(archivos_no_encontrados)}")
+        
+        # Redirigir a la descarga del ZIP maestro
+        return RedirectResponse(url=f"/public/{zip_maestro_filename}", status_code=302)
+    
+    except Exception as e:
+        logger.exception(f"Error en bulk export: {e}")
+        # Limpiar ZIP maestro si se creó parcialmente
+        if zip_maestro_path.exists():
+            try:
+                zip_maestro_path.unlink()
+            except Exception:
+                pass
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creando exportación bulk: {str(e)}"
+        )
+
+
 @app.get("/api/v1/export-excel/{request_id}", tags=["Export"])
 async def export_structured_to_excel(request_id: str):
     """
@@ -2553,12 +2698,18 @@ async def serve_public_file(filename: str):
                 email_found = f.get("metadata", {}).get("email", "")
                 break
     
-    # Validar correo autorizado
-    if not email_found or not is_email_allowed(email_found):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": f"Acceso denegado. Este archivo no pertenece a un correo autorizado."}
-        )
+    # Verificar si es un ZIP maestro de exportación (periodo o bulk)
+    # Estos archivos no tienen email asociado porque son consolidados de múltiples archivos
+    is_periodo_export = "_export_" in filename and filename.endswith('.zip')
+    is_bulk_export = "_bulk_export.zip" in filename
+    
+    # Validar correo autorizado (excepto para ZIPs de exportación)
+    if not is_periodo_export and not is_bulk_export:
+        if not email_found or not is_email_allowed(email_found):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": f"Acceso denegado. Este archivo no pertenece a un correo autorizado."}
+            )
     
     # Determinar media type según extensión
     if filename.lower().endswith('.xlsx'):
@@ -3475,19 +3626,156 @@ async def get_periodo_resumen_ps(periodo_id: str):
 @app.post("/api/v1/periodos/{periodo_id}/exportar", tags=["Periodos"])
 async def exportar_periodo(periodo_id: str):
     """
-    Exporta un periodo (genera Excel/ZIP consolidado).
+    Exporta un periodo (genera ZIP consolidado con todos los ZIPs y Excels de los archivos procesados).
+    
+    Este endpoint crea un ZIP maestro que contiene:
+    - Todos los ZIPs individuales de cada archivo procesado del periodo
+    - Todos los Excels individuales de cada archivo procesado del periodo (si existen)
+    
+    Solo incluye archivos que ya han sido procesados (no incluye pendientes).
     
     Args:
-        periodo_id: ID del periodo
+        periodo_id: ID del periodo (ej: "2025-11-onshore")
         
     Returns:
-        URL de descarga del archivo exportado
+        Redirección a /public/{periodo_id}_export_{timestamp}.zip
     """
-    # TODO: Implementar exportación del periodo
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Exportación de periodo aún no implementada"
-    )
+    from fastapi.responses import RedirectResponse
+    import zipfile
+    
+    periodo_manager = get_periodo_manager()
+    upload_manager = get_upload_manager()
+    processed_tracker = get_processed_tracker()
+    archive_manager = get_archive_manager()
+    
+    # 1. Verificar que el periodo existe
+    periodo_data = periodo_manager.get_periodo(periodo_id)
+    if not periodo_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Periodo '{periodo_id}' no encontrado"
+        )
+    
+    # 2. Obtener todos los request_ids de archivos procesados del periodo
+    request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+    
+    if not request_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No hay archivos procesados en el periodo '{periodo_id}' para exportar"
+        )
+    
+    # 3. Buscar zip_filename y excel_filename para cada request_id
+    archivos_para_exportar = []
+    
+    # Buscar en archivos procesados desde upload-pdf
+    uploaded_files = upload_manager.list_uploaded_files(processed=True)
+    for f in uploaded_files:
+        request_id = f.get("request_id")
+        if request_id and request_id in request_ids:
+            zip_filename = f.get("zip_filename")
+            excel_filename = f.get("excel_filename")
+            filename = f.get("filename", "unknown")
+            
+            if zip_filename or excel_filename:
+                archivos_para_exportar.append({
+                    "request_id": request_id,
+                    "filename": filename,
+                    "zip_filename": zip_filename,
+                    "excel_filename": excel_filename
+                })
+    
+    # Buscar también en archivos procesados directamente (por si acaso)
+    direct_files = processed_tracker.get_processed_files()
+    for f in direct_files:
+        request_id = f.get("request_id")
+        if request_id and request_id in request_ids:
+            # Verificar que no esté ya en la lista
+            if not any(a["request_id"] == request_id for a in archivos_para_exportar):
+                zip_filename = f.get("zip_filename")
+                excel_filename = f.get("excel_filename")
+                filename = f.get("filename", "unknown")
+                
+                if zip_filename or excel_filename:
+                    archivos_para_exportar.append({
+                        "request_id": request_id,
+                        "filename": filename,
+                        "zip_filename": zip_filename,
+                        "excel_filename": excel_filename
+                    })
+    
+    if not archivos_para_exportar:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontraron archivos ZIP/Excel para exportar del periodo '{periodo_id}'"
+        )
+    
+    # 4. Crear ZIP maestro con todos los archivos
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_maestro_filename = f"{periodo_id}_export_{timestamp}.zip"
+    zip_maestro_path = archive_manager.public_folder / zip_maestro_filename
+    
+    archivos_agregados = 0
+    archivos_no_encontrados = []
+    
+    try:
+        with zipfile.ZipFile(zip_maestro_path, 'w', zipfile.ZIP_DEFLATED) as zip_maestro:
+            for archivo_info in archivos_para_exportar:
+                # Agregar ZIP si existe
+                if archivo_info.get("zip_filename"):
+                    zip_filename = archivo_info["zip_filename"]
+                    zip_path = archive_manager.public_folder / zip_filename
+                    
+                    if zip_path.exists():
+                        # Agregar al ZIP maestro (en la raíz, sin subcarpetas)
+                        zip_maestro.write(zip_path, zip_filename)
+                        archivos_agregados += 1
+                        logger.info(f"[Export {periodo_id}] Agregado ZIP: {zip_filename}")
+                    else:
+                        archivos_no_encontrados.append(f"ZIP: {zip_filename}")
+                
+                # Agregar Excel si existe
+                if archivo_info.get("excel_filename"):
+                    excel_filename = archivo_info["excel_filename"]
+                    excel_path = archive_manager.public_folder / excel_filename
+                    
+                    if excel_path.exists():
+                        # Agregar al ZIP maestro (en la raíz, sin subcarpetas)
+                        zip_maestro.write(excel_path, excel_filename)
+                        archivos_agregados += 1
+                        logger.info(f"[Export {periodo_id}] Agregado Excel: {excel_filename}")
+                    else:
+                        archivos_no_encontrados.append(f"Excel: {excel_filename}")
+        
+        if archivos_agregados == 0:
+            # Si no se agregó ningún archivo, eliminar el ZIP vacío
+            zip_maestro_path.unlink()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No se encontraron archivos físicos para exportar del periodo '{periodo_id}'. Archivos no encontrados: {', '.join(archivos_no_encontrados)}"
+            )
+        
+        logger.info(f"[Export {periodo_id}] ZIP maestro creado: {zip_maestro_filename} ({archivos_agregados} archivos)")
+        
+        if archivos_no_encontrados:
+            logger.warning(f"[Export {periodo_id}] Algunos archivos no se encontraron: {', '.join(archivos_no_encontrados)}")
+        
+        # 5. Redirigir a la descarga del ZIP maestro
+        return RedirectResponse(url=f"/public/{zip_maestro_filename}", status_code=302)
+    
+    except Exception as e:
+        logger.exception(f"Error exportando periodo {periodo_id}: {e}")
+        # Limpiar ZIP maestro si se creó parcialmente
+        if zip_maestro_path.exists():
+            try:
+                zip_maestro_path.unlink()
+            except Exception:
+                pass
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creando exportación del periodo: {str(e)}"
+        )
 
 
 @app.post("/api/v1/periodos/{periodo_id}/bloquear", tags=["Periodos"])
