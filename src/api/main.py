@@ -541,13 +541,6 @@ async def upload_pdf(
             detail=error_response.model_dump()
         )
     
-    # Validar correo autorizado
-    if not is_email_allowed(email):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": f"Correo no autorizado: {email}. Acceso denegado."}
-        )
-    
     # Normalizar mes
     normalized_month = _normalize_month(month)
     
@@ -762,13 +755,6 @@ async def process_pdf(
     year = metadata["metadata"]["year"]
     normalized_month = metadata["metadata"]["month"]
     
-    # Validar correo autorizado
-    if not is_email_allowed(email):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": f"Correo no autorizado: {email}. Acceso denegado para procesar este archivo."}
-        )
-    
     # Obtener periodo_id de metadata si no se proporcionó explícitamente
     # (puede haber sido especificado en upload-pdf)
     periodo_id_to_use = periodo_id
@@ -873,14 +859,6 @@ async def process_batch(request: BatchProcessRequest):
             email = metadata["metadata"]["email"]
             year = metadata["metadata"]["year"]
             normalized_month = metadata["metadata"]["month"]
-            
-            # Validar correo autorizado
-            if not is_email_allowed(email):
-                errores.append({
-                    "file_id": file_id,
-                    "error": f"Correo no autorizado: {email}. Acceso denegado para procesar este archivo."
-                })
-                continue
             
             # Crear request_id único para este job
             request_id = str(uuid.uuid4())
@@ -1578,14 +1556,6 @@ async def process_all_periodo_files(periodo_id: str):
             if file_month_normalized != periodo_month_normalized:
                 continue
             
-            # Verificar email autorizado
-            if not file_email or not is_email_allowed(file_email):
-                errores_validacion.append({
-                    "file_id": file_id,
-                    "error": f"Correo no autorizado: {file_email}"
-                })
-                continue
-            
             # Verificar que no esté procesado
             if file_data.get("processed", False):
                 continue
@@ -1772,7 +1742,6 @@ async def get_uploaded_files():
             processed=f.get("processed", False)
         )
         for f in files
-        if is_email_allowed(f.get("metadata", {}).get("email", ""))
     ]
     
     return UploadedFilesResponse(
@@ -1839,7 +1808,6 @@ async def get_uploaded_files():
             processed=f.get("processed", False)
         )
         for f in files
-        if is_email_allowed(f.get("metadata", {}).get("email", ""))
     ]
     
     return UploadedFilesResponse(
@@ -1916,61 +1884,57 @@ async def get_processed_files(limit: int = 10):
     
     file_info_list = []
     
-    # Agregar archivos de upload-pdf (solo correos autorizados)
+    # Agregar archivos de upload-pdf
     for f in uploaded_files:
-        email = f.get("metadata", {}).get("email", "")
-        if is_email_allowed(email):
-            request_id = f.get("request_id")
-            excel_url = None
-            # Buscar Excel por request_id en el mapa
-            if request_id and request_id in excel_files:
-                excel_url = f"/public/{excel_files[request_id]}"
-            # Si no se encontró en el mapa, intentar leer de la metadata
-            elif not excel_url:
-                excel_url = f.get("excel_download_url")
-            
-            file_info_list.append(
-                UploadedFileInfo(
-                    file_id=f["file_id"],
-                    filename=f["filename"],
-                    uploaded_at=f["uploaded_at"],
-                    file_size_bytes=f["file_size_bytes"],
-                    metadata=f["metadata"],
-                    processed=True,
-                    processed_at=f.get("processed_at"),
-                    download_url=f.get("download_url"),
-                    request_id=request_id,
-                    excel_download_url=excel_url
-                )
+        request_id = f.get("request_id")
+        excel_url = None
+        # Buscar Excel por request_id en el mapa
+        if request_id and request_id in excel_files:
+            excel_url = f"/public/{excel_files[request_id]}"
+        # Si no se encontró en el mapa, intentar leer de la metadata
+        elif not excel_url:
+            excel_url = f.get("excel_download_url")
+        
+        file_info_list.append(
+            UploadedFileInfo(
+                file_id=f["file_id"],
+                filename=f["filename"],
+                uploaded_at=f["uploaded_at"],
+                file_size_bytes=f["file_size_bytes"],
+                metadata=f["metadata"],
+                processed=True,
+                processed_at=f.get("processed_at"),
+                download_url=f.get("download_url"),
+                request_id=request_id,
+                excel_download_url=excel_url
             )
+        )
     
-    # Agregar archivos procesados directamente (solo correos autorizados)
+    # Agregar archivos procesados directamente
     for f in direct_files:
-        email = f.get("metadata", {}).get("email", "")
-        if is_email_allowed(email):
-            request_id = f.get("request_id")
-            excel_url = None
-            # Buscar Excel por request_id en el mapa
-            if request_id and request_id in excel_files:
-                excel_url = f"/public/{excel_files[request_id]}"
-            # Si no se encontró en el mapa, intentar leer de la metadata
-            elif not excel_url:
-                excel_url = f.get("excel_download_url")
-            
-            file_info_list.append(
-                UploadedFileInfo(
-                    file_id=f.get("request_id", "unknown"),  # Usar request_id como file_id
-                    filename=f["filename"],
-                    uploaded_at=f.get("processed_at", ""),  # Usar processed_at como uploaded_at
-                    file_size_bytes=0,  # No tenemos info de tamaño
-                    metadata=f["metadata"],
-                    processed=True,
-                    processed_at=f.get("processed_at"),
-                    download_url=f.get("download_url"),
-                    request_id=request_id,
-                    excel_download_url=excel_url
-                )
+        request_id = f.get("request_id")
+        excel_url = None
+        # Buscar Excel por request_id en el mapa
+        if request_id and request_id in excel_files:
+            excel_url = f"/public/{excel_files[request_id]}"
+        # Si no se encontró en el mapa, intentar leer de la metadata
+        elif not excel_url:
+            excel_url = f.get("excel_download_url")
+        
+        file_info_list.append(
+            UploadedFileInfo(
+                file_id=f.get("request_id", "unknown"),  # Usar request_id como file_id
+                filename=f["filename"],
+                uploaded_at=f.get("processed_at", ""),  # Usar processed_at como uploaded_at
+                file_size_bytes=0,  # No tenemos info de tamaño
+                metadata=f["metadata"],
+                processed=True,
+                processed_at=f.get("processed_at"),
+                download_url=f.get("download_url"),
+                request_id=request_id,
+                excel_download_url=excel_url
             )
+        )
     
     # Ordenar por fecha de procesamiento (más reciente primero)
     file_info_list.sort(key=lambda x: x.processed_at or "", reverse=True)
@@ -2352,13 +2316,6 @@ async def export_zip(request_id: str):
                 email_found = f.get("metadata", {}).get("email", "")
                 break
     
-    # Validar correo autorizado
-    if email_found and not is_email_allowed(email_found):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": f"Correo no autorizado para request_id '{request_id}'"}
-        )
-    
     # Si no se encontró el zip_filename
     if not zip_filename:
         raise HTTPException(
@@ -2569,13 +2526,6 @@ async def export_structured_to_excel(request_id: str):
                     pdf_name = Path(filename).stem
                 break
     
-    # Validar correo autorizado
-    if email_found and not is_email_allowed(email_found):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": f"Correo no autorizado para request_id '{request_id}'"}
-        )
-    
     # Si se encontró el excel_filename, redirigir a /public/{excel_filename}
     if excel_filename:
         excel_path = archive_manager.public_folder / excel_filename
@@ -2614,8 +2564,7 @@ async def export_structured_to_excel(request_id: str):
 @app.get("/public/{filename}", tags=["Public"])
 async def serve_public_file(filename: str):
     """
-    Endpoint para servir archivos públicos (zips) para descarga.
-    Solo permite descargar archivos de correos autorizados.
+    Endpoint para servir archivos públicos (zips y excels) para descarga.
     
     Args:
         filename: Nombre del archivo a descargar
@@ -2697,19 +2646,6 @@ async def serve_public_file(filename: str):
                 f.get("excel_download_url", "").endswith(filename)):
                 email_found = f.get("metadata", {}).get("email", "")
                 break
-    
-    # Verificar si es un ZIP maestro de exportación (periodo o bulk)
-    # Estos archivos no tienen email asociado porque son consolidados de múltiples archivos
-    is_periodo_export = "_export_" in filename and filename.endswith('.zip')
-    is_bulk_export = "_bulk_export.zip" in filename
-    
-    # Validar correo autorizado (excepto para ZIPs de exportación)
-    if not is_periodo_export and not is_bulk_export:
-        if not email_found or not is_email_allowed(email_found):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"error": f"Acceso denegado. Este archivo no pertenece a un correo autorizado."}
-            )
     
     # Determinar media type según extensión
     if filename.lower().endswith('.xlsx'):

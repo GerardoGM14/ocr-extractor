@@ -6,6 +6,7 @@ build/ExtractorOCR_Batch/
 dist/
 # config/gemini_config.json
 public/
+config/gemini_config.json
 
 # Carpetas con .gitkeep
 learning/knowledge/
