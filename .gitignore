@@ -4,10 +4,13 @@ venv/
 # Carpeta de build
 build/ExtractorOCR_Batch/
 dist/
-# config/gemini_config.json
 public/
+
+# Archivos de configuración con API keys (NUNCA subir al repositorio)
 config/gemini_config.json
-config/
+dist/config/gemini_config.json
+**/gemini_config.json
+*.gemini_config.json
 
 # Carpetas con .gitkeep
 learning/knowledge/
