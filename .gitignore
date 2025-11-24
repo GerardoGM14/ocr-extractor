@@ -11,6 +11,8 @@ config/gemini_config.json
 dist/config/gemini_config.json
 **/gemini_config.json
 *.gemini_config.json
+config/config.json
+dist/config/config.json
 *.config.json
 
 # Carpetas con .gitkeep
