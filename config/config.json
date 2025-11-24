@@ -1,0 +1,36 @@
+{
+  "folders": {
+    "input_pdf": "onedrive",
+    "processing_results": "processed",
+    "output_json": "output"
+  },
+  "api": {
+    "uploads_folder": "uploads",
+    "public_folder": "public",
+    "base_url": "http://192.168.0.63:8000",
+    "ssl": {
+      "enabled": false,
+      "cert_file": "ssl_certs/cert.pem",
+      "key_file": "ssl_certs/key.pem"
+    }
+  },
+  "learning": {
+    "enabled": true,
+    "folder": "learning",
+    "auto_analyze": true
+  },
+  "gemini": {
+    "use_structured_extraction": true,
+    "fallback_to_traditional": true
+  },
+  "database": {
+    "enabled": false,
+    "driver": "ODBC Driver 17 for SQL Server",
+    "server": "138.128.247.60",
+    "database": "BD_NEWMONT_OCR_PDF",
+    "username": "usr_rpa_gerardog",
+    "password": "123",
+    "trusted_connection": false,
+    "encrypt": true
+  }
+}
