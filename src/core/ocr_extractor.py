@@ -43,7 +43,8 @@ class OCRExtractor:
         self._progress_lock = threading.Lock()
         self._completed_pages = 0
     
-    def process_pdf(self, pdf_path: str, progress_callback=None, max_pages: int = None) -> List[Dict[str, Any]]:
+    def process_pdf(self, pdf_path: str, progress_callback=None, max_pages: int = None, 
+                   start_page: int = None, end_page: int = None) -> List[Dict[str, Any]]:
         """
         Procesa un PDF completo generando JSON por página.
         
@@ -51,17 +52,25 @@ class OCRExtractor:
             pdf_path: Ruta al PDF
             progress_callback: Función para actualizar progreso (message, percentage)
             max_pages: Número máximo de páginas a procesar (None = todas)
+            start_page: Página inicial (1-indexed, None = desde el inicio)
+            end_page: Página final (1-indexed, None = hasta el final)
             
         Returns:
             Lista de JSON por página
         """
         # 1. Dividir PDF en imágenes
         if progress_callback:
-            msg = f"Dividiendo PDF en páginas..." + (f" (max: {max_pages})" if max_pages else "")
+            if start_page is not None and end_page is not None:
+                msg = f"Dividiendo PDF en páginas {start_page}-{end_page}..."
+            else:
+                msg = f"Dividiendo PDF en páginas..." + (f" (max: {max_pages})" if max_pages else "")
             progress_callback(msg, 0)
         
         temp_folder = self.file_manager.get_temp_folder()
-        pages = self.pdf_processor.process_pdf_to_images(pdf_path, temp_folder, max_pages)
+        pages = self.pdf_processor.process_pdf_to_images(
+            pdf_path, temp_folder, max_pages=max_pages, 
+            start_page=start_page, end_page=end_page
+        )
         
         total_pages = len(pages)
         pdf_name = Path(pdf_path).stem

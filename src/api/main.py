@@ -118,23 +118,14 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS middleware
+# CORS middleware - Permitir todos los orígenes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://newmont-pdf.netlify.app",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:8080",
-        "https://localhost:8000",
-        "http://localhost:8000",
-        "https://newmont-pdf.netlify.app",
-        "http://192.168.0.55:5173/",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_origins=["*"],  # Permitir todos los orígenes
+    allow_credentials=True,  # Permitir credenciales para todos los orígenes
+    allow_methods=["*"],  # Permitir todos los métodos HTTP
+    allow_headers=["*"],  # Permitir todos los headers
+    expose_headers=["*"],  # Exponer todos los headers
 )
 
 
@@ -599,26 +590,77 @@ async def upload_pdf(
         metadata["periodo_id"] = periodo_id
     
     try:
+        # Guardar PDF y metadata (operación síncrona que completa antes de continuar)
         file_id = upload_manager.save_uploaded_pdf(
             pdf_content,
             pdf_file.filename,
             metadata
         )
+        
+        # Verificar que el archivo se guardó correctamente antes de responder
+        # Esto asegura que la respuesta solo se devuelve cuando el archivo está completamente guardado
+        pdf_path = upload_manager.get_uploaded_pdf_path(file_id)
+        saved_metadata = upload_manager.get_uploaded_metadata(file_id)
+        
+        if not pdf_path or not pdf_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"error": "Error: El archivo no se guardó correctamente en el servidor"}
+            )
+        
+        if not saved_metadata:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"error": "Error: La metadata no se guardó correctamente"}
+            )
+        
+        # Verificar que el tamaño del archivo guardado coincide
+        actual_file_size = pdf_path.stat().st_size
+        if actual_file_size != len(pdf_content):
+            logger.warning(f"Tamaño del archivo guardado ({actual_file_size}) no coincide con el esperado ({len(pdf_content)})")
+        
+        # Obtener timestamp de cuando se guardó realmente
+        uploaded_at = datetime.now()
+        if saved_metadata.get("uploaded_at"):
+            try:
+                uploaded_at = datetime.fromisoformat(saved_metadata["uploaded_at"])
+            except Exception:
+                pass
+        
+        logger.info(f"Archivo {file_id} ({pdf_file.filename}) guardado correctamente. Tamaño: {actual_file_size} bytes")
+        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error guardando PDF: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "Error guardando archivo en servidor"}
+            detail={"error": f"Error guardando archivo en servidor: {str(e)}"}
         )
     
-    return UploadPDFResponse(
+    # Respuesta solo se devuelve después de confirmar que el archivo está completamente guardado
+    # Incluir información adicional para que el frontend pueda actualizar la UI inmediatamente
+    # sin necesidad de recargar la página o hacer otra consulta
+    response = UploadPDFResponse(
         success=True,
         file_id=file_id,
         filename=pdf_file.filename,
-        uploaded_at=datetime.now(),
+        uploaded_at=uploaded_at,
         metadata=metadata,
         file_size_bytes=len(pdf_content)
     )
+    
+    # Convertir a dict y agregar campos adicionales que el frontend necesita
+    # para actualizar la tabla sin recargar
+    response_dict = response.model_dump()
+    
+    # Agregar información adicional en formato compatible con PeriodoArchivoInfo
+    # Esto permite que el frontend agregue el archivo directamente a la tabla
+    response_dict["archivo_id"] = file_id[:8] if len(file_id) >= 8 else file_id  # Primeros 8 caracteres para mostrar
+    response_dict["request_id"] = file_id  # request_id = file_id (para compatibilidad)
+    response_dict["estado"] = "pendiente"  # Estado inicial después de subir
+    
+    return response_dict
 
 
 @app.delete("/api/v1/upload-pdf/{file_id}", response_model=DeleteUploadResponse, tags=["Upload"])
@@ -728,7 +770,8 @@ async def process_pdf(
     Returns:
         ProcessPDFResponse con request_id y status inicial (queued/processing)
     """
-    request_id = str(uuid.uuid4())
+    # Usar file_id como request_id
+    request_id = file_id
     
     upload_manager = get_upload_manager()
     
@@ -761,38 +804,125 @@ async def process_pdf(
     if not periodo_id_to_use:
         periodo_id_to_use = metadata.get("metadata", {}).get("periodo_id")
     
+    # Variable para usar en el scope de los lotes
+    periodo_id_for_batches = periodo_id_to_use
+    
     logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento - file_id: {file_id}")
     logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
     if periodo_id_to_use:
         logger.info(f"[{request_id}] Periodo asociado: {periodo_id_to_use}")
     
-    # Crear job y agregarlo a la cola
+    # Contar páginas del PDF para determinar si necesita procesamiento por lotes
+    from .dependencies import get_file_manager
+    file_manager = get_file_manager()
+    from src.core.pdf_processor import PDFProcessor
+    pdf_processor = PDFProcessor()
+    
+    total_pages = 0
+    if pdf_processor.open_pdf(str(pdf_path)):
+        total_pages = pdf_processor.get_page_count()
+        pdf_processor.close()
+    
+    logger.info(f"[{request_id}] PDF tiene {total_pages} páginas")
+    
+    # Crear job(s) y agregarlo(s) a la cola
     worker_manager = get_worker_manager()
+    BATCH_THRESHOLD = 200  # Umbral de páginas para procesamiento por lotes
+    max_workers = worker_manager.max_workers
     
-    job = ProcessingJob(
-        request_id=request_id,
-        file_id=file_id,
-        pdf_path=Path(pdf_path),
-        metadata={
-            "filename": pdf_filename,
-            "email": email,
-            "year": year,
-            "month": normalized_month
-        },
-        save_files=save_files,
-        output_folder=output_folder,
-        periodo_id=periodo_id_to_use
-    )
-    
-    # Agregar job a la cola
-    worker_manager.add_job(job)
-    
-    # Determinar estado inicial (puede ser "queued" o "processing" si hay workers disponibles)
-    initial_status = "queued"
-    if worker_manager.get_active_jobs_count() < worker_manager.max_workers:
-        initial_status = "processing"
-        job.status = "processing"
-        job.message = "Iniciando procesamiento..."
+    if total_pages > BATCH_THRESHOLD:
+        # Dividir en lotes
+        logger.info(f"[{request_id}] PDF grande detectado ({total_pages} páginas). Dividiendo en lotes...")
+        
+        # Calcular tamaño de lote (dividir entre workers disponibles)
+        pages_per_batch = (total_pages + max_workers - 1) // max_workers  # Redondeo hacia arriba
+        
+        batch_jobs = []
+        for batch_num in range(max_workers):
+            start_page = batch_num * pages_per_batch + 1  # 1-indexed
+            end_page = min((batch_num + 1) * pages_per_batch, total_pages)  # 1-indexed
+            
+            if start_page > total_pages:
+                break  # No más lotes necesarios
+            
+            # Crear request_id único para cada lote
+            batch_request_id = f"{request_id}_batch_{batch_num + 1}"
+            
+            batch_job = ProcessingJob(
+                request_id=batch_request_id,
+                file_id=file_id,
+                pdf_path=Path(pdf_path),
+                metadata={
+                    "filename": pdf_filename,
+                    "email": email,
+                    "year": year,
+                    "month": normalized_month
+                },
+                save_files=save_files,
+                output_folder=output_folder,
+                periodo_id=periodo_id_to_use,
+                start_page=start_page,
+                end_page=end_page,
+                batch_id=request_id,  # Mismo batch_id para todos los lotes
+                is_batch_job=True
+            )
+            
+            batch_jobs.append(batch_job)
+            worker_manager.add_job(batch_job)
+            logger.info(f"[{request_id}] Lote {batch_num + 1} creado: páginas {start_page}-{end_page}")
+        
+        # Crear job maestro que coordinará la consolidación
+        master_job = ProcessingJob(
+            request_id=request_id,
+            file_id=file_id,
+            pdf_path=Path(pdf_path),
+            metadata={
+                "filename": pdf_filename,
+                "email": email,
+                "year": year,
+                "month": normalized_month
+            },
+            save_files=save_files,
+            output_folder=output_folder,
+            periodo_id=periodo_id_to_use,
+            batch_id=request_id,
+            is_batch_job=False  # Este es el job maestro
+        )
+        
+        # Agregar job maestro (pero no a la cola, solo para tracking)
+        with worker_manager.jobs_lock:
+            worker_manager.jobs[request_id] = master_job
+            master_job.status = "queued"
+            master_job.message = f"Esperando {len(batch_jobs)} lotes..."
+        
+        job = master_job
+        initial_status = "queued"
+    else:
+        # PDF normal, procesar normalmente
+        job = ProcessingJob(
+            request_id=request_id,
+            file_id=file_id,
+            pdf_path=Path(pdf_path),
+            metadata={
+                "filename": pdf_filename,
+                "email": email,
+                "year": year,
+                "month": normalized_month
+            },
+            save_files=save_files,
+            output_folder=output_folder,
+            periodo_id=periodo_id_to_use
+        )
+        
+        # Agregar job a la cola
+        worker_manager.add_job(job)
+        
+        # Determinar estado inicial (puede ser "queued" o "processing" si hay workers disponibles)
+        initial_status = "queued"
+        if worker_manager.get_active_jobs_count() < worker_manager.max_workers:
+            initial_status = "processing"
+            job.status = "processing"
+            job.message = "Iniciando procesamiento..."
     
     # Retornar respuesta inmediata
     return ProcessPDFResponse(
@@ -860,8 +990,8 @@ async def process_batch(request: BatchProcessRequest):
             year = metadata["metadata"]["year"]
             normalized_month = metadata["metadata"]["month"]
             
-            # Crear request_id único para este job
-            request_id = str(uuid.uuid4())
+            # Usar file_id como request_id
+            request_id = file_id
             
             logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento batch - file_id: {file_id}")
             logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
@@ -1214,6 +1344,8 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
     worker_manager = get_worker_manager()
     periodo_manager = get_periodo_manager()
     last_jobs_state = {}
+    last_periodo_estado = None  # Para detectar cambios en el estado del periodo
+    last_total_archivos = 0  # Para detectar cuando se sube un archivo nuevo
     timeout_seconds = 1800  # 30 minutos máximo
     start_time = time.time()
     poll_interval = 0.5  # Polling cada 0.5 segundos para actualizaciones más rápidas
@@ -1343,6 +1475,64 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
                         "progress": 0
                     })
         
+        # Calcular estado del periodo dinámicamente (misma lógica que get_periodo_detail)
+        upload_manager = get_upload_manager()
+        uploaded_files = upload_manager.list_uploaded_files(processed=None)
+        
+        # Contar archivos del periodo
+        archivos_periodo = []
+        for uf in uploaded_files:
+            file_metadata = uf.get("metadata", {})
+            if file_metadata.get("periodo_id") == periodo_id:
+                archivos_periodo.append(uf)
+        
+        # Contar estados de archivos
+        archivos_procesados_count = sum(1 for a in archivos_periodo if a.get("processed", False))
+        archivos_pendientes_count = sum(1 for a in archivos_periodo if not a.get("processed", False))
+        total_archivos = len(archivos_periodo)
+        
+        # Verificar jobs activos
+        jobs_activos_periodo = worker_manager.get_jobs_by_periodo_id(periodo_id)
+        tiene_jobs_activos = any(job.status in ["queued", "processing"] for job in jobs_activos_periodo)
+        
+        # Verificar si hay archivos "subiendo" (subidos pero sin job creado aún)
+        # Un archivo está "subiendo" si:
+        # - Está subido (en uploaded_files)
+        # - No tiene job activo asociado
+        # - No está procesado
+        archivos_subiendo = 0
+        file_ids_subidos = {uf.get("file_id") for uf in uploaded_files 
+                           if uf.get("metadata", {}).get("periodo_id") == periodo_id}
+        file_ids_con_job = {job.file_id for job in jobs_activos_periodo}
+        
+        for file_id in file_ids_subidos:
+            # Si el archivo está subido pero no tiene job, está "subiendo"
+            if file_id not in file_ids_con_job:
+                metadata_file = upload_manager.get_uploaded_metadata(file_id)
+                if metadata_file and not metadata_file.get("processed", False):
+                    archivos_subiendo += 1
+        
+        # Verificar primero si el periodo está "cerrado" en la base de datos
+        estado_guardado = periodo_data.get("estado", "")
+        if estado_guardado == "cerrado":
+            periodo_estado = "cerrado"
+        else:
+            # Calcular estado del periodo según prioridad (misma lógica que get_periodo_detail)
+            periodo_estado = "vacio"
+            if total_archivos == 0:
+                periodo_estado = "vacio"
+            elif archivos_subiendo > 0:
+                # Hay archivos recién subidos (estado "subiendo")
+                periodo_estado = "subiendo"
+            elif tiene_jobs_activos or status_counts["processing"] > 0 or status_counts["queued"] > 0:
+                periodo_estado = "procesando"
+            elif archivos_pendientes_count > 0:
+                periodo_estado = "pendiente"
+            elif archivos_procesados_count == total_archivos and archivos_procesados_count > 0:
+                periodo_estado = "procesado"
+            else:
+                periodo_estado = "pendiente" if total_archivos > 0 else "vacio"
+        
         return {
             "periodo_id": periodo_id,
             "total_jobs": len(all_request_ids),
@@ -1350,7 +1540,11 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
             "processing": status_counts["processing"],
             "queued": status_counts["queued"],
             "failed": status_counts["failed"],
-            "jobs": jobs_info
+            "jobs": jobs_info,
+            "periodo_estado": periodo_estado,  # Estado del periodo: vacio/pendiente/procesado/procesando
+            "total_archivos": total_archivos,
+            "archivos_pendientes": archivos_pendientes_count,
+            "archivos_procesados": archivos_procesados_count
         }
     
     # Enviar estado inicial
@@ -1391,6 +1585,20 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         
         # Verificar si hay cambios (esto debe hacerse PRIMERO para enviar eventos durante procesamiento)
         has_changes = False
+        
+        # Verificar cambios en el estado del periodo (vacio -> subiendo -> pendiente -> procesando -> procesado)
+        current_periodo_estado = current_state.get("periodo_estado", "vacio")
+        if current_periodo_estado != last_periodo_estado:
+            has_changes = True
+            last_periodo_estado = current_periodo_estado
+        
+        # Verificar cambios en total de archivos (indica que se subió un archivo nuevo)
+        current_total_archivos = current_state.get("total_archivos", 0)
+        if current_total_archivos != last_total_archivos:
+            has_changes = True
+            last_total_archivos = current_total_archivos
+        
+        # Verificar cambios en jobs
         for job in current_state["jobs"]:
             req_id = job["request_id"]
             # Obtener status (puede estar en "status" o "estado")
@@ -1417,9 +1625,12 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
         if len(current_state["jobs"]) != len(last_jobs_state):
             has_changes = True
         
-        # Enviar actualización si hay cambios o cada 2 segundos (heartbeat para mantener conexión viva)
-        # IMPORTANTE: Esto envía eventos DURANTE el procesamiento, no solo al final
-        if has_changes or (time.time() - start_time) % 2 < poll_interval:
+        # Enviar actualización si hay cambios o cada 1 segundo (heartbeat más frecuente para detectar cambios rápidos)
+        # IMPORTANTE: Esto envía eventos DURANTE el procesamiento y cuando cambia el estado del periodo
+        elapsed_time = time.time() - start_time
+        heartbeat_trigger = elapsed_time % 1 < poll_interval  # Heartbeat cada 1 segundo
+        
+        if has_changes or heartbeat_trigger:
             event_data = f"data: {json.dumps(current_state)}\n\n"
             yield event_data
             # Ceder control al event loop para forzar envío inmediato (evitar buffering)
@@ -1605,8 +1816,8 @@ async def process_all_periodo_files(periodo_id: str):
                 year = metadata["metadata"]["year"]
                 normalized_month = metadata["metadata"]["month"]
                 
-                # Crear request_id único para este job
-                request_id = str(uuid.uuid4())
+                # Usar file_id como request_id
+                request_id = file_id
                 
                 logger.info(f"[{request_id}] Agregando PDF a cola de procesamiento (periodo: {periodo_id}) - file_id: {file_id}")
                 logger.info(f"[{request_id}] Email: {email}, Año: {year}, Mes: {normalized_month}")
@@ -1722,14 +1933,15 @@ async def stream_periodo_status(periodo_id: str):
 @app.get("/api/v1/uploaded-files", response_model=UploadedFilesResponse, tags=["Files"])
 async def get_uploaded_files():
     """
-    Obtiene lista de archivos subidos que NO han sido procesados.
+    Obtiene lista de archivos subidos (pendientes y procesados).
     Solo muestra archivos de correos autorizados.
     
     Returns:
-        Lista de archivos subidos sin procesar (solo correos autorizados)
+        Lista de archivos subidos (pendientes y procesados, solo correos autorizados)
     """
     upload_manager = get_upload_manager()
-    files = upload_manager.list_uploaded_files(processed=False)
+    # Mostrar tanto pendientes como procesados
+    files = upload_manager.list_uploaded_files(processed=None)
     
     # Filtrar solo archivos de correos autorizados
     file_info_list = [
@@ -1788,14 +2000,15 @@ async def get_process_status(request_id: str):
 @app.get("/api/v1/uploaded-files", response_model=UploadedFilesResponse, tags=["Files"])
 async def get_uploaded_files():
     """
-    Obtiene lista de archivos subidos que NO han sido procesados.
+    Obtiene lista de archivos subidos (pendientes y procesados).
     Solo muestra archivos de correos autorizados.
     
     Returns:
-        Lista de archivos subidos sin procesar (solo correos autorizados)
+        Lista de archivos subidos (pendientes y procesados, solo correos autorizados)
     """
     upload_manager = get_upload_manager()
-    files = upload_manager.list_uploaded_files(processed=False)
+    # Mostrar tanto pendientes como procesados
+    files = upload_manager.list_uploaded_files(processed=None)
     
     # Filtrar solo archivos de correos autorizados
     file_info_list = [
@@ -2662,6 +2875,26 @@ async def serve_public_file(filename: str):
 
 # ===== Dashboard Endpoints =====
 
+def _load_dashboard_mock_data() -> Dict[str, Any]:
+    """
+    Carga los datos mockeados del dashboard desde JSON.
+    
+    Returns:
+        Diccionario con todos los datos mockeados
+    """
+    try:
+        config_path = Path(__file__).parent.parent.parent.parent / "config" / "dashboard_mock_data.json"
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            logger.warning(f"Archivo de mock data no encontrado: {config_path}. Usando valores por defecto.")
+            return {}
+    except Exception as e:
+        logger.error(f"Error cargando dashboard mock data: {e}")
+        return {}
+
+
 @app.get("/api/v1/dashboard/stats", response_model=DashboardStatsResponse, tags=["Dashboard"])
 async def get_dashboard_stats(
     fecha_inicio: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
@@ -2761,9 +2994,10 @@ async def get_dashboard_stats(
         
         # Si no hay datos reales, usar datos mockeados para pruebas
         if not has_real_data:
-            # Datos mockeados realistas
-            monto_total = 2450000.75
-            total_horas = 1875.5
+            mock_data = _load_dashboard_mock_data()
+            stats_mock = mock_data.get("stats", {})
+            monto_total = stats_mock.get("monto_total_global", 2450000.75)
+            total_horas = stats_mock.get("total_horas_global", 1875.5)
         
         return DashboardStatsResponse(
             success=True,
@@ -2798,9 +3032,13 @@ async def get_dashboard_analytics(
         # TODO: Reemplazar con lectura real de JSONs o SQL Server
         # ============================================================
         
+        # Cargar datos mockeados desde JSON
+        mock_data = _load_dashboard_mock_data()
+        analytics_mock = mock_data.get("analytics", {})
+        
         # Datos mockeados para Offshore
-        # Valores absolutos de departamentos
-        offshore_dept_values = {
+        offshore_mock = analytics_mock.get("offshore", {})
+        offshore_dept_values = offshore_mock.get("departamentos", {
             "Engineering": 850000.00,
             "Procurement": 320000.00,
             "Construction": 180000.00,
@@ -2810,7 +3048,7 @@ async def get_dashboard_analytics(
             "Environmental": 28000.00,
             "Logistics": 22000.00,
             "Other Services": 100000.50
-        }
+        })
         
         # Calcular total de departamentos y convertir a porcentajes
         offshore_dept_total = sum(offshore_dept_values.values())
@@ -2825,13 +3063,13 @@ async def get_dashboard_analytics(
         offshore_departamentos.sort(key=lambda x: x.value, reverse=True)
         
         # Valores absolutos de disciplinas
-        offshore_disc_values = {
+        offshore_disc_values = offshore_mock.get("disciplinas", {
             "Procurement": 1800.00,
             "Engineering": 1450.00,
             "Construction": 1200.00,
             "Project Management": 950.00,
             "Quality Control": 680.00
-        }
+        })
         
         # Calcular total de disciplinas y convertir a porcentajes
         offshore_disc_total = sum(offshore_disc_values.values())
@@ -2846,16 +3084,16 @@ async def get_dashboard_analytics(
         offshore_disciplinas.sort(key=lambda x: x.value, reverse=True)
         
         offshore_item = AnalyticsItem(
-            total_gasto=1450000.50,
-            total_horas=1125.25,
-            total_disciplinas=12,
+            total_gasto=offshore_mock.get("total_gasto", 1450000.50),
+            total_horas=offshore_mock.get("total_horas", 1125.25),
+            total_disciplinas=offshore_mock.get("total_disciplinas", 12),
             distribucion_departamento=offshore_departamentos,
             top_5_disciplinas=offshore_disciplinas
         )
         
         # Datos mockeados para Onshore
-        # Valores absolutos de departamentos
-        onshore_dept_values = {
+        onshore_mock = analytics_mock.get("onshore", {})
+        onshore_dept_values = onshore_mock.get("departamentos", {
             "Engineering": 450000.00,
             "Operations": 280000.00,
             "Maintenance": 150000.00,
@@ -2865,7 +3103,7 @@ async def get_dashboard_analytics(
             "Finance": 28000.00,
             "IT Services": 22000.00,
             "Other Services": 120000.25
-        }
+        })
         
         # Calcular total de departamentos y convertir a porcentajes
         onshore_dept_total = sum(onshore_dept_values.values())
@@ -2880,13 +3118,13 @@ async def get_dashboard_analytics(
         onshore_departamentos.sort(key=lambda x: x.value, reverse=True)
         
         # Valores absolutos de disciplinas
-        onshore_disc_values = {
+        onshore_disc_values = onshore_mock.get("disciplinas", {
             "Engineering": 1250.00,
             "Operations": 980.00,
             "Maintenance": 720.00,
             "Safety": 550.00,
             "Environmental": 420.00
-        }
+        })
         
         # Calcular total de disciplinas y convertir a porcentajes
         onshore_disc_total = sum(onshore_disc_values.values())
@@ -2901,9 +3139,9 @@ async def get_dashboard_analytics(
         onshore_disciplinas.sort(key=lambda x: x.value, reverse=True)
         
         onshore_item = AnalyticsItem(
-            total_gasto=1000000.25,
-            total_horas=750.25,
-            total_disciplinas=10,
+            total_gasto=onshore_mock.get("total_gasto", 1000000.25),
+            total_horas=onshore_mock.get("total_horas", 750.25),
+            total_disciplinas=onshore_mock.get("total_disciplinas", 10),
             distribucion_departamento=onshore_departamentos,
             top_5_disciplinas=onshore_disciplinas
         )
@@ -2939,40 +3177,43 @@ async def get_rejected_concepts(
         # TODO: Reemplazar con lectura real de JSONs o SQL Server
         # ============================================================
         
-        # Calcular total para porcentajes
-        total_monto_rechazado = 125000.00
+        # Cargar datos mockeados desde JSON
+        mock_data = _load_dashboard_mock_data()
+        rejected_concepts_data = mock_data.get("rejected_concepts", [
+            {
+                "concepto": "Materiales no especificados",
+                "cantidad_total": 15,
+                "monto_total": 45000.00,
+                "porcentaje_total": 36.0
+            },
+            {
+                "concepto": "Servicios sin factura",
+                "cantidad_total": 8,
+                "monto_total": 32000.00,
+                "porcentaje_total": 25.6
+            },
+            {
+                "concepto": "Conceptos duplicados",
+                "cantidad_total": 12,
+                "monto_total": 28000.00,
+                "porcentaje_total": 22.4
+            },
+            {
+                "concepto": "Documentación incompleta",
+                "cantidad_total": 6,
+                "monto_total": 15000.00,
+                "porcentaje_total": 12.0
+            },
+            {
+                "concepto": "Fechas fuera de rango",
+                "cantidad_total": 4,
+                "monto_total": 5000.00,
+                "porcentaje_total": 4.0
+            }
+        ])
         
         concepts_mock = [
-            RejectedConcept(
-                concepto="Materiales no especificados",
-                cantidad_total=15,
-                monto_total=45000.00,
-                porcentaje_total=36.0
-            ),
-            RejectedConcept(
-                concepto="Servicios sin factura",
-                cantidad_total=8,
-                monto_total=32000.00,
-                porcentaje_total=25.6
-            ),
-            RejectedConcept(
-                concepto="Conceptos duplicados",
-                cantidad_total=12,
-                monto_total=28000.00,
-                porcentaje_total=22.4
-            ),
-            RejectedConcept(
-                concepto="Documentación incompleta",
-                cantidad_total=6,
-                monto_total=15000.00,
-                porcentaje_total=12.0
-            ),
-            RejectedConcept(
-                concepto="Fechas fuera de rango",
-                cantidad_total=4,
-                monto_total=5000.00,
-                porcentaje_total=4.0
-            )
+            RejectedConcept(**concept) for concept in rejected_concepts_data
         ]
         
         return RejectedConceptsResponse(
@@ -2993,12 +3234,13 @@ async def get_rejected_concepts(
 
 @app.post("/api/v1/periodos", response_model=PeriodoResponse, tags=["Periodos"])
 @limiter.limit("10/minute")  # Máximo 10 requests por minuto por IP
-async def create_periodo(http_request: Request, request: CreatePeriodoRequest):
+async def create_periodo(request: Request, periodo_data: CreatePeriodoRequest):
     """
     Crea un nuevo periodo.
     
     Args:
-        request: Datos del periodo a crear (periodo: "MM/AAAA", tipo: "onshore"|"offshore")
+        request: Request de FastAPI (para rate limiting)
+        periodo_data: Datos del periodo a crear (periodo: "MM/AAAA", tipo: "onshore"|"offshore")
         
     Returns:
         Periodo creado
@@ -3007,13 +3249,13 @@ async def create_periodo(http_request: Request, request: CreatePeriodoRequest):
         periodo_manager = get_periodo_manager()
         
         # Validar tipo
-        if request.tipo.lower() not in ["onshore", "offshore"]:
+        if periodo_data.tipo.lower() not in ["onshore", "offshore"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Tipo debe ser 'onshore' o 'offshore'"
             )
         
-        periodo_data = periodo_manager.create_periodo(request.periodo, request.tipo)
+        periodo_data_result = periodo_manager.create_periodo(periodo_data.periodo, periodo_data.tipo)
         
         # Función helper para formatear fechas
         def format_date(date_str: Optional[str]) -> Optional[str]:
@@ -3027,13 +3269,13 @@ async def create_periodo(http_request: Request, request: CreatePeriodoRequest):
                 return date_str  # Si falla, retornar original
         
         periodo_info = PeriodoInfo(
-            periodo_id=periodo_data["periodo_id"],
-            periodo=periodo_data["periodo"],
-            tipo=periodo_data["tipo"],
-            estado=periodo_data["estado"],
-            registros=periodo_data["registros"],
-            ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
-            created_at=format_date(periodo_data.get("created_at"))
+            periodo_id=periodo_data_result["periodo_id"],
+            periodo=periodo_data_result["periodo"],
+            tipo=periodo_data_result["tipo"],
+            estado=periodo_data_result["estado"],
+            registros=periodo_data_result["registros"],
+            ultimo_procesamiento=format_date(periodo_data_result.get("ultimo_procesamiento")),
+            created_at=format_date(periodo_data_result.get("created_at"))
         )
         
         return PeriodoResponse(success=True, periodo=periodo_info)
@@ -3122,28 +3364,39 @@ async def list_periodos(
         periodos = []
         for p in periodos_data:
             periodo_id = p["periodo_id"]
+            # Verificar primero si el periodo está "cerrado" en la base de datos
+            estado_guardado = p.get("estado", "")
+            
             # Contar archivos procesados
             archivos_procesados = len(p.get("archivos_asociados", []))
             # Contar archivos pendientes
             archivos_pendientes = periodo_pendientes.get(periodo_id, 0)
             total_archivos = archivos_procesados + archivos_pendientes
             
-            # Calcular estado según los 4 estados posibles
-            estado_calculado = "vacio"
-            if total_archivos == 0:
-                estado_calculado = "vacio"
-            elif periodo_id in periodos_con_jobs_activos:
-                # Hay jobs activos (queued/processing)
-                estado_calculado = "procesando"
-            elif archivos_procesados == total_archivos and archivos_procesados > 0:
-                # Todos los archivos están procesados
-                estado_calculado = "procesado"
-            elif archivos_pendientes > 0:
-                # Hay archivos subidos pero no procesados
-                estado_calculado = "pendiente"
+            # Calcular registros dinámicamente: total de archivos (procesados + pendientes)
+            # Esto muestra la cantidad real de archivos asociados al periodo
+            registros_calculados = total_archivos
+            
+            # Si el periodo está "cerrado", usar "cerrado" directamente sin calcular
+            if estado_guardado == "cerrado":
+                estado_calculado = "cerrado"
             else:
-                # Fallback
-                estado_calculado = "pendiente"
+                # Calcular estado según los 4 estados posibles
+                estado_calculado = "vacio"
+                if total_archivos == 0:
+                    estado_calculado = "vacio"
+                elif periodo_id in periodos_con_jobs_activos:
+                    # Hay jobs activos (queued/processing)
+                    estado_calculado = "procesando"
+                elif archivos_procesados == total_archivos and archivos_procesados > 0:
+                    # Todos los archivos están procesados
+                    estado_calculado = "procesado"
+                elif archivos_pendientes > 0:
+                    # Hay archivos subidos pero no procesados
+                    estado_calculado = "pendiente"
+                else:
+                    # Fallback
+                    estado_calculado = "pendiente"
             
             periodos.append(
                 PeriodoInfo(
@@ -3151,7 +3404,7 @@ async def list_periodos(
                     periodo=p["periodo"],
                     tipo=p["tipo"],
                     estado=estado_calculado,
-                    registros=p["registros"],
+                    registros=registros_calculados,  # Usar registros calculados dinámicamente
                     ultimo_procesamiento=format_date(p.get("ultimo_procesamiento")),
                     created_at=format_date(p.get("created_at"))
                 )
@@ -3297,9 +3550,10 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             if archivo_info:
                 archivos.append(archivo_info)
         
-        # Agregar archivos subidos (no procesados) que tengan este periodo_id en metadata
+        # Agregar archivos subidos (pendientes y procesados) que tengan este periodo_id en metadata
         upload_manager = get_upload_manager()
-        uploaded_files = upload_manager.list_uploaded_files(processed=False)
+        # Mostrar tanto pendientes como procesados
+        uploaded_files = upload_manager.list_uploaded_files(processed=None)
         
         # Obtener request_ids ya incluidos para evitar duplicados
         request_ids_incluidos = {archivo.request_id for archivo in archivos}
@@ -3308,19 +3562,22 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             file_metadata = uploaded_file.get("metadata", {})
             file_periodo_id = file_metadata.get("periodo_id")
             
-            # Solo incluir si el periodo_id coincide y no está ya procesado
+            # Incluir si el periodo_id coincide (tanto pendientes como procesados)
             if file_periodo_id == periodo_id:
                 file_id = uploaded_file.get("file_id")
                 filename = uploaded_file.get("filename", "unknown")
+                is_processed = uploaded_file.get("processed", False)
                 
-                # Usar file_id como identificador temporal (no tiene request_id aún)
                 # Verificar que no esté ya en la lista
                 if file_id not in request_ids_incluidos:
-                    archivo_pendiente = PeriodoArchivoInfo(
+                    # Determinar estado: si está procesado, usar "procesado", sino "pendiente"
+                    estado_archivo = "procesado" if is_processed else "pendiente"
+                    
+                    archivo_info = PeriodoArchivoInfo(
                         archivo_id=file_id[:8] if len(file_id) >= 8 else file_id,
-                        request_id=file_id,  # Usar file_id como identificador temporal
+                        request_id=file_id,  # Usar file_id como identificador
                         filename=filename,
-                        estado="pendiente",
+                        estado=estado_archivo,
                         job_no=None,
                         type=None,
                         source_reference=None,
@@ -3329,9 +3586,9 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                         entered_amount=None,
                         total_usd=None,
                         fecha_valoracion=None,
-                        processed_at=None
+                        processed_at=uploaded_file.get("processed_at") if is_processed else None
                     )
-                    archivos.append(archivo_pendiente)
+                    archivos.append(archivo_info)
                     request_ids_incluidos.add(file_id)
         
         # Calcular estado del periodo basado en los 4 estados posibles
@@ -3371,25 +3628,36 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             for job in jobs_activos
         )
         
-        # Calcular estado según prioridad
-        estado_calculado = "vacio"
-        if total_archivos == 0:
-            estado_calculado = "vacio"
-        elif archivos_subiendo > 0:
-            # Hay archivos recién subidos (estado "subiendo")
-            estado_calculado = "subiendo"
-        elif tiene_jobs_activos:
-            # Hay jobs en cola o procesando
-            estado_calculado = "procesando"
-        elif archivos_procesados == total_archivos and archivos_procesados > 0:
-            # Todos los archivos están procesados
-            estado_calculado = "procesado"
-        elif archivos_pendientes > 0:
-            # Hay archivos subidos pero no procesados
-            estado_calculado = "pendiente"
+        # Verificar primero si el periodo está "cerrado" en la base de datos
+        # Si está cerrado, no calcular dinámicamente, usar "cerrado" directamente
+        estado_guardado = periodo_data.get("estado", "")
+        if estado_guardado == "cerrado":
+            # Si el periodo está cerrado, usar "cerrado" directamente sin calcular
+            estado_calculado = "cerrado"
         else:
-            # Fallback
-            estado_calculado = "pendiente"
+            # Calcular estado según prioridad (según requerimientos del usuario):
+            # 1. Si no hay archivos → "vacio"
+            # 2. Si hay al menos uno pendiente → "pendiente"
+            # 3. Si todos están procesados → "procesado"
+            estado_calculado = "vacio"
+            if total_archivos == 0:
+                # No hay archivos
+                estado_calculado = "vacio"
+            elif archivos_subiendo > 0:
+                # Hay archivos recién subidos (estado "subiendo")
+                estado_calculado = "subiendo"
+            elif tiene_jobs_activos:
+                # Hay jobs en cola o procesando
+                estado_calculado = "procesando"
+            elif archivos_pendientes > 0:
+                # Hay al menos un archivo pendiente
+                estado_calculado = "pendiente"
+            elif archivos_procesados == total_archivos and archivos_procesados > 0:
+                # Todos los archivos están procesados
+                estado_calculado = "procesado"
+            else:
+                # Fallback: si hay archivos pero no se pudo determinar el estado, asumir pendiente
+                estado_calculado = "pendiente" if total_archivos > 0 else "vacio"
         
         # Función helper para formatear fechas
         def format_date(date_str: Optional[str]) -> Optional[str]:
@@ -3402,12 +3670,15 @@ async def get_periodo_detail(request: Request, periodo_id: str):
             except Exception:
                 return date_str  # Si falla, retornar original
         
+        # Calcular registros dinámicamente: total de archivos (procesados + pendientes)
+        registros_calculados = total_archivos
+        
         periodo_info = PeriodoInfo(
             periodo_id=periodo_data["periodo_id"],
             periodo=periodo_data["periodo"],
             tipo=periodo_data["tipo"],
-            estado=estado_calculado,  # Usar estado calculado dinámicamente
-            registros=periodo_data["registros"],
+            estado=estado_calculado,  # Usar estado calculado o "cerrado" si está bloqueado
+            registros=registros_calculados,  # Usar registros calculados dinámicamente
             ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
             created_at=format_date(periodo_data.get("created_at"))
         )
@@ -3714,7 +3985,7 @@ async def exportar_periodo(periodo_id: str):
         )
 
 
-@app.post("/api/v1/periodos/{periodo_id}/bloquear", tags=["Periodos"])
+@app.post("/api/v1/periodos/{periodo_id}/bloquear", response_model=PeriodoResponse, tags=["Periodos"])
 async def bloquear_periodo(periodo_id: str):
     """
     Bloquea un periodo (cambia estado a "cerrado").
@@ -3723,10 +3994,11 @@ async def bloquear_periodo(periodo_id: str):
         periodo_id: ID del periodo
         
     Returns:
-        Confirmación de bloqueo
+        Periodo actualizado con estado "cerrado"
     """
     try:
         periodo_manager = get_periodo_manager()
+        # Actualizar estado a "cerrado"
         periodo_data = periodo_manager.update_periodo(periodo_id, {"estado": "cerrado"})
         
         if not periodo_data:
@@ -3735,7 +4007,32 @@ async def bloquear_periodo(periodo_id: str):
                 detail=f"Periodo {periodo_id} no encontrado"
             )
         
-        return {"success": True, "message": f"Periodo {periodo_id} bloqueado"}
+        # Asegurar que el estado sea "cerrado" en la respuesta
+        periodo_data["estado"] = "cerrado"
+        
+        # Función helper para formatear fechas
+        def format_date(date_str: Optional[str]) -> Optional[str]:
+            """Formatea fecha ISO a formato DD/MM/YYYY, HH:MM"""
+            if not date_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                return dt.strftime("%d/%m/%Y, %H:%M")
+            except Exception:
+                return date_str  # Si falla, retornar original
+        
+        # Construir respuesta con el periodo actualizado
+        periodo_info = PeriodoInfo(
+            periodo_id=periodo_data["periodo_id"],
+            periodo=periodo_data["periodo"],
+            tipo=periodo_data["tipo"],
+            estado="cerrado",  # Asegurar que el estado sea "cerrado"
+            registros=periodo_data.get("registros", 0),
+            ultimo_procesamiento=format_date(periodo_data.get("ultimo_procesamiento")),
+            created_at=format_date(periodo_data.get("created_at"))
+        )
+        
+        return PeriodoResponse(success=True, periodo=periodo_info)
     
     except HTTPException:
         raise
@@ -3744,7 +4041,7 @@ async def bloquear_periodo(periodo_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al bloquear periodo: {str(e)}"
-    )
+        )
 
 
 @app.exception_handler(Exception)

@@ -26,7 +26,11 @@ class ProcessingJob:
         metadata: Dict[str, Any],
         save_files: bool = True,
         output_folder: str = "api",
-        periodo_id: Optional[str] = None
+        periodo_id: Optional[str] = None,
+        start_page: Optional[int] = None,
+        end_page: Optional[int] = None,
+        batch_id: Optional[str] = None,
+        is_batch_job: bool = False
     ):
         self.request_id = request_id
         self.file_id = file_id
@@ -35,6 +39,10 @@ class ProcessingJob:
         self.save_files = save_files
         self.output_folder = output_folder
         self.periodo_id = periodo_id
+        self.start_page = start_page  # Página inicial (1-indexed, None = todas)
+        self.end_page = end_page  # Página final (1-indexed, None = todas)
+        self.batch_id = batch_id  # ID para agrupar lotes del mismo PDF
+        self.is_batch_job = is_batch_job  # Si es parte de un procesamiento por lotes
         self.created_at = datetime.now()
         self.status = "queued"
         self.progress = 0
@@ -166,15 +174,29 @@ class ProcessingWorkerManager:
                         pages_processed = int(pages_match.group(1))
                         job.pages_processed = pages_processed
             
-            # Procesar PDF
+            # Procesar PDF (con rango de páginas si es un lote)
             with self.jobs_lock:
-                job.message = "Procesando PDF con OCR..."
+                if job.is_batch_job and job.start_page is not None and job.end_page is not None:
+                    job.message = f"Procesando lote: páginas {job.start_page}-{job.end_page}..."
+                else:
+                    job.message = "Procesando PDF con OCR..."
             
-            results = ocr_extractor.process_pdf(
-                str(job.pdf_path),
-                progress_callback=progress_callback,
-                max_pages=None
-            )
+            # Procesar PDF con rango si es un lote
+            if job.is_batch_job and job.start_page is not None and job.end_page is not None:
+                # Procesar solo el rango de páginas del lote
+                results = ocr_extractor.process_pdf(
+                    str(job.pdf_path),
+                    progress_callback=progress_callback,
+                    max_pages=None,
+                    start_page=job.start_page,
+                    end_page=job.end_page
+                )
+            else:
+                results = ocr_extractor.process_pdf(
+                    str(job.pdf_path),
+                    progress_callback=progress_callback,
+                    max_pages=None
+                )
             
             # Preparar metadata
             api_metadata = {
@@ -238,94 +260,127 @@ class ProcessingWorkerManager:
                 json_files = list(api_folder.rglob("*.json")) if api_folder.exists() else []
                 
                 if json_files:
-                    # Guardar en BD
-                    db_service = get_database_service()
-                    db_saved_successfully = False
-                    
-                    structured_folder = api_folder / "structured"
-                    structured_json_files = []
-                    if structured_folder.exists():
-                        structured_json_files = list(structured_folder.glob("*_structured.json"))
-                    
-                    if structured_json_files:
-                        try:
-                            db_saved_successfully = db_service.save_structured_data(
-                                request_id=job.request_id,
-                                json_files=structured_json_files
-                            )
-                        except Exception as e:
-                            logger.error(f"[{job.request_id}] Error guardando en BD: {e}")
-                            db_saved_successfully = False
-                    else:
-                        db_saved_successfully = True
-                    
-                    # Crear ZIP y Excel
-                    if db_saved_successfully or not db_service.is_enabled():
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        zip_filename = f"{pdf_name}_{timestamp}_{job.request_id[:8]}.zip"
-                        zip_path = archive_manager.zip_folder(api_folder, zip_filename)
+                    # Si es un lote, solo guardar JSONs y verificar si todos los lotes terminaron
+                    if job.is_batch_job and job.batch_id:
+                        # Este es un lote, verificar si todos los lotes terminaron
+                        logger.info(f"[{job.request_id}] Lote completado. Verificando si todos los lotes terminaron...")
                         
-                        if zip_path.exists():
-                            download_url = archive_manager.get_public_url(zip_path)
+                        # Buscar todos los jobs del mismo batch_id
+                        with self.jobs_lock:
+                            batch_jobs = [
+                                j for j in self.jobs.values() 
+                                if j.batch_id == job.batch_id and j.is_batch_job
+                            ]
                             
-                            # Generar Excel (función async, pero en thread síncrono)
-                            # Necesitamos ejecutar la función async en el thread
-                            import asyncio
-                            try:
-                                # Crear nuevo event loop para este thread
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                excel_filename, excel_download_url = loop.run_until_complete(
-                                    generate_excel_for_request(
-                                        request_id=job.request_id,
-                                        pdf_name=pdf_name,
-                                        timestamp=timestamp,
-                                        archive_manager=archive_manager,
-                                        file_manager=file_manager
-                                    )
-                                )
-                                loop.close()
-                            except Exception as e:
-                                logger.error(f"[{job.request_id}] Error generando Excel: {e}")
-                                excel_filename, excel_download_url = None, None
-                            
-                            # Marcar como procesado
-                            upload_manager.mark_as_processed(
-                                job.file_id,
-                                zip_filename,
-                                download_url,
-                                job.request_id,
-                                excel_filename,
-                                excel_download_url
+                            # Verificar si todos los lotes terminaron
+                            all_batches_complete = all(
+                                j.status in ["completed", "failed"] for j in batch_jobs
                             )
                             
-                            with self.jobs_lock:
-                                job.download_url = download_url
-                                job.excel_download_url = excel_download_url
+                            if all_batches_complete:
+                                # Todos los lotes terminaron, consolidar
+                                logger.info(f"[{job.batch_id}] Todos los lotes completados. Consolidando resultados...")
+                                
+                                # Buscar job maestro
+                                master_job = self.jobs.get(job.batch_id)
+                                if master_job and not master_job.is_batch_job:
+                                    # Consolidar y generar ZIP/Excel usando el request_id maestro
+                                    self._consolidate_batch_results(master_job, batch_jobs, api_folder, 
+                                                                   pdf_name, upload_manager, archive_manager, 
+                                                                   file_manager)
+                            else:
+                                # Aún hay lotes pendientes
+                                completed_count = sum(1 for j in batch_jobs if j.status == "completed")
+                                total_batches = len(batch_jobs)
+                                logger.info(f"[{job.batch_id}] Lotes completados: {completed_count}/{total_batches}")
+                    else:
+                        # Procesamiento normal (no es lote)
+                        # Guardar en BD
+                        db_service = get_database_service()
+                        db_saved_successfully = False
+                        
+                        structured_folder = api_folder / "structured"
+                        structured_json_files = []
+                        if structured_folder.exists():
+                            structured_json_files = list(structured_folder.glob("*_structured.json"))
+                        
+                        if structured_json_files:
+                            try:
+                                db_saved_successfully = db_service.save_structured_data(
+                                    request_id=job.request_id,
+                                    json_files=structured_json_files
+                                )
+                            except Exception as e:
+                                logger.error(f"[{job.request_id}] Error guardando en BD: {e}")
+                                db_saved_successfully = False
+                        else:
+                            db_saved_successfully = True
+                        
+                        # Crear ZIP y Excel
+                        if db_saved_successfully or not db_service.is_enabled():
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            zip_filename = f"{pdf_name}_{timestamp}_{job.request_id[:8]}.zip"
+                            zip_path = archive_manager.zip_folder(api_folder, zip_filename)
                             
-                            # Borrar JSONs si BD fue exitoso
-                            if db_saved_successfully:
-                                deleted_count = 0
-                                raw_folder = api_folder / "raw"
-                                structured_folder = api_folder / "structured"
+                            if zip_path.exists():
+                                download_url = archive_manager.get_public_url(zip_path)
                                 
-                                if raw_folder.exists():
-                                    for json_file in raw_folder.glob("*.json"):
-                                        try:
-                                            json_file.unlink()
-                                            deleted_count += 1
-                                        except Exception:
-                                            pass
+                                # Generar Excel (función async, pero en thread síncrono)
+                                import asyncio
+                                try:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    excel_filename, excel_download_url = loop.run_until_complete(
+                                        generate_excel_for_request(
+                                            request_id=job.request_id,
+                                            pdf_name=pdf_name,
+                                            timestamp=timestamp,
+                                            archive_manager=archive_manager,
+                                            file_manager=file_manager
+                                        )
+                                    )
+                                    loop.close()
+                                except Exception as e:
+                                    logger.error(f"[{job.request_id}] Error generando Excel: {e}")
+                                    excel_filename, excel_download_url = None, None
                                 
-                                if structured_folder.exists():
-                                    for json_file in structured_folder.glob("*.json"):
-                                        try:
-                                            json_file.unlink()
-                                            deleted_count += 1
-                                        except Exception:
-                                            pass
+                                # Marcar como procesado
+                                upload_manager.mark_as_processed(
+                                    job.file_id,
+                                    zip_filename,
+                                    download_url,
+                                    job.request_id,
+                                    excel_filename,
+                                    excel_download_url
+                                )
                                 
-                                logger.info(f"[{job.request_id}] Archivos JSON eliminados: {deleted_count}")
+                                with self.jobs_lock:
+                                    job.download_url = download_url
+                                    job.excel_download_url = excel_download_url
+                                
+                                # Borrar JSONs si BD fue exitoso
+                                if db_saved_successfully:
+                                    deleted_count = 0
+                                    raw_folder = api_folder / "raw"
+                                    structured_folder = api_folder / "structured"
+                                    
+                                    if raw_folder.exists():
+                                        for json_file in raw_folder.glob("*.json"):
+                                            try:
+                                                json_file.unlink()
+                                                deleted_count += 1
+                                            except Exception:
+                                                pass
+                                    
+                                    if structured_folder.exists():
+                                        for json_file in structured_folder.glob("*.json"):
+                                            try:
+                                                json_file.unlink()
+                                                deleted_count += 1
+                                            except Exception:
+                                                pass
+                                    
+                                    logger.info(f"[{job.request_id}] Archivos JSON eliminados: {deleted_count}")
             
             # Actualizar estado final
             processing_time = time.time() - start_time
@@ -345,6 +400,140 @@ class ProcessingWorkerManager:
                 job.error = str(e)
                 job.message = f"Error: {e}"
             raise
+    
+    def _consolidate_batch_results(self, master_job: ProcessingJob, batch_jobs: List[ProcessingJob],
+                                   api_folder: Path, pdf_name: str, upload_manager, archive_manager,
+                                   file_manager):
+        """
+        Consolida los resultados de todos los lotes y genera ZIP/Excel final.
+        
+        Args:
+            master_job: Job maestro que representa el procesamiento completo
+            batch_jobs: Lista de jobs de lotes que ya terminaron
+            api_folder: Carpeta donde están los JSONs
+            pdf_name: Nombre del PDF
+            upload_manager: Manager de uploads
+            archive_manager: Manager de archivos
+            file_manager: Manager de archivos
+            periodo_id_to_use: ID del periodo si existe
+        """
+        try:
+            from .dependencies import get_database_service, get_periodo_manager
+            from .excel_generator import generate_excel_for_request
+            import asyncio
+            
+            logger.info(f"[{master_job.request_id}] Iniciando consolidación de {len(batch_jobs)} lotes...")
+            
+            # Guardar en BD
+            db_service = get_database_service()
+            db_saved_successfully = False
+            
+            structured_folder = api_folder / "structured"
+            structured_json_files = []
+            if structured_folder.exists():
+                structured_json_files = list(structured_folder.glob("*_structured.json"))
+            
+            if structured_json_files:
+                try:
+                    db_saved_successfully = db_service.save_structured_data(
+                        request_id=master_job.request_id,
+                        json_files=structured_json_files
+                    )
+                    logger.info(f"[{master_job.request_id}] Datos guardados en BD: {len(structured_json_files)} archivos")
+                except Exception as e:
+                    logger.error(f"[{master_job.request_id}] Error guardando en BD: {e}")
+                    db_saved_successfully = False
+            else:
+                db_saved_successfully = True
+            
+            # Crear ZIP y Excel usando el request_id maestro
+            if db_saved_successfully or not db_service.is_enabled():
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                zip_filename = f"{pdf_name}_{timestamp}_{master_job.request_id[:8]}.zip"
+                zip_path = archive_manager.zip_folder(api_folder, zip_filename)
+                
+                if zip_path.exists():
+                    download_url = archive_manager.get_public_url(zip_path)
+                    
+                    # Generar Excel
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        excel_filename, excel_download_url = loop.run_until_complete(
+                            generate_excel_for_request(
+                                request_id=master_job.request_id,
+                                pdf_name=pdf_name,
+                                timestamp=timestamp,
+                                archive_manager=archive_manager,
+                                file_manager=file_manager
+                            )
+                        )
+                        loop.close()
+                    except Exception as e:
+                        logger.error(f"[{master_job.request_id}] Error generando Excel: {e}")
+                        excel_filename, excel_download_url = None, None
+                    
+                    # Marcar como procesado
+                    upload_manager.mark_as_processed(
+                        master_job.file_id,
+                        zip_filename,
+                        download_url,
+                        master_job.request_id,
+                        excel_filename,
+                        excel_download_url
+                    )
+                    
+                    # Asociar con periodo si se proporcionó
+                    if master_job.periodo_id:
+                        try:
+                            periodo_manager = get_periodo_manager()
+                            periodo = periodo_manager.get_periodo(master_job.periodo_id)
+                            if periodo:
+                                periodo_manager.add_archivo_to_periodo(master_job.periodo_id, master_job.request_id)
+                        except Exception as e:
+                            logger.warning(f"[{master_job.request_id}] Error asociando a periodo: {e}")
+                    
+                    # Actualizar job maestro
+                    total_pages = sum(job.pages_processed for job in batch_jobs if job.status == "completed")
+                    with self.jobs_lock:
+                        master_job.status = "completed"
+                        master_job.progress = 100
+                        master_job.message = f"Procesamiento completado: {total_pages} páginas (procesadas en {len(batch_jobs)} lotes)"
+                        master_job.pages_processed = total_pages
+                        master_job.download_url = download_url
+                        master_job.excel_download_url = excel_download_url
+                    
+                    # Borrar JSONs si BD fue exitoso
+                    if db_saved_successfully:
+                        deleted_count = 0
+                        raw_folder = api_folder / "raw"
+                        structured_folder = api_folder / "structured"
+                        
+                        if raw_folder.exists():
+                            for json_file in raw_folder.glob("*.json"):
+                                try:
+                                    json_file.unlink()
+                                    deleted_count += 1
+                                except Exception:
+                                    pass
+                        
+                        if structured_folder.exists():
+                            for json_file in structured_folder.glob("*.json"):
+                                try:
+                                    json_file.unlink()
+                                    deleted_count += 1
+                                except Exception:
+                                    pass
+                        
+                        logger.info(f"[{master_job.request_id}] Archivos JSON eliminados: {deleted_count}")
+                    
+                    logger.info(f"[{master_job.request_id}] Consolidación completada exitosamente")
+        except Exception as e:
+            logger.exception(f"[{master_job.request_id}] Error en consolidación: {e}")
+            with self.jobs_lock:
+                master_job.status = "failed"
+                master_job.error = f"Error en consolidación: {str(e)}"
+                master_job.message = f"Error: {e}"
     
     def add_job(self, job: ProcessingJob) -> str:
         """

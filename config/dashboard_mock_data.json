@@ -1,0 +1,123 @@
+{
+  "tipos_documento": [
+    "invoice",
+    "expense_report",
+    "jornada",
+    "comprobante",
+    "concur_expense",
+    "resumen"
+  ],
+  "departamentos": [
+    "Engineering",
+    "Procurement",
+    "Construction",
+    "Project Management",
+    "Quality Control",
+    "Health & Safety",
+    "Environmental",
+    "Logistics",
+    "Operations",
+    "Maintenance",
+    "Safety",
+    "Human Resources",
+    "Finance",
+    "IT Services",
+    "Other Services"
+  ],
+  "disciplinas": [
+    "Procurement",
+    "Engineering",
+    "Construction",
+    "Project Management",
+    "Quality Control",
+    "Operations",
+    "Maintenance",
+    "Safety",
+    "Environmental"
+  ],
+  "stats": {
+    "monto_total_global": 2450000.75,
+    "total_horas_global": 1875.5
+  },
+  "analytics": {
+    "offshore": {
+      "total_gasto": 1450022.50,
+      "total_horas": 1125.25,
+      "total_disciplinas": 12,
+      "departamentos": {
+        "Engineering": 850000.00,
+        "Procurement": 320000.00,
+        "Construction": 180000.00,
+        "Project Management": 95000.00,
+        "Quality Control": 45000.00,
+        "Health & Safety": 35000.00,
+        "Environmental": 28000.00,
+        "Logistics": 22000.00,
+        "Other Services": 100000.50
+      },
+      "disciplinas": {
+        "Procurement": 1800.00,
+        "Engineering": 1450.00,
+        "Construction": 1200.00,
+        "Project Management": 950.00,
+        "Quality Control": 680.00
+      }
+    },
+    "onshore": {
+      "total_gasto": 1000000.25,
+      "total_horas": 750.25,
+      "total_disciplinas": 10,
+      "departamentos": {
+        "Engineering": 450000.00,
+        "Operations": 280000.00,
+        "Maintenance": 150000.00,
+        "Safety": 85000.00,
+        "Environmental": 45000.00,
+        "Human Resources": 35000.00,
+        "Finance": 28000.00,
+        "IT Services": 22000.00,
+        "Other Services": 120000.25
+      },
+      "disciplinas": {
+        "Engineering": 1250.00,
+        "Operations": 980.00,
+        "Maintenance": 720.00,
+        "Safety": 550.00,
+        "Environmental": 420.00
+      }
+    }
+  },
+  "rejected_concepts": [
+    {
+      "concepto": "Materiales no especificados",
+      "cantidad_total": 15,
+      "monto_total": 45000.00,
+      "porcentaje_total": 36.0
+    },
+    {
+      "concepto": "Servicios sin factura",
+      "cantidad_total": 8,
+      "monto_total": 32000.00,
+      "porcentaje_total": 25.6
+    },
+    {
+      "concepto": "Conceptos duplicados",
+      "cantidad_total": 12,
+      "monto_total": 28000.00,
+      "porcentaje_total": 22.4
+    },
+    {
+      "concepto": "Documentación incompleta",
+      "cantidad_total": 6,
+      "monto_total": 15000.00,
+      "porcentaje_total": 12.0
+    },
+    {
+      "concepto": "Fechas fuera de rango",
+      "cantidad_total": 4,
+      "monto_total": 5000.00,
+      "porcentaje_total": 4.0
+    }
+  ]
+}
+

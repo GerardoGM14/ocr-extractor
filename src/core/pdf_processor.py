@@ -105,7 +105,9 @@ class PDFProcessor:
     
     def process_pdf_to_images(self, pdf_path: str, 
                              output_folder: str,
-                             max_pages: int = None) -> List[Tuple[int, Path]]:
+                             max_pages: int = None,
+                             start_page: int = None,
+                             end_page: int = None) -> List[Tuple[int, Path]]:
         """
         Procesa un PDF dividiéndolo en imágenes de páginas.
         
@@ -113,6 +115,8 @@ class PDFProcessor:
             pdf_path: Ruta al PDF
             output_folder: Carpeta donde guardar las imágenes
             max_pages: Número máximo de páginas a procesar (None = todas)
+            start_page: Página inicial (1-indexed, None = desde el inicio)
+            end_page: Página final (1-indexed, None = hasta el final)
             
         Returns:
             Lista de tuplas (número_página, path_imagen)
@@ -127,9 +131,22 @@ class PDFProcessor:
         pdf_name = Path(pdf_path).stem
         
         total_pages = self.get_page_count()
-        pages_to_process = min(total_pages, max_pages) if max_pages else total_pages
         
-        for page_num in range(pages_to_process):
+        # Determinar rango de páginas a procesar
+        if start_page is not None and end_page is not None:
+            # Procesar rango específico (1-indexed)
+            start_idx = max(0, start_page - 1)  # Convertir a 0-indexed
+            end_idx = min(total_pages, end_page)  # end_page ya es 1-indexed, pero range usa exclusivo
+            page_range = range(start_idx, end_idx)
+        elif max_pages:
+            # Procesar desde el inicio hasta max_pages
+            pages_to_process = min(total_pages, max_pages)
+            page_range = range(pages_to_process)
+        else:
+            # Procesar todas las páginas
+            page_range = range(total_pages)
+        
+        for page_num in page_range:
             img_filename = f"{pdf_name}_page_{page_num + 1}.png"
             img_path = output_path / img_filename
             
