@@ -147,4 +147,169 @@ class DatabaseService:
         """
         # TODO: Implementar cuando tengas conexión
         pass
+    
+    def verify_password_from_db(self, email: str, provided_password: str) -> bool:
+        """
+        Verifica una contraseña leyendo desde la base de datos.
+        
+        TEMPORAL: Solo para pruebas. Después volveremos a usar JSON.
+        
+        Args:
+            email: Email del usuario
+            provided_password: Contraseña proporcionada
+            
+        Returns:
+            True si la contraseña es correcta, False en caso contrario
+        """
+        if not self.enabled:
+            return False
+        
+        try:
+            try:
+                import pyodbc
+            except ImportError:
+                logger.warning("pyodbc no está instalado. No se puede validar desde BD.")
+                return False
+            
+            # Obtener connection string
+            if not self.connection_string:
+                config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+                if config_path.exists():
+                    try:
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            config = json.load(f)
+                        db_config = config.get("database", {})
+                        server = db_config.get("server", "localhost")
+                        database = db_config.get("database", "BD_NEWMONT_OCR_PDF")
+                        username = db_config.get("username")
+                        password_db = db_config.get("password")
+                        
+                        if username and password_db:
+                            self.connection_string = (
+                                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                                f"SERVER={server};"
+                                f"DATABASE={database};"
+                                f"UID={username};"
+                                f"PWD={password_db}"
+                            )
+                        else:
+                            self.connection_string = (
+                                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                                f"SERVER={server};"
+                                f"DATABASE={database};"
+                                f"Trusted_Connection=yes;"
+                            )
+                    except Exception as e:
+                        logger.warning(f"No se pudo leer configuración de BD: {e}")
+                        return False
+            
+            if not self.connection_string:
+                return False
+            
+            # Ejecutar procedimiento almacenado ValidarLogin
+            with pyodbc.connect(self.connection_string) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "EXEC dbo.ValidarLogin @email=?, @password=?",
+                    (email.lower().strip(), provided_password)
+                )
+                
+                # Leer resultado
+                row = cursor.fetchone()
+                if row:
+                    resultado = row[0] if len(row) > 0 else None
+                    if resultado == 'success':
+                        logger.info(f"✓ [BD] Contraseña validada desde BASE DE DATOS para: {email}")
+                        print(f"✓ [BD] Validación exitosa desde BASE DE DATOS para: {email}")
+                        return True
+                    else:
+                        logger.info(f"✗ [BD] Contraseña incorrecta en BASE DE DATOS para: {email}")
+                        print(f"✗ [BD] Contraseña incorrecta en BASE DE DATOS para: {email}")
+                
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Error validando contraseña desde BD (no crítico): {e}")
+            return False
+    
+    def sync_usuario_to_db(self, email: str, password: str, nombre: str = None) -> bool:
+        """
+        Sincroniza un usuario desde JSON a la base de datos (backup).
+        
+        Este método guarda una copia del usuario en la BD cuando se actualiza en JSON.
+        La BD actúa como respaldo, el JSON sigue siendo la fuente de verdad.
+        
+        Args:
+            email: Email del usuario
+            password: Contraseña en texto plano (se hasheará en BD)
+            nombre: Nombre del usuario (opcional)
+            
+        Returns:
+            True si se sincronizó exitosamente, False si hubo error o está deshabilitado
+        """
+        if not self.enabled:
+            # Si BD está deshabilitada, no es un error, solo no sincroniza
+            return True
+        
+        try:
+            # Intentar importar pyodbc para conexión a SQL Server
+            try:
+                import pyodbc
+            except ImportError:
+                logger.warning("pyodbc no está instalado. No se puede sincronizar usuario a BD.")
+                return True  # No es un error crítico, solo no sincroniza
+            
+            # Obtener connection string desde configuración
+            if not self.connection_string:
+                # Intentar leer desde config.json
+                config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+                if config_path.exists():
+                    try:
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            config = json.load(f)
+                        db_config = config.get("database", {})
+                        server = db_config.get("server", "localhost")
+                        database = db_config.get("database", "BD_NEWMONT_OCR_PDF")
+                        username = db_config.get("username")
+                        password_db = db_config.get("password")
+                        
+                        if username and password_db:
+                            self.connection_string = (
+                                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                                f"SERVER={server};"
+                                f"DATABASE={database};"
+                                f"UID={username};"
+                                f"PWD={password_db}"
+                            )
+                        else:
+                            # Usar autenticación de Windows
+                            self.connection_string = (
+                                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                                f"SERVER={server};"
+                                f"DATABASE={database};"
+                                f"Trusted_Connection=yes;"
+                            )
+                    except Exception as e:
+                        logger.warning(f"No se pudo leer configuración de BD: {e}")
+                        return True  # No es crítico, solo no sincroniza
+            
+            if not self.connection_string:
+                logger.debug("No hay connection string configurado. Saltando sincronización a BD.")
+                return True  # No es crítico
+            
+            # Conectar y ejecutar procedimiento almacenado
+            with pyodbc.connect(self.connection_string) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "EXEC dbo.SyncUsuarioFromJSON @email=?, @password=?, @nombre=?",
+                    (email.lower().strip(), password, nombre)
+                )
+                conn.commit()
+                logger.debug(f"Usuario sincronizado a BD: {email}")
+                return True
+                
+        except Exception as e:
+            # No es crítico si falla, solo loguear
+            logger.warning(f"Error sincronizando usuario {email} a BD (no crítico): {e}")
+            return True  # Retornar True para no interrumpir el flujo principal
 

@@ -109,6 +109,7 @@ class HealthResponse(BaseModel):
 class LoginRequest(BaseModel):
     """Request para login."""
     email: EmailStr = Field(..., description="Email del usuario para autenticación")
+    password: str = Field(..., description="Contraseña del usuario (requerida)")
 
 
 class LoginResponse(BaseModel):
@@ -119,6 +120,7 @@ class LoginResponse(BaseModel):
     nombre: str  # Nombre formateado extraído del email (ej: "victor.cabeza@newmont.com" -> "Victor Cabeza")
     message: str
     expires_at: Optional[str] = None  # ISO format datetime
+    fuente_validacion: Optional[str] = None  # "BD" o "JSON" - indica qué fuente se usó para validar
 
 
 class LogoutRequest(BaseModel):

@@ -12,8 +12,9 @@ import logging
 import json
 import asyncio
 import secrets
+import hashlib
 from pathlib import Path
-from typing import Optional, Dict, Any, AsyncGenerator
+from typing import Optional, Dict, Any, AsyncGenerator, Tuple
 from datetime import datetime, timedelta
 from threading import Lock
 
@@ -143,6 +144,210 @@ TOKEN_EXPIRATION_HOURS = 24  # Tokens expiran después de 24 horas
 def generate_auth_token() -> str:
     """Genera un token de autenticación seguro."""
     return secrets.token_urlsafe(32)
+
+
+def generate_password_from_email(email: str) -> str:
+    """
+    Genera una contraseña compleja de 8 caracteres basada en el email.
+    
+    La contraseña incluye:
+    - Minúsculas
+    - Mayúsculas
+    - Números
+    - Caracteres especiales
+    - Longitud exacta de 8 caracteres
+    
+    La contraseña es determinística (siempre la misma para el mismo email).
+    
+    Args:
+        email: Email del usuario
+        
+    Returns:
+        Contraseña generada de 8 caracteres
+    """
+    email_normalized = email.lower().strip()
+    
+    # Crear un hash del email para obtener valores determinísticos
+    hash_obj = hashlib.md5(email_normalized.encode())
+    hash_hex = hash_obj.hexdigest()
+    
+    # Mapeo de caracteres para asegurar diversidad
+    lowercase_chars = "abcdefghijklmnopqrstuvwxyz"
+    uppercase_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    numbers = "0123456789"
+    special_chars = "!@#$%&*"
+    
+    # Usar el hash para seleccionar caracteres de manera determinística
+    # Asegurar que tenga al menos: 1 minúscula, 1 mayúscula, 1 número, 1 especial
+    password_chars = []
+    
+    # Posición 0: minúscula (usar hash[0])
+    password_chars.append(lowercase_chars[int(hash_hex[0], 16) % len(lowercase_chars)])
+    
+    # Posición 1: mayúscula (usar hash[1])
+    password_chars.append(uppercase_chars[int(hash_hex[1], 16) % len(uppercase_chars)])
+    
+    # Posición 2: número (usar hash[2])
+    password_chars.append(numbers[int(hash_hex[2], 16) % len(numbers)])
+    
+    # Posición 3: especial (usar hash[3])
+    password_chars.append(special_chars[int(hash_hex[3], 16) % len(special_chars)])
+    
+    # Posiciones 4-7: mezcla de todos los tipos (usar hash[4-7])
+    all_chars = lowercase_chars + uppercase_chars + numbers + special_chars
+    for i in range(4, 8):
+        password_chars.append(all_chars[int(hash_hex[i], 16) % len(all_chars)])
+    
+    # Mezclar las posiciones para que no sea predecible el orden
+    # Usar más valores del hash para determinar el orden
+    hash_int = int(hash_hex[8:16], 16)
+    shuffled = list(password_chars)
+    
+    # Aplicar un shuffle simple basado en el hash
+    for i in range(7, 0, -1):
+        j = hash_int % (i + 1)
+        shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+        hash_int = hash_int // (i + 1)
+    
+    password = ''.join(shuffled)
+    
+    # Asegurar que tiene al menos uno de cada tipo (verificación final)
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(c in special_chars for c in password)
+    
+    # Si falta algún tipo, reemplazar en una posición específica
+    if not has_lower:
+        password = password[0].lower() + password[1:]
+    if not has_upper:
+        password = password[:1] + password[1].upper() + password[2:]
+    if not has_digit:
+        password = password[:2] + numbers[int(hash_hex[4], 16) % len(numbers)] + password[3:]
+    if not has_special:
+        password = password[:3] + special_chars[int(hash_hex[5], 16) % len(special_chars)] + password[4:]
+    
+    return password[:8]  # Asegurar exactamente 8 caracteres
+
+
+def get_or_generate_password(email: str) -> str:
+    """
+    Obtiene la contraseña generada para un email, o la genera si no existe.
+    
+    La contraseña se guarda en config/user_passwords.json para que sea consistente.
+    
+    Args:
+        email: Email del usuario
+        
+    Returns:
+        Contraseña del usuario (generada o existente)
+    """
+    email_normalized = email.lower().strip()
+    config_paths = [
+        Path(__file__).parent.parent.parent.parent / "config" / "user_passwords.json",
+        Path("./config/user_passwords.json"),
+        Path(__file__).parent.parent.parent / "config" / "user_passwords.json"
+    ]
+    
+    passwords_file = None
+    for path in config_paths:
+        if path.exists():
+            passwords_file = path
+            break
+    
+    # Si no existe el archivo, crear uno nuevo
+    if not passwords_file:
+        passwords_file = Path(__file__).parent.parent.parent.parent / "config" / "user_passwords.json"
+        passwords_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(passwords_file, 'w', encoding='utf-8') as f:
+            json.dump({"passwords": {}}, f, indent=2, ensure_ascii=False)
+    
+    # Leer contraseñas existentes
+    try:
+        with open(passwords_file, 'r', encoding='utf-8') as f:
+            passwords_data = json.load(f)
+    except Exception:
+        passwords_data = {"passwords": {}}
+    
+    passwords = passwords_data.get("passwords", {})
+    
+    # Si ya existe la contraseña, retornarla
+    if email_normalized in passwords:
+        return passwords[email_normalized]
+    
+    # Si no existe, generar una nueva y guardarla
+    new_password = generate_password_from_email(email_normalized)
+    passwords[email_normalized] = new_password
+    passwords_data["passwords"] = passwords
+    
+    # Guardar en el archivo
+    try:
+        with open(passwords_file, 'w', encoding='utf-8') as f:
+            json.dump(passwords_data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Contraseña generada para {email_normalized}")
+        
+        # Sincronizar a BD como respaldo (no crítico si falla)
+        try:
+            from .dependencies import get_database_service
+            db_service = get_database_service()
+            nombre = format_name_from_email(email_normalized)
+            db_service.sync_usuario_to_db(email_normalized, new_password, nombre)
+        except Exception as e:
+            # No es crítico si falla la sincronización a BD
+            logger.debug(f"No se pudo sincronizar usuario a BD (no crítico): {e}")
+    except Exception as e:
+        logger.error(f"Error guardando contraseña: {e}")
+    
+    return new_password
+
+
+def verify_password(email: str, provided_password: str) -> Tuple[bool, str]:
+    """
+    Verifica si la contraseña proporcionada es correcta para el email.
+    
+    TEMPORALMENTE: Intenta validar desde BD primero, si falla usa JSON.
+    Después de pruebas, volveremos a usar solo JSON como fuente de verdad.
+    
+    Args:
+        email: Email del usuario
+        provided_password: Contraseña proporcionada
+        
+    Returns:
+        Tupla (bool, str): (True/False si es válida, fuente_usada: "BD" o "JSON")
+    """
+    email_normalized = email.lower().strip()
+    
+    # TEMPORAL: Intentar validar desde BD primero (solo para pruebas)
+    try:
+        from .dependencies import get_database_service
+        db_service = get_database_service()
+        if db_service.is_enabled():
+            # Intentar validar desde BD
+            if db_service.verify_password_from_db(email_normalized, provided_password):
+                logger.info(f"✓ [BD] Contraseña validada desde BASE DE DATOS para: {email_normalized}")
+                print(f"✓ [BD] Validación desde BASE DE DATOS para: {email_normalized}")
+                return True, "BD"
+            # Si BD está habilitada pero falla, continuar con JSON como fallback
+            logger.info(f"⚠ [BD→JSON] Validación desde BD falló, usando JSON como fallback para: {email_normalized}")
+            print(f"⚠ [BD→JSON] BD falló, usando JSON para: {email_normalized}")
+    except Exception as e:
+        logger.info(f"⚠ [JSON] No se pudo validar desde BD (usando JSON): {e}")
+        print(f"⚠ [JSON] No se pudo validar desde BD, usando JSON: {e}")
+    
+    # Fuente de verdad: JSON (o fallback si BD no está disponible)
+    expected_password = get_or_generate_password(email_normalized)
+    
+    # Comparar contraseñas (case-sensitive)
+    is_valid = provided_password == expected_password
+    
+    if is_valid:
+        logger.info(f"✓ [JSON] Contraseña validada desde JSON para: {email_normalized}")
+        print(f"✓ [JSON] Validación desde JSON para: {email_normalized}")
+    else:
+        logger.warning(f"✗ [JSON] Contraseña incorrecta desde JSON para: {email_normalized}")
+        print(f"✗ [JSON] Contraseña incorrecta desde JSON para: {email_normalized}")
+    
+    return is_valid, "JSON"
 
 
 def format_name_from_email(email: str) -> str:
@@ -362,13 +567,16 @@ def get_current_user_email(
 @app.post("/api/v1/login", response_model=LoginResponse, tags=["Auth"])
 async def login(request: LoginRequest):
     """
-    Endpoint de login que valida el email contra la lista de correos autorizados.
+    Endpoint de login que valida el email y contraseña contra la lista de correos autorizados.
     
-    Si el email está autorizado, genera un token de sesión que puede usarse
-    en otros endpoints en lugar de proporcionar el email cada vez.
+    Si el email está autorizado y la contraseña es correcta, genera un token de sesión
+    que puede usarse en otros endpoints en lugar de proporcionar el email cada vez.
+    
+    La contraseña se genera automáticamente la primera vez basada en el email.
+    Se guarda en config/user_passwords.json para mantener consistencia.
     
     Args:
-        request: LoginRequest con el email del usuario
+        request: LoginRequest con el email y contraseña del usuario
         
     Returns:
         LoginResponse con token de autenticación y fecha de expiración
@@ -376,7 +584,8 @@ async def login(request: LoginRequest):
     Ejemplo:
         POST /api/v1/login
         {
-            "email": "usuario@newmont.com"
+            "email": "usuario@newmont.com",
+            "password": "AZEBAC.ROTIV2024"
         }
         
         Respuesta:
@@ -400,6 +609,29 @@ async def login(request: LoginRequest):
             }
         )
     
+    # Validar contraseña
+    if not request.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Contraseña requerida. Por favor, proporciona tu contraseña.",
+                "success": False
+            }
+        )
+    
+    # Verificar contraseña (retorna tupla: (bool, fuente))
+    is_valid, fuente_validacion = verify_password(email, request.password)
+    
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": "Contraseña incorrecta. Por favor, verifica tus credenciales.",
+                "success": False,
+                "fuente_validacion": fuente_validacion
+            }
+        )
+    
     # Limpiar tokens expirados antes de crear uno nuevo
     cleanup_expired_tokens()
     
@@ -410,13 +642,17 @@ async def login(request: LoginRequest):
     # Extraer y formatear nombre del email
     nombre = format_name_from_email(email)
     
+    # Mensaje con información de la fuente usada
+    mensaje = f"Login exitoso. Validado desde {fuente_validacion}. Usa este token en el header 'Authorization: Bearer <token>' para autenticarte."
+    
     return LoginResponse(
         success=True,
         token=token,
         email=email,
         nombre=nombre,
-        message="Login exitoso. Usa este token en el header 'Authorization: Bearer <token>' para autenticarte.",
-        expires_at=token_data["expires_at"] if token_data else None
+        message=mensaje,
+        expires_at=token_data["expires_at"] if token_data else None,
+        fuente_validacion=fuente_validacion
     )
 
 
