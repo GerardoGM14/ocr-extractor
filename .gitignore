@@ -14,6 +14,9 @@ dist/config/gemini_config.json
 config/config.json
 dist/config/config.json
 *.config.json
+config/user_passwords.json
+*.user_passwords.json
+
 
 # Carpetas con .gitkeep
 learning/knowledge/
