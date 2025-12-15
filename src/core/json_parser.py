@@ -85,48 +85,54 @@ class JSONParser:
             }
         }
         
-        # Inicializar estructura completa de tablas
-        if not json_2.get("additional_data"):
-            json_2["additional_data"] = {}
-        
-        # Asegurar que todas las tablas estén presentes (incluso si vacías)
-        # PRIORIDAD: Usar datos de additional_data si vienen de Gemini (estructurados)
-        # Solo usar datos tradicionales si Gemini no proporcionó datos estructurados
-        
-        # Tablas principales (datos de transacción)
+        # Tablas principales (datos de transacción) - irán al nivel raíz
         default_tables = {
             "mresumen": [],
             "mcomprobante": [],
             "mcomprobante_detalle": [],
             "mjornada": [],
             "mjornada_empleado": [],
-            "mproveedor": []
+            "mproveedor": [],
+            "mmaquinaria_equipos": []
         }
         
-        # Tablas ancla (catálogos/referencia) - identificadores por índices
-        default_catalog_tables = {
-            "marchivo_tipo": [],  # Tipos de archivo
-            "mdivisa": [],  # Divisas (USD, PEN, EUR, etc.)
-            "mdocumento_tipo": [],  # Tipos de documento (comprobante, resumen, jornada)
-            "midioma": [],  # Idiomas (Español, Inglés, etc.)
-            "mnaturaleza": [],  # Naturaleza del comprobante
-            "munidad_medida": []  # Unidades de medida
-        }
+        # Tablas ancla (catálogos/referencia) - se usarán para agregar a mcomprobante_detalle
+        catalog_keys = [
+            "marchivo_tipo",
+            "mdivisa",
+            "mdocumento_tipo",
+            "midioma",
+            "mnaturaleza",
+            "munidad_medida",
+            "mdepartamento",
+            "mdisciplina"
+        ]
         
-        # Si hay datos adicionales, fusionarlos con la estructura completa
+        # Extraer catálogos de additional_data si existen
+        catalogos = {}
+        if additional_data:
+            for catalog_key in catalog_keys:
+                if catalog_key in additional_data:
+                    catalogos[catalog_key] = additional_data[catalog_key]
+        
+        # Si hay datos adicionales, fusionarlos directamente en el nivel raíz (sin additional_data)
         if additional_data:
             for key, value in additional_data.items():
-                json_2["additional_data"][key] = value
+                # Solo agregar tablas principales, no catálogos (ya los extrajimos arriba)
+                if key not in catalog_keys:
+                    json_2[key] = value
         
-        # Asegurar que todas las tablas principales estén presentes
+        # Asegurar que todas las tablas principales estén presentes (incluso si vacías)
         for table_name, default_value in default_tables.items():
-            if table_name not in json_2["additional_data"]:
-                json_2["additional_data"][table_name] = default_value
+            if table_name not in json_2:
+                json_2[table_name] = default_value
         
-        # Asegurar que todas las tablas ancla estén presentes
-        for table_name, default_value in default_catalog_tables.items():
-            if table_name not in json_2["additional_data"]:
-                json_2["additional_data"][table_name] = default_value
+        # CRITICAL: Agregar catálogos dentro de cada mcomprobante_detalle
+        if "mcomprobante_detalle" in json_2 and isinstance(json_2["mcomprobante_detalle"], list):
+            for item in json_2["mcomprobante_detalle"]:
+                if isinstance(item, dict):
+                    # Agregar objeto catalogos dentro de cada item
+                    item["catalogos"] = catalogos.copy() if catalogos else {}
         
         return json_2
     

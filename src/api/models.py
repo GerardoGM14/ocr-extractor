@@ -3,7 +3,7 @@ API Models - Modelos Pydantic para requests y responses
 Responsabilidad: Definir estructura de datos de la API
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
@@ -79,6 +79,11 @@ class BatchProcessRequest(BaseModel):
     periodo_id: Optional[str] = Field(default=None, description="ID del periodo para asociar los archivos procesados")
 
 
+class ProcessSelectedRequest(BaseModel):
+    """Request para procesar archivos seleccionados de un periodo."""
+    file_ids: List[str] = Field(..., description="Lista de file_ids (request_ids) a procesar", min_items=1)
+
+
 class BatchProcessResponse(BaseModel):
     """Respuesta del procesamiento batch."""
     success: bool
@@ -87,6 +92,42 @@ class BatchProcessResponse(BaseModel):
     jobs: List[BatchJobInfo]
     errores: Optional[List[Dict[str, Any]]] = None
     message: Optional[str] = None  # Mensaje adicional (ej: "No hay archivos pendientes")
+
+
+class TokenUsageStats(BaseModel):
+    """Estadísticas de uso de tokens."""
+    input_tokens_estimated: int
+    output_tokens_estimated: int
+    total_tokens_estimated: int
+    input_tokens_actual: Optional[int] = None  # Si Gemini retorna usage_metadata
+    output_tokens_actual: Optional[int] = None
+    total_tokens_actual: Optional[int] = None
+    prompt_length_chars: int
+    response_length_chars: int
+    image_size_bytes: int
+    image_dimensions: Optional[Dict[str, int]] = None
+
+
+class PageTokenStats(BaseModel):
+    """Estadísticas de tokens por página."""
+    page_number: int
+    token_stats: TokenUsageStats
+    processing_time_seconds: float
+    error: Optional[str] = None
+
+
+class TokenTestResponse(BaseModel):
+    """Respuesta del endpoint de prueba de tokens."""
+    success: bool
+    filename: str
+    total_pages: int
+    pages_processed: int  # Número de páginas procesadas (1 o todas)
+    page_stats: List[PageTokenStats]  # Estadísticas por página
+    total_token_stats: TokenUsageStats  # Suma total de todas las páginas
+    total_processing_time_seconds: float
+    model_used: str
+    max_output_tokens: int
+    error: Optional[str] = None
 
 
 class ErrorResponse(BaseModel):
@@ -121,6 +162,60 @@ class LoginResponse(BaseModel):
     message: str
     expires_at: Optional[str] = None  # ISO format datetime
     fuente_validacion: Optional[str] = None  # "BD" o "JSON" - indica qué fuente se usó para validar
+    role: Optional[str] = None  # "admin" o "user" - rol del usuario
+
+
+# ===== User Management Models =====
+
+class UserInfo(BaseModel):
+    """Información de un usuario."""
+    email: str
+    nombre: str
+    role: str  # "admin" o "user"
+    status: str  # "active" o "inactive"
+    ultima_edicion: Optional[str] = None
+
+
+class UserCreateRequest(BaseModel):
+    """Request para crear un usuario."""
+    email: EmailStr
+    nombre: str = Field(..., min_length=1)
+    password: Optional[str] = None  # Si no se proporciona, se genera automáticamente
+    role: str = Field(default="user", pattern="^(admin|user)$")
+
+
+class UserUpdateRequest(BaseModel):
+    """Request para actualizar un usuario."""
+    nombre: Optional[str] = None
+    password: Optional[str] = None  # Para cambiar contraseña propia
+    avatar_url: Optional[str] = None
+
+
+class UserUpdateByAdminRequest(BaseModel):
+    """Request para actualizar un usuario (solo admin)."""
+    nombre: Optional[str] = None
+    role: Optional[str] = Field(None, pattern="^(admin|user)$")
+    status: Optional[str] = Field(None, pattern="^(active|inactive)$")
+
+
+class UserPasswordResetRequest(BaseModel):
+    """Request para restaurar contraseña de un usuario (solo admin)."""
+    new_password: Optional[str] = None  # Si no se proporciona, se genera automáticamente
+
+
+class UsersListResponse(BaseModel):
+    """Respuesta de lista de usuarios."""
+    success: bool
+    users: List[UserInfo]
+    total: int
+
+
+class UserResponse(BaseModel):
+    """Respuesta de operación de usuario."""
+    success: bool
+    message: str
+    user: Optional[UserInfo] = None
+    new_password: Optional[str] = None
 
 
 class LogoutRequest(BaseModel):
@@ -311,12 +406,31 @@ class PeriodoArchivoInfo(BaseModel):
     total_usd: Optional[float] = None
     fecha_valoracion: Optional[str] = None
     processed_at: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    uploaded_at: Optional[str] = None
 
 
 class CreatePeriodoRequest(BaseModel):
     """Request para crear un periodo."""
-    periodo: str  # "10/2025" formato MM/AAAA
-    tipo: str  # "onshore" | "offshore"
+    periodo: str = Field(..., min_length=1, description="Periodo en formato MM/AAAA (ej: '10/2025')")
+    tipo: str = Field(..., description="Tipo de periodo: 'onshore' o 'offshore'")
+    
+    @validator('periodo')
+    def periodo_not_empty(cls, v):
+        """Valida que el periodo no esté vacío o solo contenga espacios."""
+        if not v or not v.strip():
+            raise ValueError('Debe agregar un periodo correctamente')
+        return v.strip()
+    
+    @validator('tipo')
+    def tipo_valid(cls, v):
+        """Valida que el tipo sea válido."""
+        if not v or not v.strip():
+            raise ValueError('El campo "Tipo" es obligatorio')
+        v_lower = v.strip().lower()
+        if v_lower not in ["onshore", "offshore"]:
+            raise ValueError('El tipo debe ser "onshore" o "offshore"')
+        return v_lower
 
 
 class PeriodoResponse(BaseModel):
@@ -348,6 +462,14 @@ class PeriodoResumenPSItem(BaseModel):
     total_us: float
     total_horas: float
     ratios_edp: float
+    # Campos adicionales para OnShore (opcionales)
+    job_no: Optional[str] = None
+    wages: Optional[float] = None
+    expatriate_allowances: Optional[float] = None
+    multiplier: Optional[float] = None
+    odc: Optional[float] = None
+    epp: Optional[float] = None
+    total_hours: Optional[float] = None  # Alias para total_horas en OnShore
 
 
 class PeriodoResumenPSResponse(BaseModel):
@@ -357,3 +479,24 @@ class PeriodoResumenPSResponse(BaseModel):
     tipo: str
     items: List[PeriodoResumenPSItem]
     total: int
+
+
+# ===== Maestros Models =====
+
+class ApartadoInfo(BaseModel):
+    """Información de un apartado (concepto)."""
+    id: str = Field(..., description="ID único del apartado")
+    nombre: str = Field(..., description="Nombre del concepto a identificar")
+    orden: int = Field(..., description="Orden del apartado", ge=0)
+
+
+class MaestrosSaveRequest(BaseModel):
+    """Request para guardar apartados."""
+    apartados: List[ApartadoInfo] = Field(..., description="Lista de apartados a guardar")
+
+
+class MaestrosResponse(BaseModel):
+    """Respuesta de los endpoints de maestros."""
+    success: bool
+    apartados: List[ApartadoInfo]
+    message: Optional[str] = None

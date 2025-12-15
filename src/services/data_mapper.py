@@ -217,7 +217,10 @@ class DataMapper:
     def _get_document_type_id(self, doc_type: str) -> int:
         """Retorna el ID del tipo de documento."""
         type_map = {
+            "ticket": 1,
+            "factura_electronica": 1,
             "comprobante": 1,
+            "nota_bill": 1,
             "resumen": 2,
             "jornada": 3,
             "expense_report": 4,  # Bechtel Expense Report (OnShore)
@@ -258,7 +261,8 @@ class DataMapper:
                 resumen_data = self._extract_resumen_data(ocr_text)
                 if resumen_data:
                     result.update(resumen_data)
-            elif doc_type == "comprobante":
+            elif doc_type in ["comprobante", "ticket", "factura_electronica", "nota_bill"]:
+                # Todos estos tipos usan la misma extracción que comprobante
                 comprobante_data = self._extract_comprobante_data(ocr_text)
                 if comprobante_data:
                     result.update(comprobante_data)
@@ -437,7 +441,7 @@ class DataMapper:
                 print(f"Info: Validated catalog {key}: {len(validated_list)} items")
         
         # Validar datos específicos según tipo de documento - solo si Gemini los proporcionó
-        if document_type == "comprobante":
+        if document_type in ["comprobante", "ticket", "factura_electronica", "nota_bill"]:
             if "mcomprobante" in gemini_structured_data:
                 validated_list = self._validate_comprobante_list(
                     gemini_structured_data["mcomprobante"], ocr_text
@@ -508,15 +512,44 @@ class DataMapper:
         # Solo validar que los datos de Gemini estén presentes
         # Si Gemini no extrajo stamp info, eso está bien - confiamos en lo que Gemini retornó
         
+        # CRITICAL: Eliminar TODOS los campos que empiezan con '_' de todos los datos validados
+        # Esto asegura que ningún campo con '_' llegue al JSON final
+        cleaned_validated_data = self._remove_underscore_fields(validated_data)
+        
         # DEBUG: Verificar qué se está retornando
-        if validated_data:
-            keys_count = len(validated_data)
-            items_summary = {k: len(v) if isinstance(v, list) else 1 for k, v in validated_data.items() if v}
+        if cleaned_validated_data:
+            keys_count = len(cleaned_validated_data)
+            items_summary = {k: len(v) if isinstance(v, list) else 1 for k, v in cleaned_validated_data.items() if v}
             print(f"Info: validate_and_enhance_structured_data returning {keys_count} keys: {items_summary}")
         else:
             print(f"Warning: validate_and_enhance_structured_data returning empty dict. gemini_structured_data had {len(gemini_structured_data) if gemini_structured_data else 0} keys")
         
-        return validated_data if validated_data else {}
+        return cleaned_validated_data if cleaned_validated_data else {}
+    
+    def _remove_underscore_fields(self, data: Any) -> Any:
+        """
+        Elimina recursivamente todos los campos que empiezan con '_' de diccionarios y listas.
+        
+        Args:
+            data: Datos a limpiar (dict, list, o cualquier otro tipo)
+            
+        Returns:
+            Datos sin campos que empiezan con '_'
+        """
+        if isinstance(data, dict):
+            # Crear nuevo diccionario sin campos que empiezan con '_'
+            cleaned = {}
+            for key, value in data.items():
+                if not key.startswith('_'):
+                    # Limpiar recursivamente el valor
+                    cleaned[key] = self._remove_underscore_fields(value)
+            return cleaned
+        elif isinstance(data, list):
+            # Limpiar cada elemento de la lista
+            return [self._remove_underscore_fields(item) for item in data]
+        else:
+            # Para otros tipos (str, int, float, None, etc.), retornar tal cual
+            return data
     
     def _validate_catalog_table(self, items: List[Dict], table_name: str) -> List[Dict]:
         """Valida una tabla de catálogo."""
@@ -525,7 +558,9 @@ class DataMapper:
         validated = []
         for item in items:
             if isinstance(item, dict):
-                validated.append(item)
+                # Eliminar campos que empiezan con '_'
+                cleaned_item = self._remove_underscore_fields(item)
+                validated.append(cleaned_item)
         return validated
     
     def _validate_comprobante_list(self, items: List[Dict], ocr_text: str) -> List[Dict]:
@@ -535,13 +570,38 @@ class DataMapper:
         validated = []
         for item in items:
             if isinstance(item, dict):
+                # Eliminar TODOS los campos que empiezan con '_'
+                cleaned_item = self._remove_underscore_fields(item)
                 # Validar campos numéricos
-                if "nPrecioTotal" in item and isinstance(item["nPrecioTotal"], str):
-                    try:
-                        item["nPrecioTotal"] = float(item["nPrecioTotal"].replace(",", ""))
-                    except:
-                        item["nPrecioTotal"] = None
-                validated.append(item)
+                # PRESERVAR strings formateados con comas (valores >= 1000)
+                if "nPrecioTotal" in cleaned_item and isinstance(cleaned_item["nPrecioTotal"], str):
+                    str_value = cleaned_item["nPrecioTotal"]
+                    # Si tiene comas, es un valor formateado >= 1000, mantenerlo como string
+                    if "," in str_value:
+                        # Validar que es un formato válido antes de mantenerlo
+                        try:
+                            # Verificar que después de quitar comas es un número válido
+                            numeric_value = float(str_value.replace(",", ""))
+                            if numeric_value >= 1000:
+                                # Mantener como string formateado
+                                cleaned_item["nPrecioTotal"] = str_value
+                            else:
+                                # Si es < 1000 pero tiene comas, convertir a número
+                                cleaned_item["nPrecioTotal"] = numeric_value
+                        except:
+                            cleaned_item["nPrecioTotal"] = None
+                    else:
+                        # No tiene comas, convertir a número si es válido
+                        try:
+                            numeric_value = float(str_value)
+                            # Si es >= 1000, formatearlo con comas como string
+                            if numeric_value >= 1000:
+                                cleaned_item["nPrecioTotal"] = f"{numeric_value:,.2f}"
+                            else:
+                                cleaned_item["nPrecioTotal"] = numeric_value
+                        except:
+                            cleaned_item["nPrecioTotal"] = None
+                validated.append(cleaned_item)
         return validated
     
     def _validate_detalle_list(self, items: List[Dict]) -> List[Dict]:
@@ -551,13 +611,8 @@ class DataMapper:
         validated = []
         for item in items:
             if isinstance(item, dict):
-                # Eliminar campos técnicos/metadata que no deben aparecer en structured_data
-                fields_to_remove = ["_currency", "_source_line", "_auto_extracted", "_currency_code", "_stamp_name", "_oracle_"]
-                for field in fields_to_remove:
-                    # Remover campos que empiezan con el prefijo
-                    keys_to_remove = [k for k in item.keys() if k.startswith(field)]
-                    for key in keys_to_remove:
-                        del item[key]
+                # Eliminar TODOS los campos que empiezan con '_'
+                cleaned_item = self._remove_underscore_fields(item)
                 
                 # Validar que tDescripcion no contenga JSON o campos técnicos
                 # (Gemini debería ya haber extraído texto limpio, pero validamos por si acaso)
@@ -571,13 +626,42 @@ class DataMapper:
                         pass
                 
                 # Validar campos numéricos
+                # PRESERVAR strings formateados con comas (valores >= 1000) para campos monetarios
                 for num_field in ["nCantidad", "nPrecioUnitario", "nPrecioTotal"]:
-                    if num_field in item and isinstance(item[num_field], str):
-                        try:
-                            item[num_field] = float(item[num_field].replace(",", ""))
-                        except:
-                            item[num_field] = 0.0
-                validated.append(item)
+                    if num_field in cleaned_item and isinstance(cleaned_item[num_field], str):
+                        str_value = cleaned_item[num_field]
+                        # Para campos monetarios (nPrecioUnitario, nPrecioTotal), preservar formato con comas si >= 1000
+                        if num_field in ["nPrecioUnitario", "nPrecioTotal"]:
+                            # Si tiene comas, es un valor formateado >= 1000, mantenerlo como string
+                            if "," in str_value:
+                                try:
+                                    numeric_value = float(str_value.replace(",", ""))
+                                    if numeric_value >= 1000:
+                                        # Mantener como string formateado
+                                        cleaned_item[num_field] = str_value
+                                    else:
+                                        # Si es < 1000 pero tiene comas, convertir a número
+                                        cleaned_item[num_field] = numeric_value
+                                except:
+                                    cleaned_item[num_field] = 0.0
+                            else:
+                                # No tiene comas, convertir a número si es válido
+                                try:
+                                    numeric_value = float(str_value)
+                                    # Si es >= 1000, formatearlo con comas como string
+                                    if numeric_value >= 1000:
+                                        cleaned_item[num_field] = f"{numeric_value:,.2f}"
+                                    else:
+                                        cleaned_item[num_field] = numeric_value
+                                except:
+                                    cleaned_item[num_field] = 0.0
+                        else:
+                            # Para nCantidad, siempre convertir a número
+                            try:
+                                cleaned_item[num_field] = float(str_value.replace(",", ""))
+                            except:
+                                cleaned_item[num_field] = 0.0
+                validated.append(cleaned_item)
         return validated
     
     def _validate_resumen_list(self, items: List[Dict], ocr_text: str = "") -> List[Dict]:
@@ -587,18 +671,13 @@ class DataMapper:
         validated = []
         for item in items:
             if isinstance(item, dict):
-                # Eliminar campos técnicos/metadata que no deben aparecer en structured_data
-                fields_to_remove = ["_currency", "_source_line", "_auto_extracted", "_currency_code", "_stamp_name", "_oracle_"]
-                for field in fields_to_remove:
-                    # Remover campos que empiezan con el prefijo
-                    keys_to_remove = [k for k in item.keys() if k.startswith(field)]
-                    for key in keys_to_remove:
-                        del item[key]
+                # Eliminar TODOS los campos que empiezan con '_'
+                cleaned_item = self._remove_underscore_fields(item)
                 
                 # Validar que tdescription no contenga JSON o campos técnicos
                 # (Gemini debería ya haber extraído texto limpio, pero validamos por si acaso)
-                if "tdescription" in item and isinstance(item["tdescription"], str):
-                    desc = item["tdescription"]
+                if "tdescription" in cleaned_item and isinstance(cleaned_item["tdescription"], str):
+                    desc = cleaned_item["tdescription"]
                     # Si la descripción contiene estructuras JSON claramente incorrectas, marcar como error
                     # Pero NO hacer limpieza automática - Gemini debería haberlo hecho bien desde el principio
                     if desc.strip().startswith('"ocr_text"') or desc.strip().startswith('"nImporte"') or desc.strip().startswith('"_myr_amount"'):
@@ -607,12 +686,33 @@ class DataMapper:
                         pass
                 
                 # Validar campos numéricos
-                if "nImporte" in item and isinstance(item["nImporte"], str):
-                    try:
-                        item["nImporte"] = float(item["nImporte"].replace(",", ""))
-                    except:
-                        item["nImporte"] = None
-                validated.append(item)
+                # PRESERVAR strings formateados con comas (valores >= 1000) para nImporte
+                if "nImporte" in cleaned_item and isinstance(cleaned_item["nImporte"], str):
+                    str_value = cleaned_item["nImporte"]
+                    # Si tiene comas, es un valor formateado >= 1000, mantenerlo como string
+                    if "," in str_value:
+                        try:
+                            numeric_value = float(str_value.replace(",", ""))
+                            if numeric_value >= 1000:
+                                # Mantener como string formateado
+                                cleaned_item["nImporte"] = str_value
+                            else:
+                                # Si es < 1000 pero tiene comas, convertir a número
+                                cleaned_item["nImporte"] = numeric_value
+                        except:
+                            cleaned_item["nImporte"] = None
+                    else:
+                        # No tiene comas, convertir a número si es válido
+                        try:
+                            numeric_value = float(str_value)
+                            # Si es >= 1000, formatearlo con comas como string
+                            if numeric_value >= 1000:
+                                cleaned_item["nImporte"] = f"{numeric_value:,.2f}"
+                            else:
+                                cleaned_item["nImporte"] = numeric_value
+                        except:
+                            cleaned_item["nImporte"] = None
+                validated.append(cleaned_item)
         return validated
     
     def _validate_jornada_list(self, items: List[Dict]) -> List[Dict]:
@@ -622,14 +722,16 @@ class DataMapper:
         validated = []
         for item in items:
             if isinstance(item, dict):
+                # Eliminar TODOS los campos que empiezan con '_'
+                cleaned_item = self._remove_underscore_fields(item)
                 # Validar campos numéricos
                 for num_field in ["nHoras", "nTarifa", "nTotal", "nTotalHoras"]:
-                    if num_field in item and isinstance(item[num_field], str):
+                    if num_field in cleaned_item and isinstance(cleaned_item[num_field], str):
                         try:
-                            item[num_field] = float(item[num_field].replace(",", ""))
+                            cleaned_item[num_field] = float(cleaned_item[num_field].replace(",", ""))
                         except:
-                            item[num_field] = 0.0
-                validated.append(item)
+                            cleaned_item[num_field] = 0.0
+                validated.append(cleaned_item)
         return validated
     
     def _validate_jornada_empleado_list(self, items: List[Dict]) -> List[Dict]:
@@ -639,14 +741,16 @@ class DataMapper:
         validated = []
         for item in items:
             if isinstance(item, dict):
+                # Eliminar TODOS los campos que empiezan con '_'
+                cleaned_item = self._remove_underscore_fields(item)
                 # Validar campos numéricos
                 for num_field in ["nHoras", "nTarifa", "nTotal"]:
-                    if num_field in item and isinstance(item[num_field], str):
+                    if num_field in cleaned_item and isinstance(cleaned_item[num_field], str):
                         try:
-                            item[num_field] = float(item[num_field].replace(",", ""))
+                            cleaned_item[num_field] = float(cleaned_item[num_field].replace(",", ""))
                         except:
-                            item[num_field] = 0.0
-                validated.append(item)
+                            cleaned_item[num_field] = 0.0
+                validated.append(cleaned_item)
         return validated
     
     def _extract_catalog_data(self, ocr_text: str, doc_type: str = None) -> Dict:
@@ -667,7 +771,10 @@ class DataMapper:
         if doc_type:
             doc_type_id = self._get_document_type_id(doc_type)
             doc_type_names = {
+                "ticket": "Ticket",
+                "factura_electronica": "Factura Electrónica",
                 "comprobante": "Comprobante",
+                "nota_bill": "Nota-Bill",
                 "resumen": "Resumen",
                 "jornada": "Jornada",
                 "expense_report": "Expense Report",

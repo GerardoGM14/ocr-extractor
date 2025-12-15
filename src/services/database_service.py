@@ -62,7 +62,8 @@ class DatabaseService:
                     # Extraer datos estructurados
                     metadata = json_data.get("metadata", {})
                     hoja_data = json_data.get("hoja", {})
-                    additional_data = json_data.get("additional_data", {})
+                    # Las tablas ahora están en el nivel raíz, no en additional_data
+                    # Se pueden leer directamente: json_data.get("mcomprobante", []), etc.
                     
                     # TODO: Cuando tengas conexión a BD, implementar:
                     # 1. Guardar en MARCHIVO (si no existe)
@@ -206,26 +207,73 @@ class DatabaseService:
             if not self.connection_string:
                 return False
             
-            # Ejecutar procedimiento almacenado ValidarLogin
-            with pyodbc.connect(self.connection_string) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "EXEC dbo.ValidarLogin @email=?, @password=?",
-                    (email.lower().strip(), provided_password)
-                )
-                
-                # Leer resultado
-                row = cursor.fetchone()
-                if row:
-                    resultado = row[0] if len(row) > 0 else None
-                    if resultado == 'success':
-                        logger.info(f"✓ [BD] Contraseña validada desde BASE DE DATOS para: {email}")
-                        print(f"✓ [BD] Validación exitosa desde BASE DE DATOS para: {email}")
-                        return True
-                    else:
-                        logger.info(f"✗ [BD] Contraseña incorrecta en BASE DE DATOS para: {email}")
-                        print(f"✗ [BD] Contraseña incorrecta en BASE DE DATOS para: {email}")
-                
+            # Usar threading para forzar timeout máximo de 1 segundo total
+            import threading
+            import queue
+            
+            result_queue = queue.Queue()
+            exception_queue = queue.Queue()
+            
+            def try_db_validation():
+                """Función que intenta validar desde BD en un thread separado"""
+                try:
+                    # Timeout muy agresivo: 1 segundo para conexión y consulta
+                    connection_string_fast = self.connection_string.rstrip(';') + ";Connection Timeout=1;"
+                    conn = pyodbc.connect(connection_string_fast)
+                    try:
+                        conn.timeout = 1  # Timeout de 1 segundo para la consulta
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "EXEC dbo.ValidarLogin @email=?, @password=?",
+                            (email.lower().strip(), provided_password)
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            resultado = row[0] if len(row) > 0 else None
+                            result_queue.put(('success' if resultado == 'success' else 'invalid', None))
+                        else:
+                            result_queue.put(('invalid', None))
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    exception_queue.put(e)
+            
+            # Iniciar thread con timeout máximo de 1 segundo
+            db_thread = threading.Thread(target=try_db_validation, daemon=True)
+            db_thread.start()
+            db_thread.join(timeout=1.0)  # Esperar máximo 1 segundo
+            
+            # Verificar si el thread terminó
+            if db_thread.is_alive():
+                # Thread aún corriendo = timeout, usar JSON directamente
+                logger.info(f"⚠ [BD→JSON] Timeout de BD (>1s), usando JSON directamente para: {email}")
+                print(f"⚠ [BD→JSON] Timeout de BD (>1s), usando JSON directamente")
+                return False
+            
+            # Verificar si hubo excepción
+            try:
+                exception = exception_queue.get_nowait()
+                logger.info(f"⚠ [BD→JSON] Error de BD, usando JSON directamente: {exception}")
+                print(f"⚠ [BD→JSON] Error de BD, usando JSON directamente")
+                return False
+            except queue.Empty:
+                pass  # No hubo excepción
+            
+            # Verificar resultado
+            try:
+                resultado, _ = result_queue.get_nowait()
+                if resultado == 'success':
+                    logger.info(f"✓ [BD] Contraseña validada desde BASE DE DATOS para: {email}")
+                    print(f"✓ [BD] Validación exitosa desde BASE DE DATOS para: {email}")
+                    return True
+                else:
+                    logger.info(f"✗ [BD] Contraseña incorrecta en BASE DE DATOS para: {email}")
+                    print(f"✗ [BD] Contraseña incorrecta en BASE DE DATOS para: {email}")
+                    return False
+            except queue.Empty:
+                # No hubo resultado, usar JSON
+                logger.info(f"⚠ [BD→JSON] Sin resultado de BD, usando JSON directamente para: {email}")
+                print(f"⚠ [BD→JSON] Sin resultado de BD, usando JSON directamente")
                 return False
                 
         except Exception as e:

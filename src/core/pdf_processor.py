@@ -9,6 +9,8 @@ from typing import List, Tuple, Optional
 from PIL import Image
 import io
 
+from .file_manager import truncate_pdf_name_base
+
 
 class PDFProcessor:
     """
@@ -128,7 +130,10 @@ class PDFProcessor:
         output_path.mkdir(parents=True, exist_ok=True)
         
         processed_pages = []
-        pdf_name = Path(pdf_path).stem
+        pdf_name_full = Path(pdf_path).stem
+        # Truncar SOLO el nombre base del PDF (sin extensiones ni sufijos)
+        # Esto garantiza que _page_1, _page_2, etc. se mantengan intactos
+        pdf_name = truncate_pdf_name_base(pdf_name_full, max_length=50)
         
         total_pages = self.get_page_count()
         
@@ -147,6 +152,7 @@ class PDFProcessor:
             page_range = range(total_pages)
         
         for page_num in page_range:
+            # El pdf_name ya está truncado, solo agregamos _page_X.png
             img_filename = f"{pdf_name}_page_{page_num + 1}.png"
             img_path = output_path / img_filename
             

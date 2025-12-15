@@ -1,0 +1,29 @@
+{
+  "currency_conversions": {
+    "MYR": 0.24,
+    "CLP": 0.0011,
+    "MXN": 0.056,
+    "PEN": 0.30,
+    "EUR": 1.18,
+    "GBP": 1.27,
+    "CNY": 0.14,
+    "JPY": 0.0067,
+    "ARS": 0.0012,
+    "BRL": 0.20,
+    "COP": 0.00025
+  },
+  "notes": {
+    "MYR": "Malaysian Ringgit",
+    "CLP": "Chilean Peso (approximate: 1 USD = 1000 CLP)",
+    "MXN": "Mexican Peso (approximate: 1 USD = 20 MXN)",
+    "PEN": "Peruvian Sol",
+    "EUR": "Euro",
+    "GBP": "British Pound",
+    "CNY": "Chinese Yuan",
+    "JPY": "Japanese Yen",
+    "ARS": "Argentine Peso",
+    "BRL": "Brazilian Real",
+    "COP": "Colombian Peso"
+  }
+}
+

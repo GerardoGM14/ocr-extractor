@@ -1,0 +1,264 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "parser": "ExtractorOCR",
+    "extraction_date": "2025-01-15T10:30:00.000000",
+    "type": "structured",
+    "pdf_name": "ejemplo_documento.pdf",
+    "page_number": 1,
+    "request_id": "abc123-def456-ghi789",
+    "processed_at": "2025-01-15T10:30:00.000000",
+    "onshore_offshore": "offshore"
+  },
+  "hoja": {
+    "tJson": "Texto completo extraído del OCR del documento...",
+    "tJsonTraducido": "Complete extracted text from OCR translated to English...",
+    "lFormato": "PDF",
+    "iMIdioma": 2,
+    "iMDocumentoTipo": 1,
+    "tSequentialNumber": "BS0001"
+  },
+  "additional_data": {
+    "onshore_offshore": "offshore",
+    
+    "marchivo_tipo": [],
+    
+    "mdivisa": [
+      {
+        "tDivisa": "USD"
+      },
+      {
+        "tDivisa": "PEN"
+      }
+    ],
+    
+    "mproveedor": [
+      {
+        "tRazonSocial": "Company Name SDN BHD"
+      }
+    ],
+    
+    "mnaturaleza": [
+      {
+        "tNaturaleza": "Alimentación"
+      },
+      {
+        "tNaturaleza": "Transporte"
+      }
+    ],
+    
+    "mdocumento_tipo": [
+      {
+        "iMDocumentoTipo": 1,
+        "tTipo": "Comprobante"
+      }
+    ],
+    
+    "midioma": [
+      {
+        "iMIdioma": 2,
+        "tIdioma": "Inglés"
+      }
+    ],
+    
+    "munidad_medida": [
+      {
+        "tUnidad": "kg"
+      },
+      {
+        "tUnidad": "unidades"
+      },
+      {
+        "tUnidad": "EACH"
+      }
+    ],
+    
+    "mdepartamento": [
+      {
+        "tDepartamento": "Engineering"
+      },
+      {
+        "tDepartamento": "Other Services"
+      }
+    ],
+    
+    "mdisciplina": [
+      {
+        "tDisciplina": "Civil/Structural/Architectural Engineering"
+      },
+      {
+        "tDisciplina": "Project Management"
+      }
+    ],
+    
+    "mcomprobante": [
+      {
+        "tNumero": "INV-2025-001",
+        "tSerie": "A001",
+        "dFecha": "2025-01-15",
+        "fEmision": "2025-01-15",
+        "nPrecioTotal": 1500.50,
+        "nPrecioTotalMYR": null,
+        "precioTotal": 1500.50,
+        "tCliente": "Client Name",
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0001",
+        "tInvoiceAmount": null,
+        "tTaxAmount": null,
+        "tDueDate": null,
+        "tGrossAmount": null,
+        "tPaymentCurrency": null,
+        "tPaymentMethod": null,
+        "tSupplierNum": null,
+        "tOperatingUnit": null,
+        "tSupplierSite": null,
+        "tInvoiceDate": null
+      }
+    ],
+    
+    "mcomprobante_detalle": [
+      {
+        "nCantidad": 2,
+        "tUnidad": "kg",
+        "tDescripcion": "Item description from document",
+        "nPrecioUnitario": 10.50,
+        "nPrecioTotal": 21.00,
+        "nPrecioTotalMYR": null
+      },
+      {
+        "nCantidad": 5,
+        "tUnidad": "unidades",
+        "tDescripcion": "Another item description",
+        "nPrecioUnitario": 15.75,
+        "nPrecioTotal": 78.75,
+        "nPrecioTotalMYR": null
+      }
+    ],
+    
+    "mresumen": [
+      {
+        "tjobno": "26443-331",
+        "ttype": "Toll",
+        "tsourcereference": "Project: Yanacocha AWTP Onshore",
+        "tsourcerefid": "Item No. 1",
+        "tdescription": "Toll",
+        "nImporte": 500.00,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0001"
+      },
+      {
+        "tjobno": "26443-331",
+        "ttype": "Hotel",
+        "tsourcereference": "Project: Yanacocha AWTP Onshore",
+        "tsourcerefid": "Item No. 2",
+        "tdescription": "Hotel",
+        "nImporte": 1200.00,
+        "tStampname": "BSQE",
+        "tsequentialnumber": "BS0001"
+      }
+    ],
+    
+    "mjornada": [
+      {
+        "dFecha": "2025-07-01",
+        "fRegistro": "JUL 2025",
+        "nTotalHoras": 651.50,
+        "tEmpleado": null,
+        "tEmpleadoID": null,
+        "nHoras": null,
+        "nTarifa": 22.00,
+        "nTotal": 14333.00
+      }
+    ],
+    
+    "mjornada_empleado": [
+      {
+        "tNumero": "168474",
+        "tNombre": "Saavedra Oportus, Hector Alejandro",
+        "tOrganizacion": "8NJ2100",
+        "dFecha": "2025-06-30",
+        "nHoras": 4.75,
+        "nTarifa": 22.00,
+        "nTotal": 104.50
+      },
+      {
+        "tNumero": "174618",
+        "tNombre": "Vera Diaz, Boris Haendel",
+        "tOrganizacion": "8NJ2500",
+        "dFecha": "2025-07-31",
+        "nHoras": 47.50,
+        "nTarifa": 22.00,
+        "nTotal": 1045.00
+      }
+    ],
+    
+    "mmaquinaria_equipos": [
+      {
+        "tTipo": "Vehículo",
+        "tDescripcion": "Complete description of the vehicle/equipment",
+        "nValorMonetario": 5000.00,
+        "tMoneda": "USD",
+        "tMarca": "NISSAN",
+        "tPlaca": "C1J-905",
+        "tTUCE": "TUCE123456",
+        "tConductor": "SEGUNDO KELVIN JULON VASQUEZ",
+        "tNumeroDocumento": "D.N.I.-47799028",
+        "tNumeroLicencia": "847799028",
+        "tModelo": null,
+        "tSerial": null,
+        "tNumeroOrden": null,
+        "tCodigoItem": null,
+        "nCantidad": null,
+        "tUnidadMedida": null,
+        "nPrecioUnitario": null,
+        "nPrecioTotal": null,
+        "tProveedor": null,
+        "tRUC": null,
+        "dFecha": "2025-01-15",
+        "dFechaEmision": null,
+        "dFechaInicioTraslado": null,
+        "tPuntoPartida": null,
+        "tPuntoLlegada": null,
+        "tModalidadTraslado": null,
+        "tPesoBrutoTotal": null,
+        "tUbicacion": null,
+        "tEstado": null,
+        "tReferencia": null,
+        "tObservaciones": null,
+        "tDescripcionDetallada": null,
+        "tCatalogo": null,
+        "tMarcaProducto": null,
+        "tFechaEntrega": null
+      }
+    ],
+    
+    "grupos": [
+      {
+        "grupo_id": "grupo_1",
+        "grupo_nombre": "Grupo 1",
+        "items": [
+          {
+            "nCantidad": 2,
+            "tUnidad": "kg",
+            "tDescripcion": "Item dentro del grupo 1",
+            "nPrecioUnitario": 10.50,
+            "nPrecioTotal": 21.00
+          }
+        ],
+        "catalogos": {
+          "mdivisa": [
+            {
+              "tDivisa": "USD"
+            }
+          ],
+          "mproveedor": [
+            {
+              "tRazonSocial": "Supplier for Group 1"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+

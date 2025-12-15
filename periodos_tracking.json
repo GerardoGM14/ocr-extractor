@@ -1,16 +1,28 @@
 {
   "periodos": [
     {
-      "periodo_id": "2022-08-offshore",
-      "periodo": "08/2022",
-      "tipo": "offshore",
-      "estado": "cerrado",
+      "periodo_id": "2025-01-onshore",
+      "periodo": "01/2025",
+      "tipo": "onshore",
+      "estado": "pendiente",
       "registros": 1,
-      "ultimo_procesamiento": "2025-11-24T17:54:45.761133",
+      "ultimo_procesamiento": "2025-12-15T14:48:39.884121",
       "archivos_asociados": [
-        "c91b4f26-ad6f-482e-a43a-910c8bb6ed81"
+        "2ef9139b-e2fa-4b88-b61f-299c8abfd307"
       ],
-      "created_at": "2025-11-24T17:54:16.031035"
+      "created_at": "2025-12-15T14:47:44.583623"
+    },
+    {
+      "periodo_id": "2025-07-offshore",
+      "periodo": "07/2025",
+      "tipo": "offshore",
+      "estado": "pendiente",
+      "registros": 1,
+      "ultimo_procesamiento": "2025-12-15T14:53:07.447330",
+      "archivos_asociados": [
+        "58304ca2-863a-4b28-b4c2-c24a91ba451c"
+      ],
+      "created_at": "2025-12-15T14:52:48.301200"
     }
   ]
 }

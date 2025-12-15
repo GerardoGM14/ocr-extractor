@@ -432,6 +432,129 @@ def clear_allowed_emails_cache():
     _allowed_emails_cache = None
 
 
+def add_email_to_allowed_list(email: str) -> bool:
+    """
+    Agrega un email a la lista de correos autorizados en allowed_emails.json.
+    
+    Args:
+        email: Email a agregar
+        
+    Returns:
+        True si se agregó exitosamente, False si hubo error
+    """
+    email_normalized = email.lower().strip()
+    if not email_normalized:
+        return False
+    
+    # Buscar archivo de configuración
+    possible_paths = [
+        "config/allowed_emails.json",
+        "./config/allowed_emails.json",
+        Path(__file__).parent.parent.parent / "config" / "allowed_emails.json"
+    ]
+    
+    allowed_emails_file = None
+    for path in possible_paths:
+        path_obj = Path(path) if isinstance(path, str) else path
+        if path_obj.exists():
+            allowed_emails_file = path_obj
+            break
+    
+    # Si no existe, crear uno nuevo
+    if not allowed_emails_file:
+        allowed_emails_file = Path(__file__).parent.parent.parent / "config" / "allowed_emails.json"
+        allowed_emails_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        import json
+        # Leer archivo existente
+        allowed_emails = []
+        if allowed_emails_file.exists():
+            with open(allowed_emails_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                allowed_emails = config.get("allowed_emails", [])
+        
+        # Normalizar emails existentes
+        allowed_emails = [e.lower().strip() for e in allowed_emails if e]
+        
+        # Agregar email si no existe
+        if email_normalized not in allowed_emails:
+            allowed_emails.append(email_normalized)
+        
+        # Guardar archivo
+        with open(allowed_emails_file, 'w', encoding='utf-8') as f:
+            json.dump({"allowed_emails": allowed_emails}, f, indent=2, ensure_ascii=False)
+        
+        # Limpiar cache
+        clear_allowed_emails_cache()
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error agregando email a allowed_emails.json: {e}")
+        return False
+
+
+def remove_email_from_allowed_list(email: str) -> bool:
+    """
+    Remueve un email de la lista de correos autorizados en allowed_emails.json.
+    
+    Args:
+        email: Email a remover
+        
+    Returns:
+        True si se removió exitosamente, False si hubo error o el email no existía
+    """
+    email_normalized = email.lower().strip()
+    if not email_normalized:
+        return False
+    
+    # Buscar archivo de configuración
+    possible_paths = [
+        "config/allowed_emails.json",
+        "./config/allowed_emails.json",
+        Path(__file__).parent.parent.parent / "config" / "allowed_emails.json"
+    ]
+    
+    allowed_emails_file = None
+    for path in possible_paths:
+        path_obj = Path(path) if isinstance(path, str) else path
+        if path_obj.exists():
+            allowed_emails_file = path_obj
+            break
+    
+    # Si no existe el archivo, no hay nada que remover
+    if not allowed_emails_file:
+        return True
+    
+    try:
+        import json
+        # Leer archivo existente
+        allowed_emails = []
+        if allowed_emails_file.exists():
+            with open(allowed_emails_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                allowed_emails = config.get("allowed_emails", [])
+        
+        # Normalizar emails existentes
+        allowed_emails = [e.lower().strip() for e in allowed_emails if e]
+        
+        # Remover email si existe
+        if email_normalized in allowed_emails:
+            allowed_emails.remove(email_normalized)
+        
+        # Guardar archivo
+        with open(allowed_emails_file, 'w', encoding='utf-8') as f:
+            json.dump({"allowed_emails": allowed_emails}, f, indent=2, ensure_ascii=False)
+        
+        # Limpiar cache
+        clear_allowed_emails_cache()
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error removiendo email de allowed_emails.json: {e}")
+        return False
+
+
 # ===== Learning System Dependencies =====
 
 def get_learning_system():

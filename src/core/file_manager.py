@@ -9,6 +9,66 @@ from pathlib import Path
 from typing import Optional, Dict, List
 
 
+def truncate_filename_for_path(filename: str, max_length: int = 50) -> str:
+    """
+    Trunca un nombre de archivo para evitar rutas demasiado largas en Windows.
+    
+    Args:
+        filename: Nombre del archivo (puede incluir extensión)
+        max_length: Longitud máxima permitida (default: 50)
+        
+    Returns:
+        Nombre truncado manteniendo la extensión si existe
+        
+    Examples:
+        truncate_filename_for_path("muy_largo_nombre_archivo.pdf", 50) -> "muy_largo_nombre_archivo.pdf" (si cabe)
+        truncate_filename_for_path("super_largo_nombre_archivo_que_excede_limite.pdf", 20) -> "super_largo_nombre.pdf"
+    """
+    if len(filename) <= max_length:
+        return filename
+    
+    # Separar nombre y extensión
+    if '.' in filename:
+        name_part, ext = filename.rsplit('.', 1)
+        ext_with_dot = f".{ext}"
+    else:
+        name_part = filename
+        ext_with_dot = ""
+    
+    # Calcular cuánto espacio queda para el nombre (considerando la extensión)
+    available_length = max_length - len(ext_with_dot)
+    
+    if available_length <= 0:
+        # Si la extensión es muy larga, truncar todo
+        return filename[:max_length]
+    
+    # Truncar el nombre manteniendo la extensión
+    truncated_name = name_part[:available_length]
+    return f"{truncated_name}{ext_with_dot}"
+
+
+def truncate_pdf_name_base(pdf_name: str, max_length: int = 50) -> str:
+    """
+    Trunca SOLO el nombre base del PDF (sin extensiones ni sufijos como _page_X).
+    Esto garantiza que cuando se agreguen sufijos como _page_1, _page_2, etc.,
+    cada archivo mantenga su identificación única.
+    
+    Args:
+        pdf_name: Nombre base del PDF (sin extensión, sin sufijos)
+        max_length: Longitud máxima permitida para el nombre base (default: 50)
+        
+    Returns:
+        Nombre base truncado
+        
+    Examples:
+        truncate_pdf_name_base("muy_largo_nombre_archivo", 20) -> "muy_largo_nombre_ar"
+        Luego se puede usar: f"{truncated}_page_1_structured.json" -> "muy_largo_nombre_ar_page_1_structured.json"
+    """
+    if len(pdf_name) <= max_length:
+        return pdf_name
+    return pdf_name[:max_length]
+
+
 class FileManager:
     """
     Gestor de archivos para el sistema de OCR.

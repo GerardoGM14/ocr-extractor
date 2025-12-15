@@ -33,6 +33,14 @@ class GeminiService:
         self.timeout = self.config.get("timeout", 300)
         self.max_retries = self.config.get("max_retries", 3)
         
+        # Cache para el prompt (evitar recalcularlo cada vez)
+        # NOTA: El cache se invalida si cambian las conversiones de moneda
+        self._prompt_cache = None
+        self._currency_conversions_hash = None
+        
+        # Cargar conversiones de moneda
+        self.currency_conversions = self._load_currency_conversions()
+        
         self._configure_api()
         self.model = self._load_model()
     
@@ -45,6 +53,77 @@ class GeminiService:
             raise FileNotFoundError(f"Config not found: {self.config_path}")
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid config JSON: {e}")
+    
+    def _load_currency_conversions(self) -> Dict[str, float]:
+        """Carga las tasas de conversión de monedas desde archivo de configuración."""
+        try:
+            # Buscar el archivo en la misma carpeta que gemini_config.json
+            config_dir = Path(self.config_path).parent
+            currency_config_path = config_dir / "currency_conversions.json"
+            
+            if not currency_config_path.exists():
+                # Fallback a valores por defecto si no existe el archivo
+                print(f"Warning: currency_conversions.json not found at {currency_config_path}. Using default rates.")
+                return {
+                    "MYR": 0.21,
+                    "CLP": 0.001,
+                    "MXN": 0.05,
+                    "PEN": 0.27
+                }
+            
+            with open(currency_config_path, 'r', encoding='utf-8') as f:
+                currency_data = json.load(f)
+                return currency_data.get("currency_conversions", {})
+        except Exception as e:
+            print(f"Warning: Error loading currency conversions: {e}. Using default rates.")
+            return {
+                "MYR": 0.21,
+                "CLP": 0.001,
+                "MXN": 0.05,
+                "PEN": 0.27
+            }
+    
+    def _generate_currency_conversion_section(self) -> str:
+        """
+        Genera la sección de conversiones de moneda para el prompt dinámicamente.
+        
+        Returns:
+            String con la sección de conversiones formateada para el prompt
+        """
+        if not self.currency_conversions:
+            return ""
+        
+        lines = ["**CURRENCY CONVERSION RULES (DYNAMIC):**"]
+        lines.append("- **CRITICAL**: nPrecioTotal MUST always be in USD")
+        lines.append("- If document contains values in a currency other than USD and NO USD values are found, convert to USD using the rates below:")
+        lines.append("")
+        
+        # Generar tabla de conversiones
+        for currency, rate in sorted(self.currency_conversions.items()):
+            lines.append(f"- {currency} → USD: 1 {currency} = {rate} USD")
+        
+        lines.append("")
+        lines.append("**CONVERSION PROCESS:**")
+        lines.append("1. Detect the original currency from the document (CLP, MXN, MYR, PEN, etc.)")
+        lines.append("2. If document has ONLY non-USD currency (no USD found): Convert using the rate above")
+        lines.append("3. If document has BOTH non-USD and USD: Use USD values (do NOT convert)")
+        lines.append("4. If document has ONLY USD: Use USD values as-is")
+        lines.append("5. Store original value in nPrecioTotalOriginal field and currency code in tMonedaOriginal field")
+        lines.append("")
+        lines.append("**EXAMPLES:**")
+        
+        # Generar ejemplos dinámicos
+        example_currencies = list(self.currency_conversions.keys())[:3]  # Primeras 3 para ejemplos
+        for currency in example_currencies:
+            rate = self.currency_conversions[currency]
+            example_value = 1000
+            converted = example_value * rate
+            lines.append(f"- If total is \"{currency} {example_value:.2f}\" and no USD found → nPrecioTotal: \"{converted:.2f}\" (USD), nPrecioTotalOriginal: \"{example_value:.2f}\", tMonedaOriginal: \"{currency}\"")
+        
+        lines.append("- If total is already in USD → nPrecioTotal: \"[value]\", nPrecioTotalOriginal: null, tMonedaOriginal: null")
+        lines.append("")
+        
+        return "\n".join(lines)
     
     def _configure_api(self) -> None:
         """Configura la API Key de Gemini."""
@@ -60,7 +139,7 @@ class GeminiService:
                 "temperature": self.config.get("temperature", 0.1),
                 "top_p": 0.95,
                 "top_k": 40,
-                "max_output_tokens": 32768,  # Máximo para obtener todo el texto
+                "max_output_tokens": self.config.get("max_output_tokens", 65536),  # Configurable, default: 65536 (máximo de Gemini 2.5)
             }
             
             # Configuración de seguridad más permisiva
@@ -114,9 +193,44 @@ class GeminiService:
                 response = self.model.generate_content([prompt, img])
             except Exception as api_error:
                 error_msg = str(api_error)
-                print(f"Error en llamada a Gemini API: {error_msg}")
+                error_str_lower = error_msg.lower()
+                
+                # Detectar error 429 (quota exceeded) - ser más específico para evitar falsos positivos
+                # Buscar primero "429" explícitamente, luego verificar contexto de quota
+                is_429_error = "429" in error_msg or (
+                    ("quota" in error_str_lower or "exceeded" in error_str_lower) and 
+                    ("rate" in error_str_lower or "limit" in error_str_lower or "per minute" in error_str_lower or "per day" in error_str_lower)
+                )
+                
+                if is_429_error:
+                    # Intentar extraer el tiempo de retry sugerido
+                    retry_delay = 20  # Default: 20 segundos
+                    if "retry" in error_str_lower:
+                        # Buscar "retry in Xs" o "retry_delay"
+                        import re
+                        retry_match = re.search(r'retry.*?(\d+(?:\.\d+)?)\s*s', error_str_lower)
+                        if retry_match:
+                            retry_delay = int(float(retry_match.group(1))) + 1  # Agregar 1 segundo de margen
+                        else:
+                            # Buscar en formato "seconds: X"
+                            seconds_match = re.search(r'seconds?[:\s]+(\d+)', error_str_lower)
+                            if seconds_match:
+                                retry_delay = int(seconds_match.group(1)) + 1
+                    
+                    print(f"Error 429 - Quota exceeded. Retry delay: {retry_delay}s")
+                    print(f"Error details: {error_msg[:500]}")  # Limitar longitud del mensaje
+                    
+                    return {
+                        "success": False,
+                        "error": f"429 Quota exceeded. Please retry in {retry_delay}s. Check your Gemini API quota limits.",
+                        "text": "",
+                        "timestamp": time.time(),
+                        "retry_after": retry_delay,  # Información para el sistema de reintentos
+                        "error_type": "quota_exceeded"
+                    }
+                
                 # Verificar si es un error de timeout o conexión
-                if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
+                if "timeout" in error_str_lower or "connection" in error_str_lower:
                     return {
                         "success": False,
                         "error": f"API timeout/connection error: {error_msg}",
@@ -568,6 +682,15 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
             else:
                 last_error = "OCR returned None"
             
+            # CRITICAL: NO reintentar si es error 429 (quota exceeded)
+            # Cada reintento consume tokens de entrada aunque falle, multiplicando el consumo innecesariamente
+            if result and result.get("error_type") == "quota_exceeded":
+                # Si es error de cuota, NO reintentar - retornar inmediatamente
+                print(f"Quota exceeded. Stopping retries to avoid consuming more tokens.")
+                print(f"Note: You've exceeded your Gemini API quota. Check: https://ai.google.dev/gemini-api/docs/rate-limits")
+                break  # Salir del loop de reintentos inmediatamente
+            
+            # Para otros errores, reintentar normalmente
             if attempt < max_retries - 1:
                 wait_time = (attempt + 1) * 2
                 print(f"Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
@@ -633,7 +756,7 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
                 "midioma.tIdioma (language name), mdivisa (array of currency codes like USD, RM, PEN, EUR), "
                 "mproveedor.tRazonSocial (supplier/company name if any), "
                 "mnaturaleza (array of categories from this controlled set: ['Alimentación','Hospedaje','Transporte','Combustible','Materiales','Servicios','Otros']), "
-                "mdocumento_tipo.tTipo (one of: Comprobante, Resumen, Jornada). "
+                "mdocumento_tipo.tTipo (one of: Ticket, Factura Electrónica, Comprobante, Nota-Bill, Resumen, Jornada). "
                 "Rules: detect multi-language; keep numbers/dates unchanged; do not invent. "
                 "If unsure, omit the field. Respond ONLY with JSON.\n\nText:\n" + text
             )
@@ -737,8 +860,41 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
                 response = self.model.generate_content([prompt, img])
             except Exception as api_error:
                 error_msg = str(api_error)
-                print(f"Error en llamada a Gemini API: {error_msg}")
-                if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
+                error_str_lower = error_msg.lower()
+                
+                # Detectar error 429 (quota exceeded) - ser más específico para evitar falsos positivos
+                is_429_error = "429" in error_msg or (
+                    ("quota" in error_str_lower or "exceeded" in error_str_lower) and 
+                    ("rate" in error_str_lower or "limit" in error_str_lower or "per minute" in error_str_lower or "per day" in error_str_lower)
+                )
+                
+                if is_429_error:
+                    retry_delay = 20  # Default: 20 segundos
+                    if "retry" in error_str_lower:
+                        import re
+                        retry_match = re.search(r'retry.*?(\d+(?:\.\d+)?)\s*s', error_str_lower)
+                        if retry_match:
+                            retry_delay = int(float(retry_match.group(1))) + 1
+                        else:
+                            seconds_match = re.search(r'seconds?[:\s]+(\d+)', error_str_lower)
+                            if seconds_match:
+                                retry_delay = int(seconds_match.group(1)) + 1
+                    
+                    print(f"Error 429 - Quota exceeded in structured extraction. Retry delay: {retry_delay}s")
+                    
+                    return {
+                        "success": False,
+                        "error": f"429 Quota exceeded. Please retry in {retry_delay}s. Check your Gemini API quota limits.",
+                        "text": "",
+                        "structured_data": {},
+                        "document_type": "unknown",
+                        "timestamp": time.time(),
+                        "retry_after": retry_delay,
+                        "error_type": "quota_exceeded"
+                    }
+                
+                # Verificar si es un error de timeout o conexión
+                if "timeout" in error_str_lower or "connection" in error_str_lower:
                     return {
                         "success": False,
                         "error": f"API timeout/connection error: {error_msg}",
@@ -749,22 +905,28 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
                     }
                 raise
             
+            # Verificar finish_reason para detectar truncamiento o problemas
+            finish_reason = None
+            if hasattr(response, 'candidates') and response.candidates:
+                for candidate in response.candidates:
+                    if hasattr(candidate, 'finish_reason'):
+                        finish_reason = candidate.finish_reason
+                        break
+            
             # Verificar si hay respuesta válida
             if not response.text:
                 error_msg = "Empty response from Gemini"
-                finish_reason = None
                 
                 if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
                     error_msg = f"Content filtered: {response.prompt_feedback.block_reason}"
-                elif hasattr(response, 'candidates') and response.candidates:
-                    for candidate in response.candidates:
-                        if hasattr(candidate, 'finish_reason'):
-                            finish_reason = candidate.finish_reason
-                            if finish_reason == 'SAFETY':
-                                error_msg = "Content blocked by safety filters"
-                            elif finish_reason == 'RECITATION':
-                                error_msg = "Content blocked due to recitation"
-                            break
+                elif finish_reason == 'SAFETY':
+                    error_msg = "Content blocked by safety filters"
+                elif finish_reason == 'RECITATION':
+                    error_msg = "Content blocked due to recitation"
+                elif finish_reason == 'MAX_TOKENS':
+                    error_msg = "Response truncated: reached maximum output tokens limit. Consider increasing max_output_tokens in config."
+                elif finish_reason == 'STOP':
+                    error_msg = "Response stopped early. Content may be incomplete."
                 
                 print(f"Warning: {error_msg} (finish_reason: {finish_reason})")
                 return {
@@ -775,6 +937,13 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
                     "document_type": "unknown",
                     "timestamp": time.time()
                 }
+            
+            # ADVERTENCIA: Verificar si la respuesta fue truncada (aunque haya texto)
+            if finish_reason == 'MAX_TOKENS':
+                print(f"⚠️ WARNING: Response was truncated due to max_output_tokens limit ({self.config.get('max_output_tokens', 65536)}). Some elements may be missing!")
+                print(f"   Consider increasing max_output_tokens in gemini_config.json if document has many elements.")
+            elif finish_reason == 'STOP':
+                print(f"⚠️ WARNING: Response stopped early (finish_reason: {finish_reason}). Content may be incomplete.")
             
             # Parsear respuesta JSON
             response_text = response.text.strip()
@@ -935,8 +1104,62 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
         2. Identifique el tipo de documento
         3. Extraiga campos estructurados según el tipo
         4. Retorne todo en formato JSON estructurado
+        
+        El prompt se cachea para evitar recalcularlo en cada llamada.
         """
-        return """You are an expert document processing system with advanced reasoning capabilities. Your task is to extract ALL text from this financial document AND structure the data according to the document type.
+        # Generar hash de conversiones actuales para validar cache
+        import hashlib
+        import json as json_module
+        current_conversions_hash = hashlib.md5(
+            json_module.dumps(self.currency_conversions, sort_keys=True).encode()
+        ).hexdigest()
+        
+        # Usar cache solo si está disponible Y las conversiones no han cambiado
+        if self._prompt_cache is not None and self._currency_conversions_hash == current_conversions_hash:
+            return self._prompt_cache
+        
+        # Generar sección de conversiones de moneda dinámicamente
+        currency_conversion_section = self._generate_currency_conversion_section()
+        
+        prompt = """You are an expert document processing system with advanced reasoning capabilities. Your task is to extract ALL text from this financial document AND structure the data according to the document type.
+
+**CRITICAL: MONETARY VALUE FORMATTING (READ THIS FIRST - MANDATORY)**
+Before you extract any monetary values, remember this MANDATORY rule:
+- ALL monetary values >= 1000 MUST be formatted as STRINGS with thousands separators (commas)
+- Examples: 5693.07 → "5,693.07", 35800 → "35,800.00", 1000 → "1,000.00"
+- Values < 1000 can be numbers or strings: 500.00 or "500.00"
+- This applies to: nPrecioTotal, nPrecioUnitario, nImporte, precioTotal, entered_amount, total_usd
+- DO NOT return numbers >= 1000 without commas - always format as strings with commas
+
+**CRITICAL: CHINESE TO ENGLISH TRANSLATION (MANDATORY FOR ALL TEXT FIELDS)**
+- **MANDATORY RULE**: ALL text fields that contain Chinese characters (中文) MUST be automatically translated to English
+- This applies to ALL text/string fields in the JSON output, including but not limited to:
+  * tDescripcion, tdescription, tDescripcion (all description fields)
+  * tCliente, tRazonSocial, tEmployeeName (all name fields)
+  * tNumero, tSerie, tStampname, tsequentialnumber (all identifier fields)
+  * tTipo, tNaturaleza, tDepartamento, tDisciplina (all category/type fields)
+  * tUnidad, tDivisa, tIdioma (all code/unit fields)
+  * tInvoiceAmount, tTaxAmount, tGrossAmount (all label fields)
+  * ANY other text field that contains Chinese characters
+- **TRANSLATION EXAMPLES**:
+  * "住宿服务*住宿费" → "Accommodation service*Accommodation fee"
+  * "出租汽车公司" → "Taxi company"
+  * "里程" → "Mileage"
+  * "金额" → "Amount"
+  * "合计" → "Total"
+  * "车号:冀 F-TU275" → "Car number: Ji F-TU275"
+  * "里程:81.7千" → "Mileage: 81.7 thousand"
+  * "等候时间:00:20:00" → "Waiting time: 00:20:00"
+  * "附加费:" → "Surcharge:"
+  * "天津市客运出租专用发票" → "Tianjin Passenger Transport Taxi Special Invoice"
+  * "发票号码" → "Invoice number"
+  * "发票代码" → "Invoice code"
+- **PROCESS**: When you extract any text field:
+  1. Check if it contains Chinese characters (中文)
+  2. If YES: Translate to English while preserving structure, numbers, codes, and special characters
+  3. If NO: Keep the original text as-is
+- **PRESERVE**: Keep numbers, codes, special characters, and formatting exactly as they appear
+- **DO NOT**: Leave Chinese text untranslated in any JSON field - always translate to English
 
 **IMPORTANT: USE YOUR REASONING ABILITY**
 - **ANALYZE THE CONTEXT**: Look at the entire document to understand relationships between values, sections, and elements
@@ -949,11 +1172,33 @@ Do not skip content. Scan thoroughly. Extract completely. Nothing should be left
 - **EXTRAPOLATE MEANING**: If information is partially visible or unclear, use context clues to infer the correct value
 - **VALIDATE CONSISTENCY**: Check that extracted totals match sums of line items when possible
 
+**MONETARY VALUE FORMATTING RULES (CRITICAL - MANDATORY):**
+- For ALL monetary values (nPrecioTotal, nPrecioUnitario, nImporte, precioTotal, entered_amount, total_usd, etc.):
+  - **MANDATORY RULE**: Values >= 1000 MUST ALWAYS be formatted with thousands separators (commas) as STRINGS, NOT as numbers
+  - **MANDATORY RULE**: Values < 1000 can be numbers or strings: 500.00 or "500.00"
+  - **CRITICAL EXAMPLES** (you MUST follow these exactly):
+    * If you extract 35800 → MUST return "35,800.00" (as string with quotes)
+    * If you extract 258000 → MUST return "258,000.00" (as string with quotes)
+    * If you extract 5693.07 → MUST return "5,693.07" (as string with quotes)
+    * If you extract 1234.56 → MUST return "1,234.56" (as string with quotes)
+    * If you extract 1000 → MUST return "1,000.00" (as string with quotes)
+    * If you extract 500.00 → Can return 500.00 (number) or "500.00" (string)
+  - **FORMATTING PROCESS**:
+    1. Extract the numeric value from the document (e.g., 5693.07)
+    2. Check if value >= 1000
+    3. If YES: Format with commas and 2 decimals as STRING: "5,693.07"
+    4. If NO: Can use number or string format
+  - If document already shows formatted values (e.g., "35,800.00"), preserve that format as string
+  - If document shows unformatted values (e.g., "35800" or "5693.07"), format them with commas: "35,800.00" or "5,693.07"
+  - Always include 2 decimal places for monetary values: "35,800.00" not "35,800"
+  - **THIS IS MANDATORY**: Do NOT return numbers >= 1000 without commas. Always format them as strings with commas.
+  - This applies to ALL monetary fields: nPrecioTotal, nPrecioUnitario, nImporte, precioTotal, entered_amount, total_usd, etc.
+
 CRITICAL: You must return a STRICT JSON object with this exact structure:
 {
   "ocr_text": "ALL extracted text from the document as PLAIN TEXT (NOT JSON - just raw text with line breaks, complete, nothing missing)",
   "ocr_text_translated": "Translated text to English as PLAIN TEXT (if original is not English/Spanish, otherwise same as ocr_text)",
-  "document_type": "comprobante|resumen|jornada|expense_report|concur_expense|unknown",
+  "document_type": "ticket|factura_electronica|comprobante|nota_bill|resumen|jornada|expense_report|concur_expense|unknown",
   "structured_data": {
     // See detailed structure below based on document_type
   }
@@ -976,29 +1221,121 @@ CRITICAL INSTRUCTIONS FOR structured_data:
 3. For mcomprobante_detalle: Extract each table row as a separate item only if it appears in the OCR text. Do NOT extract the same row multiple times.
 4. Avoid duplicate values - if a value appears once in OCR, it should appear once in structured_data (unless it's genuinely different rows in a table).
 5. Handle each page independently - extract data from THIS page only, not from other pages.
-6. DESCRIPTION FIELDS (tDescripcion, tdescription): MUST be CLEAN, PROFESSIONAL text extracted DIRECTLY from the document itself. 
-   - GOOD examples: "Toll", "Hotel", "Meal", "ICE VANILLA LATT", "ADD ESP SHT", "Room Charge", "Transportation Fee", "Grand Total USD", "TOTAL EXPENSES", "JENIS BARANG-BARANG" (if that's what the document shows)
-   - BAD examples (NEVER DO THIS): 
-     * "\"ocr_text\": \"BECHTEL JOBS NO.\"" - WRONG!
-     * "\"nImporte\":" - WRONG!
-     * "\"_myr_amount\":" - WRONG!
-     * "\"nPrecioTotal\": 5." - WRONG!
-     * "\"ocr_text\": \"...\"" - WRONG!
-     * Any JSON field names or structures - WRONG!
-   - HOW TO EXTRACT CORRECTLY: 
-     * Look at the ACTUAL document. Find the "Description" or "PARTICULARS" or "摘要" column in the table.
-     * Extract EXACTLY what is written in that column - if it says "ICE VANILLA LATT", extract "ICE VANILLA LATT". If it says "Toll", extract "Toll". If it says "Hotel", extract "Hotel".
-     * For receipt/coffee shop items: Extract item names like "ICE VANILLA LATT", "ADD ESP SHT", etc. exactly as shown.
-     * For expense summaries: Extract "Toll", "Hotel", "Meal" exactly as shown in Description column.
-     * For empty receipts: If there are table headers but no items filled, do NOT create items. Only extract items that actually have values in the table.
+6. **CRITICAL FOR MULTIPLE RECEIPTS**: If document contains multiple receipts/invoices (e.g., train ticket + taxi receipts, or multiple small receipts):
+   - Extract EACH receipt as a separate entry in mcomprobante array
+   - Each receipt should have its own tNumero, dFecha, nPrecioTotal
+   - For Chinese taxi receipts: Extract invoice code (发票代码) or invoice number (发票号码) as tNumero, date (日期) as dFecha, amount (金额) as nPrecioTotal
+   - For train tickets: Extract ticket number (电子客票号) as tNumero, issue date (开票日期) as dFecha, fare (票价) as nPrecioTotal
+   - Do NOT combine multiple receipts into one comprobante entry
+   - If document has 1 train ticket + 5 taxi receipts, you should have 6 entries in mcomprobante array
+6. TEXT FIELDS (ALL fields containing text/strings): MUST be CLEAN, PROFESSIONAL text extracted DIRECTLY from the document itself.
+   - **CRITICAL: CHINESE TRANSLATION REQUIREMENT (MANDATORY)**: If ANY text field contains Chinese characters (中文), you MUST automatically translate it to English while preserving structure, numbers, codes, and special characters. This applies to ALL text fields, not just descriptions.
+   - **TRANSLATION EXAMPLES FOR ALL TEXT FIELDS**:
+     * "住宿服务*住宿费" → "Accommodation service*Accommodation fee"
+     * "出租汽车公司" → "Taxi company"
+     * "里程" → "Mileage"
+     * "金额" → "Amount"
+     * "合计" → "Total"
+     * "车号:冀 F-TU275" → "Car number: Ji F-TU275"
+     * "里程:81.7千" → "Mileage: 81.7 thousand"
+     * "等候时间:00:20:00" → "Waiting time: 00:20:00"
+     * "附加费:" → "Surcharge:"
+     * "天津市客运出租专用发票" → "Tianjin Passenger Transport Taxi Special Invoice"
+     * "发票号码" → "Invoice number"
+     * "发票代码" → "Invoice code"
+   - **DESCRIPTION FIELDS (tDescripcion, tdescription)**: 
+     * GOOD examples: "Toll", "Hotel", "Meal", "ICE VANILLA LATT", "ADD ESP SHT", "Room Charge", "Transportation Fee", "Grand Total USD", "TOTAL EXPENSES", "JENIS BARANG-BARANG" (if that's what the document shows)
+     * BAD examples (NEVER DO THIS): 
+       - "\"ocr_text\": \"BECHTEL JOBS NO.\"" - WRONG!
+       - "\"nImporte\":" - WRONG!
+       - "\"_myr_amount\":" - WRONG!
+       - "\"nPrecioTotal\": 5." - WRONG!
+       - "\"ocr_text\": \"...\"" - WRONG!
+       - Any JSON field names or structures - WRONG!
+     * HOW TO EXTRACT CORRECTLY: 
+       - Look at the ACTUAL document. Find the "Description" or "PARTICULARS" or "摘要" column in the table.
+       - Extract EXACTLY what is written in that column - if it says "ICE VANILLA LATT", extract "ICE VANILLA LATT". If it says "Toll", extract "Toll". If it says "Hotel", extract "Hotel".
+       - For receipt/coffee shop items: Extract item names like "ICE VANILLA LATT", "ADD ESP SHT", etc. exactly as shown.
+       - For expense summaries: Extract "Toll", "Hotel", "Meal" exactly as shown in Description column.
+       - For empty receipts: If there are table headers but no items filled, do NOT create items. Only extract items that actually have values in the table.
+       - **If text is in Chinese, translate to English**: "住宿服务*住宿费" → "Accommodation service*Accommodation fee"
+   - **ALL OTHER TEXT FIELDS** (tCliente, tRazonSocial, tNumero, tSerie, tStampname, tTipo, tNaturaleza, tDepartamento, tDisciplina, tUnidad, tDivisa, tIdioma, etc.):
+     * Extract the text as it appears in the document
+     * **If the text contains Chinese characters, translate to English automatically**
+     * Preserve numbers, codes, special characters, and formatting
    - DO NOT extract JSON structures, OCR metadata fields, technical field names, or anything that is NOT visible in the document itself.
    - DO NOT extract table headers as item descriptions - only extract actual item descriptions from filled table rows.
-7. DO NOT include any technical/metadata fields in structured_data such as: "_currency", "_source_line", "_auto_extracted", "_currency_code", etc.
-   - These are internal processing fields and should NEVER appear in the final structured_data output
-   - Only include the fields specified in the schema (nCantidad, tDescripcion, nPrecioUnitario, nPrecioTotal, etc.)
+7. **CRITICAL: DO NOT INCLUDE ANY FIELDS STARTING WITH "_" (MANDATORY)**
+   - **MANDATORY RULE**: NEVER include ANY field that starts with underscore "_" in the structured_data output
+   - **EXAMPLES OF FORBIDDEN FIELDS** (DO NOT INCLUDE):
+     * "_currency", "_source_line", "_auto_extracted", "_currency_code"
+     * "_myr_amount", "_highlighted", "_is_total_row", "_total"
+     * "_metadata", "_internal", "_processing", "_temp"
+     * ANY field name that starts with "_" - FORBIDDEN
+   - These are internal processing/metadata fields and should NEVER appear in the final JSON response
+   - Only include standard fields without underscore prefix (e.g., nCantidad, tDescripcion, nPrecioUnitario, nPrecioTotal, tjobno, ttype, nImporte, tStampname, tsequentialnumber, etc.)
+   - **VALIDATION**: Before returning the JSON, check that NO field names start with "_" - if you find any, remove them
+
+=== SPECIAL PRIORITIES (READ FIRST - THESE OVERRIDE OTHER INSTRUCTIONS) ===
+1. HANDWRITTEN VALUES (HIGHEST PRIORITY - USE REASONING): 
+   **CRITICAL**: Handwritten text with monetary values has HIGHEST PRIORITY and overrides ANY printed values.
+   - **DETECTION**: Look for text that appears manually written - different style, position, annotation-like appearance, or clearly added by hand
+   - **PATTERNS**: Handwritten values often appear near printed totals as corrections/conversions, at bottom of receipts as final validations, in boxes/highlighted areas, or with slight misalignment
+   - **EXAMPLES**: "USD 5.55" written by hand near printed "Total RM22.80" → Use 5.55 as nPrecioTotal; "USD425" handwritten at bottom → Use 425.00 as nPrecioTotal
+   - **REASONING**: Handwritten USD values are usually final validations, currency conversions, or corrections. If you see both printed RM/MYR and handwritten USD, the handwritten USD is the authoritative conversion.
+   - **EXTRACTION**: Mark handwritten values with [HANDWRITTEN] in ocr_text. Extract handwritten USD value in ocr_text AND use it as nPrecioTotal in structured data. Handwritten USD is ALWAYS the PRIMARY total.
+
+2. HIGHLIGHTED VALUES: Values in red boxes, yellow highlights, or visually emphasized sections are PRIORITY - extract them completely:
+   - "TOTAL AMOUNT IN US$" values in red boxes at bottom of tables (Attachment to Invoice) - Extract as separate item in mcomprobante_detalle
+   - "TOTAL $ XXX.XX" in red boxes (Italian invoices) - Extract the final total after stamp duty (the LAST value)
+   - Report Total amounts in red boxes (Expense Reports)
+   - For "ATTACHMENT TO INVOICE": Extract red box total as separate mcomprobante_detalle entry
+
+3. CALCULATIONS: Extract calculations like "USD 4,301.00 + USD 616.00 = USD 6,369.00" completely. Extract both individual values AND final total.
+
+4. GL JOURNAL DETAILS: If document is "GL Journal Details" WITH highlighted calculations (red box), extract ONLY the highlighted calculation values, NOT all table rows. If WITHOUT highlighted calculations, extract all table rows as items (use ONLY nPrecioUnitario, NOT nPrecioTotal).
+
+5. ATTACHMENT TO INVOICE: For "ATTACHMENT TO INVOICE" documents - THIS IS CRITICAL AND MANDATORY:
+   - Extract ALL table rows as separate items in mcomprobante_detalle - DO NOT skip any rows
+   - Table structure: Resource | Vendor | Assignment no. | Report Number | Request | Type of Activity | Date of visit | hrs | hrly rate | km/miles | mileage rate | Expenses | Total Labor | Total Expenses | Total Amount
+   - For EACH data row: Extract Resource Name, Vendor Name, Type of Activity, Date of visit, hrs, hrly rate OR mileage rate, Total Amount (REQUIRED)
+   - Mapping to mcomprobante_detalle: tDescripcion: "Resource Name - Vendor Name - Type of Activity"; nCantidad: from "hrs" OR "km/miles"; nPrecioUnitario: from "hrly rate" OR "mileage rate"; nPrecioTotal: from "Total Amount" (REQUIRED)
+   - For "TOTAL AMOUNT IN US$" row at bottom (usually in red box): Extract as SEPARATE entry with tDescripcion: "TOTAL AMOUNT IN US$", nPrecioTotal: value from red box (CRITICAL)
+
+6. ITALIAN INVOICES (FATTURA): Pay special attention to red boxes containing invoice numbers (e.g., "FATTURA NO.: 333/25") and total amounts. If "TOTAL" is on one line and "$ XXX.XX" values on following lines, extract ALL values but prioritize the LAST value (final total after stamp duty). Example: "TOTAL\n$\n120.60\n$\n2.34\n$\n122.94" → extract 122.94 as nPrecioTotal.
+
+7. WEEKLY TOTALS (OnShore): Extract lines with multiple large monetary values at the end of tables (e.g., "7,816,974.79 305,349.84 6,333,781.02"). Look for lines with ONLY numbers (>=2 large values >=1000) and no item descriptions.
+
+8. CASH FLOW VALUES (OnShore): Extract "Total Disbursement", "Period Balance", "Cumulative Cash Flow", "Opening Balance", "Total Receipts" values from cash flow tables. Include negative values correctly (from parentheses like (305,350) → -305350).
+
+9. DEPARTMENTS & DISCIPLINES (OnShore): Extract department names and discipline names from tables, headers, or classification sections. Map NC Codes (611=Engineering, 612=Operations, etc.).
+
+10. INVOICE APPROVAL REPORT: Do NOT extract "Line Item Details" as items. Those are data columns (Line Amount, Nat Class, Job, Sub Job, Cost Code), NOT purchase items.
+
+11. INVOICE GROUP DETAIL: Do NOT extract "Invoice Group Detail" section as items. Skip lines matching pattern like "BSQEUSD 751671 33025" or containing "INV Group ID".
+
+12. LABOR DETAILS: For "BSQE SERVICE CHARGES" or labor tables with "Emp Name", extract rows with pattern: Employee Name + BSQE code + date + Hours + Hrly Rate + Currency + Amount. Map: hours → nCantidad, rate → nPrecioUnitario, amount → nPrecioTotal, description → "Employee Name INSPECTING".
+
+13. PROJECT MONTHLY EXPENSE REPORTS: For "Project Monthly Expense" type documents - CRITICAL: Extract EVERY data row from the table as a separate mresumen entry. Extract Assignment No., Charge No., Report No., Country, Type of Activity, Type, Transportation amount, Hotel amount, Total amount. Extract company name from header → mproveedor. Extract month/period from header → dFecha. Extract sequential number and stamp name from header. For "Total" row at bottom: Extract as separate mresumen entry (DO NOT include _is_total_row or any field starting with "_"). DO NOT skip any rows.
+
+14. EXPENSE SUMMARY TABLES: For documents with multiple expense tables (like Bechtel expense summaries with Toll/Hotel/Meal):
+   - Extract EVERY row from EVERY table as a separate mresumen entry
+   - CRITICAL FOR DESCRIPTIONS: Look at the actual "Description" column. If it says "Toll", extract "Toll". If it says "Hotel", extract "Hotel". Extract ONLY what the document shows, NOT JSON structures, NOT OCR metadata.
+   - Use USD amount as nImporte (prioritize USD over MYR)
+   - Extract job number from header (e.g., "BECHTEL JOBS NO.: 26443") as tjobno
+   - For "Grand Total USD" rows: Extract "Grand Total USD" as tdescription, extract USD amount as nImporte (DO NOT include _highlighted or any field starting with "_")
+   - For "TOTAL EXPENSES" rows: Extract "TOTAL EXPENSES" as tdescription, extract USD amount as nImporte (DO NOT include _highlighted or any field starting with "_") - these have highest priority
+   - Do NOT skip any rows - extract ALL items from ALL tables completely
 
 === STEP 1: EXTRACT ALL TEXT (OCR) ===
 Extract 100% of ALL visible text from this document. Read EVERYTHING line by line, character by character:
+**CRITICAL FOR MULTIPLE RECEIPTS**: If document contains multiple receipts/invoices on one page (e.g., train ticket + multiple taxi receipts, or multiple small receipts arranged in grid):
+- Extract ALL text from ALL receipts completely
+- Do NOT skip any receipt, even if they are small or arranged in a grid
+- Each receipt may have its own header, date, amount, vehicle number, etc.
+- For Chinese taxi receipts: Extract ALL receipts with their "车号" (Car No.), "日期" (Date), "上车" (Boarding time), "下车" (Alighting time), "单价" (Unit price), "里程" (Mileage), "等候" (Waiting time), "金额" (Amount)
+- For train tickets: Extract ticket number, date, origin station, destination station, train number, seat, fare, passenger name, etc.
+- Look for patterns that indicate multiple documents: multiple "发票联" (Invoice Copy), multiple "发票代码" (Invoice Code), multiple dates, multiple amounts
 - Every row of every table completely (including Resource, Vendor, Assignment no., Report Number, Date, hrs, rates, amounts)
 - For expense summary tables: Extract ALL rows from ALL tables, including Item No., Description (Toll/Hotel/Meal), MYR amounts, USD amounts
 - For expense summary tables: Extract "Grand Total USD" values and "TOTAL EXPENSES" values completely
@@ -1031,25 +1368,49 @@ Extract 100% of ALL visible text from this document. Read EVERYTHING line by lin
 - Use [unclear] only if truly illegible
 - For hotel invoices, ensure you extract ALL charges, dates, guest details, and totals
 - For expense summaries, ensure you extract ALL items from ALL tables, including Item Numbers, Descriptions, MYR and USD amounts
+- For purchase orders and equipment documents: Extract ALL item details including codes, descriptions, quantities, units of measure, unit prices, extended prices, and totals
+- For vehicle/transport documents (Guías de Remisión): Extract ALL vehicle information (brand, license plate, TUCE), driver information (name, document number, license number), transport details (origin, destination, weight, modality)
+- For machinery/equipment tables: Extract ALL rows with descriptions, serial numbers, model numbers, codes, quantities, units, and ALL monetary values (unit prices, totals, extended prices)
 
 === STEP 2: IDENTIFY DOCUMENT TYPE ===
 Classify the document as one of (PRIORITY ORDER - check top to bottom):
 
-PRIORITY 1: "comprobante" if document contains ANY of these patterns:
-- "attachment to invoice" (HIGHEST PRIORITY - this is an invoice attachment, not expense report)
+PRIORITY 1: Classify document as one of these types (check in order - if none match, use "nota_bill"):
+
+PRIORITY 1A: "ticket" if document contains ANY of these patterns:
+- Ticket keywords: "ticket", "boleto", "pasaje", "railway", "train ticket", "bus ticket", "flight ticket", "boarding pass"
+- Chinese ticket keywords: "票", "车票" (train ticket), "机票" (flight ticket), "电子客票" (electronic ticket), "铁路电子客票" (railway electronic ticket), "客票号" (ticket number)
+- Ticket-specific patterns: "ticket number", "ticket no", "ticket no.", "电子客票号" (electronic ticket number), "座位" (seat), "席别" (seat class)
+- Train/railway keywords: "railway", "train", "高铁" (high-speed rail), "火车" (train), "列车" (train), "出发站" (departure station), "到达站" (arrival station)
+
+PRIORITY 1B: "factura_electronica" if document contains ANY of these patterns:
+- Electronic invoice keywords: "factura electrónica", "boleta electrónica", "electronic invoice", "e-invoice", "e-factura"
+- Chinese electronic invoice keywords: "电子发票" (electronic invoice), "电子普通发票" (electronic ordinary invoice)
+- Digital invoice indicators: "Código de Autorización" (Authorization Code - common in electronic invoices), "Número de Autorización" (Authorization Number)
+- Electronic invoice numbers: Patterns like long authorization codes or digital signatures typical of electronic invoices
+
+PRIORITY 1C: "comprobante" if document contains ANY of these patterns (EXCLUDE patterns from Ticket and Factura Electrónica above):
 - Invoice keywords: "invoice", "factura", "boleta", "bill", "recibo", "fattura", "invoice no", "invoice number", "invoice num"
 - Table headers in Spanish: "cant.", "descripción", "precio unitario", "importe"
 - Table headers in Malay/Chinese: "tarikh", "kuantiti", "harga", "jumlah", "no.", "jumlah/", "總計", "总计", "cash / invoice", "cash/invoice"
-- Chinese invoice keywords: "发票", "发票号码", "发票代码"
+- Chinese invoice keywords: "发票", "发票号码", "发票代码", "发票联" (Invoice Copy) - BUT NOT "电子发票" (which goes to Factura Electrónica)
+- Chinese taxi receipt keywords: "车号" (Car No.), "证号" (Certificate No.), "日期" (Date), "上车" (Boarding), "下车" (Alighting), "金额" (Amount), "里程" (Mileage)
 - Receipt keywords: "receipt", "recibo", "NO. KUANTITI", "PARTICULARS", "BUTIR-BUTIR"
 - Other: "GL Journal Details", Oracle AP invoices, "Invoice Approval Report"
+- **CRITICAL**: Documents with multiple receipts (e.g., multiple taxi receipts) should be classified as "comprobante" and EACH receipt should be extracted separately
 
-PRIORITY 2: "concur_expense" if document contains:
+PRIORITY 1D: "nota_bill" (FALLBACK) - Use this if document does NOT match Ticket, Factura Electrónica, or Comprobante patterns above:
+- This is the default type for documents that contain billing/invoice-like information but don't match the specific patterns above
+- Use when document appears to be a bill/invoice/receipt but doesn't clearly fit into Ticket, Factura Electrónica, or Comprobante categories
+
+PRIORITY 2: "concur_expense" if document contains (check BEFORE comprobante-related types):
 - "concur expense", "concur", "Line Item by Job Section"
 - Check BEFORE expense_report
 
 PRIORITY 3: "expense_report" if document contains:
 - "bechtel expense report", "expense report", "report key", "report number", "report date", "bechexprpt", "BECHEXPRPT", "report purpose", "bechtel owes"
+- "Project Monthly Expense" (with table structure showing Assignment No., Charge No., Report No., Country, Type of Activity, Transportation, Hotel, Total)
+- Tables with columns: "Assignment No.", "Charge No.", "Report No.", "Country", "Type of Activity", "Type", "Transportation (USD)", "Hotel (USD)", "Total (USD)"
 
 PRIORITY 4: "resumen" if document contains:
 - "summary", "resumen", "consolidado", "reimbursable expenditure"
@@ -1071,6 +1432,7 @@ SPECIAL CASES (OVERRIDE RULES):
 - "GL Journal Details" without highlighted calculations → comprobante (extract all table rows as items)
 - Oracle AP screens → comprobante
 - "Invoice Approval Report" → comprobante (do NOT extract "Line Item Details" as items)
+- Documents with train ticket + taxi receipts: Train ticket → ticket, each taxi receipt → comprobante (extract separately)
 
 === STEP 3: EXTRACT STRUCTURED DATA ===
 Based on the document_type, extract structured fields:
@@ -1103,7 +1465,12 @@ FOR ALL DOCUMENT TYPES - Extract these catalog tables:
 2. mproveedor (suppliers): Array of supplier/company names
    Example: [{"tRazonSocial": "Company Name SDN BHD"}]
    Look for: "Supplier Name:", "Vendor:", "PO Trading Pa:", "Supplier Name", company names in headers
-   Include legal suffixes: SDN BHD, LLC, Inc, Company, S.A., S.L., SRL
+   CRITICAL: For expense reports, look for company names in document headers/titles:
+   - "Project Monthly Expense" reports: Extract company name from header (e.g., "SGS-CSTC Standards Technical Service., Ltd. Shanghai Branch")
+   - Look for company names at the top of the document, before the table
+   - Look for company names in document titles or headers
+   - For "Attachment to Invoice": Extract "Vendor" name from table columns
+   Include legal suffixes: SDN BHD, LLC, Inc, Company, S.A., S.L., SRL, Ltd., Branch
    IMPORTANT TRANSLATION FORMAT: If the company name is NOT in English or Spanish (e.g., Chinese, Italian, etc.), you MUST include BOTH the Spanish translation AND the original name in this EXACT format: "Spanish Translation (Original Name)"
    - The Spanish translation goes FIRST
    - The original name goes in parentheses SECOND
@@ -1125,8 +1492,13 @@ FOR ALL DOCUMENT TYPES - Extract these catalog tables:
    - Otros: Default if none of above match
 
 4. mdocumento_tipo: Document type catalog
-   Example: [{"iMDocumentoTipo": 1, "tTipo": "Comprobante"}]
-   Mapping: comprobante=1, resumen=2, jornada=3, expense_report=4, concur_expense=5
+   Example: [{"iMDocumentoTipo": 1, "tTipo": "Ticket"}]
+   Mapping: ticket=1, factura_electronica=1, comprobante=1, nota_bill=1, resumen=2, jornada=3, expense_report=4, concur_expense=5
+   NOTE: All invoice/receipt types (ticket, factura_electronica, comprobante, nota_bill) map to the same catalog ID (1) but have different tTipo names:
+   - "Ticket" for ticket type
+   - "Factura Electrónica" for factura_electronica type
+   - "Comprobante" for comprobante type
+   - "Nota-Bill" for nota_bill type
 
 5. midioma (language): Detect language from keywords and characters - CRITICAL: This MUST be extracted correctly
    Example: [{"iMIdioma": 1, "tIdioma": "Español"}]
@@ -1139,7 +1511,126 @@ FOR ALL DOCUMENT TYPES - Extract these catalog tables:
    e) Malay keywords: "tarikh", "jumlah", "terima", "disahkan", "makan", "kuantiti", "harga", "barang" → other (Otro)
    f) Count matches: Language with most keyword matches wins (minimum 2 matches required, except for Chinese which is detected by characters)
 
-6. tSequentialNumber: Sequential codes like BSQE1234, OE0001, OR0001, ORU1234
+6. munidad_medida (units of measure): Array of unit codes found - FLEXIBLE: Extract ANY unit you find, even if not in the list below
+   Example: [{"tUnidad": "kg"}, {"tUnidad": "EACH"}, {"tUnidad": "KT"}, {"tUnidad": "MT2"}]
+   DETECTION PATTERNS (check ALL of these, but be FLEXIBLE - extract ANY unit you find):
+   a) Explicit unit codes in tables: Look for unit columns in item tables (e.g., "Unit", "Unidad", "U.M.", "Unit of Measure", "UOM")
+   b) Common standard units:
+      - Weight: "kg", "lb", "g", "oz", "ton", "tonelada", "KGM"
+      - Count/Quantity: "unidades", "units", "pcs", "pieces", "NIU", "EACH", "KT" (kit)
+      - Length: "m", "ft", "cm", "in", "mt", "metros", "pies"
+      - Area: "m2", "mt2", "MT2", "ft2", "sqm", "sqft"
+      - Volume: "L", "gal", "ml", "litros", "galones"
+      - Time: "hrs", "hours", "horas", "dias", "days"
+   c) Context inference from item descriptions:
+      - If quantity is 1 and no unit specified → default to "unidades" (Spanish) or "units" (English)
+      - If document is in Spanish and no unit → default to "unidades"
+      - If document is in English and no unit → default to "units"
+      - Look for units mentioned in descriptions (e.g., "2 kg", "5 lb", "10 unidades")
+   d) Extract from mcomprobante_detalle context: If items have units mentioned in table columns or descriptions, extract the unit
+   e) FLEXIBILITY: If you find ANY unit code that is NOT in the list above, STILL EXTRACT IT. Examples: "KT", "NIU", "MT2", "KGM", or any other unit code you see in the document
+   f) If no unit found anywhere → use "unidades" (Spanish) or "units" (English) as default based on document language
+
+7. mdepartamento (departments): Array of department names INFERRED from document context - CRITICAL FOR DASHBOARD ANALYTICS
+   Example: [{"tDepartamento": "Engineering"}, {"tDepartamento": "Other Services"}]
+   IMPORTANT: Departments do NOT appear explicitly in documents - you must INFER them from context using REASONING
+   INFERENCE PATTERNS (use REASONING to determine department based on document content):
+   a) Standard department names to assign (based on document analysis):
+      **FOR OFFSHORE DOCUMENTS - CRITICAL: Use these EXACT department names:**
+      - "Engineering": If document contains engineering-related items (design, technical specifications, engineering services, technical drawings, engineering equipment, civil engineering, structural engineering, architectural engineering, control systems, electrical engineering, mechanical engineering, pipeline engineering, tanks engineering, plant design, piping, materials engineering, engineering automation, engineering management, G&HES)
+      - "Other Services": If document contains items that don't fit Engineering category (admin support, F&A, BEO, contracts, ES&H, field engineering, IS&T, procurement, project controls, project management, quality assurance, workforce services, constructability, off project support, tanks business line support)
+      
+      **FOR ONSHORE DOCUMENTS:**
+      - "Engineering": If document contains engineering-related items (design, technical specifications, engineering services, technical drawings, engineering equipment)
+      - "Procurement": If document contains procurement-related items (purchase orders, supplier contracts, material purchases, vendor invoices for materials)
+      - "Construction": If document contains construction-related items (construction materials, construction services, building supplies, construction equipment)
+      - "Project Management": If document contains project management items (project coordination, project services, management fees, project planning)
+      - "Quality Control": If document contains QC/QA items (quality inspections, testing services, quality assurance, QC equipment)
+      - "Health & Safety": If document contains safety items (safety equipment, safety services, PPE, safety training, H&S supplies)
+      - "Environmental": If document contains environmental items (environmental services, environmental equipment, environmental compliance, environmental monitoring)
+      - "Logistics": If document contains logistics items (transportation, shipping, logistics services, freight, delivery services)
+      - "Other Services": If document contains items that don't fit other categories (general services, miscellaneous items)
+   b) Context clues for inference:
+      - Item descriptions: Analyze what the items/services are (e.g., "welding equipment" → Construction, "engineering software" → Engineering)
+      - Supplier types: If supplier is an engineering firm → Engineering, if construction company → Construction
+      - Project codes: Job numbers or project codes may indicate department (e.g., engineering projects → Engineering)
+      - Document purpose: What is the document for? (e.g., purchase of construction materials → Construction)
+   c) For mcomprobante_detalle items: Infer department for EACH item based on its description
+      - Example: "Welding equipment" → Construction
+      - Example: "Engineering software license" → Engineering
+      - Example: "Safety helmets" → Health & Safety
+   d) For mresumen items: Infer department based on expense type and description
+      - Example: "Construction materials" → Construction
+      - Example: "Engineering services" → Engineering
+      - Example: "SQR" (Type of Activity code) → Could be Quality Control (SQR often means "Supplier Quality Review" or similar quality-related activity) or Engineering (if context suggests engineering review)
+      - Example: "AEX" (Type of Activity code) → Could be Engineering or Operations (infer from context)
+      - Look at Assignment No. patterns: Engineering projects often have specific codes (e.g., "26497-200-318358-PB03" might indicate project type)
+      - Look at expense types: Transportation/Hotel for project work → Project Management or Operations
+      - Look at country/location context: Different locations may indicate different departments (e.g., China-based expenses might be for specific project departments)
+      - Look at document title: "Project Monthly Expense" suggests project-related work → Project Management or Operations
+      - Example: "SQR" (Type of Activity) → Could be Quality Control or Engineering (infer from context)
+      - Example: "AEX" (Type of Activity) → Could be Engineering or Operations (infer from context)
+      - Look at Assignment No. patterns: Engineering projects often have specific codes
+      - Look at expense types: Transportation/Hotel for project work → Project Management or Operations
+      - Look at country/location context: Different locations may indicate different departments
+   e) For mjornada: Usually Engineering or Operations based on employee roles and project allocations
+   f) CRITICAL: Use REASONING to analyze item descriptions, supplier names, project context, and document purpose
+   g) If you cannot determine with reasonable confidence → use "Other Services" or leave empty
+   h) You can assign MULTIPLE departments if document contains items from different departments
+
+8. mdisciplina (disciplines): Array of discipline names INFERRED from document context - CRITICAL FOR DASHBOARD ANALYTICS
+   Example: [{"tDisciplina": "Civil/Structural/Architectural Engineering"}, {"tDisciplina": "Project Management"}]
+   IMPORTANT: Disciplines do NOT appear explicitly in documents - you must INFER them from context using REASONING
+   INFERENCE PATTERNS (similar to departments, but more granular):
+   a) Standard discipline names to assign (based on document analysis):
+      **FOR OFFSHORE DOCUMENTS - CRITICAL: Use these EXACT discipline names when inferring:**
+      
+      **Under "Engineering" department:**
+      - "Civil/Structural/Architectural Engineering": Civil engineering, structural engineering, architectural engineering, structural design, building design, civil works
+      - "Control Systems Engineering": Control systems, automation systems, SCADA, control engineering, instrumentation
+      - "Electrical Engineering": Electrical engineering, electrical systems, power systems, electrical design
+      - "Engineering Automation": Engineering automation, automated systems, automation engineering
+      - "Engineering Management": Engineering management, project engineering management, engineering coordination
+      - "G&HES": G&HES (may appear as code or abbreviation), geotechnical, health, environmental, safety engineering
+      - "Materials Engineering Technology": Materials engineering, materials technology, material science, materials testing
+      - "Mechanical Engineering": Mechanical engineering, mechanical systems, mechanical design, mechanical equipment
+      - "Pipeline Engineering": Pipeline engineering, pipeline design, pipeline systems, pipeline construction
+      - "Plant Design & Piping": Plant design, piping design, piping systems, plant layout, piping engineering
+      - "Tanks Engineering": Tanks engineering, tank design, storage tanks, tank systems
+      
+      **Under "Other Services" department:**
+      - "Admin Support/F&A": Administrative support, finance and accounting, F&A, admin services, financial administration
+      - "BEO": BEO (may appear as code or abbreviation), business engineering operations
+      - "Constructability": Constructability, construction support, construction engineering, constructability reviews
+      - "Contracts": Contracts, contract management, contract administration, procurement contracts
+      - "ES&H": ES&H (Environment, Safety & Health), environmental safety health, EHS, safety and environmental
+      - "Field Engineering": Field engineering, field support, field services, on-site engineering
+      - "IS&T": IS&T (Information Systems & Technology), IT services, information technology, systems and technology
+      - "Off Project Support": Off project support, non-project support, general support services
+      - "Procurement": Procurement, purchasing, supply chain, material acquisition, procurement services
+      - "Project Controls": Project controls, project planning, scheduling, cost control, project management controls
+      - "Project Management": Project management, project coordination, project oversight, project administration
+      - "Quality Assurance": Quality assurance, QA, quality control, quality management, quality services
+      - "Tanks Business Line Support": Tanks business line support, tanks support services, business line support
+      - "Workforce Services": Workforce services, human resources, HR services, workforce management, staffing services
+      
+      **FOR ONSHORE DOCUMENTS:**
+      - "Project Management": Project coordination, project planning, project oversight
+      - "Quality Control": Quality inspections, testing, quality assurance activities
+      - "Procurement": Purchasing activities, supplier management, material acquisition
+      - "Construction": Construction activities, building, installation
+      - "Logistics": Transportation, shipping, material handling, supply chain
+      - "Engineering": Engineering design, technical analysis, engineering services
+      - "Operations": Operational activities, plant operations, facility operations
+      - "Maintenance": Maintenance services, equipment maintenance, facility maintenance
+      - "Safety": Safety activities, safety compliance, safety training
+      - "Environmental": Environmental compliance, environmental monitoring, environmental services
+   b) Disciplines are more granular than departments - same inference logic but more specific
+   c) For items: Infer discipline based on what the item/service actually does
+   d) NC Codes mapping: If NC codes are present (611=Engineering, 612=Operations, etc.), use them to infer discipline
+   e) CRITICAL: Use REASONING to analyze the actual purpose and nature of items/services in the document
+
+9. tSequentialNumber: Sequential codes like BSQE1234, OE0001, OR0001, ORU1234
    EXTRACTION PATTERNS (check ALL):
    a) Stamp name patterns: Look for "BSQE", "OTEM", "OTRE", "OTRU" (case insensitive)
    b) Sequential number patterns:
@@ -1150,16 +1641,74 @@ FOR ALL DOCUMENT TYPES - Extract these catalog tables:
    d) If stamp name found but no code: Look for any 4+ digit number near stamp (within 200 chars), then construct code using mapping
    e) Priority: Extract sequential number if found anywhere in document header/top section
 
-FOR "comprobante" TYPE - Extract:
+FOR "ticket", "factura_electronica", "comprobante", OR "nota_bill" TYPES - Extract:
+**CRITICAL: If document contains MULTIPLE receipts/invoices (e.g., train ticket + multiple taxi receipts), extract EACH ONE as a separate entry in mcomprobante array.**
+**For documents with multiple small receipts (like multiple taxi receipts on one page):**
+- Extract EACH receipt as a separate mcomprobante entry
+- Each receipt should have its own tNumero, dFecha, nPrecioTotal, etc.
+- Look for patterns like: multiple "发票联" (Invoice Copy), multiple "车号" (Car No.), multiple dates, multiple amounts
+- For Chinese taxi receipts: Each receipt has its own "车号" (Car No.), "日期" (Date), "金额" (Amount) - extract each as separate entry
+- For train tickets + taxi receipts: Extract train ticket as one entry (type "ticket"), each taxi receipt as separate entries (type "comprobante")
+
 {
   "mcomprobante": [{
     "tNumero": "invoice/boleta number - EXTRACT USING THESE PATTERNS (priority order):\n     1. Source Ref (GL Journal Details): 'Source Ref: 2336732507B0032' OR 'Source Ref: 2336732507B0032'\n     2. Oracle AP Invoice Num: 'Invoice Num F581-06891423' (format: FXXX-XXXXXXXX)\n     3. Invoice Number explicit: 'Invoice Number: 1234' OR 'Invoice No.: 18294'\n     4. BOLETA ELECTRÓNICA: 'BOLETA ELECTRÓNICA N° 0000155103' (Chilean format)\n     5. Chinese invoice number: '发票号码:25379166812000866769' (8+ digits) OR '发票代码:121082271141' (10+ digits)\n     6. N° format: 'N° 0000155103' (4+ digits after N°)\n     7. Folio: 'Folio No.: 18294' OR 'Folio: 18294'\n     8. Recibo: 'Recibo 221' (Spanish receipt format)\n     9. FATTURA NO.: 'FATTURA NO.: 333/25' (Italian format - can be same line or next line, format XXX/XX)\n     10. Generic Invoice: 'INVOICE No. XXXX', 'FATTURA N° XXX', 'CASH NO. XXX' (avoid 'Invoice Numb')\n     11. NO. near TOTAL: 'NO. 1234 TOTAL' (3+ digits near total keywords)\n     12. Chinese 号码: '号码' or '发票号码' or '发票代码' followed by 8+ digits\n     13. Generic with numbers: Any pattern with '总计', 'JUMLAH', 'No.', 'NO.', '#' followed by 4+ alphanumeric chars containing digits\n     IMPORTANT: Extract the FULL number/identifier, not partial. If multiple formats match, use highest priority.",
     "tSerie": "series number or Contract no. if present (e.g., 'Contract no 12345')" or null,
     "dFecha": "date in YYYY-MM-DD format - EXTRACT USING THESE PATTERNS:\n     - 'Date:' or 'Fecha:' or 'Tarikh:' followed by date\n     - Format 1: 'DD/MM/YYYY' or 'DD-MM-YYYY' (e.g., '28/05/2025', '28-05-2025')\n     - Format 2: 'May 28, 2025' or '28 May 2025'\n     - Format 3: '28-May-2025' or '30-JUN-2025'\n     - Format 4: 'JUL 23, 2025'\n     IMPORTANT VALIDATION: Do NOT extract phone numbers as dates:\n     - Avoid '1300-80-8989' (phone number)\n     - Numbers with >8 digits when removing separators are likely NOT dates\n     - If pattern looks like date but has >8 digits total, it's probably a phone number\n     - Validate: date should have max 8 digits (2+2+4) or reasonable month/day values",
     "fEmision": "emission date in YYYY-MM-DD format (same as dFecha if not separately specified)" or null,
-    "nPrecioTotal": number (total amount - EXTRACT USING REASONING AND THESE PATTERNS in priority order):\n     **CRITICAL: Use your reasoning ability to identify the CORRECT total by analyzing the document context, relationships between values, and visual emphasis.**\n     1. HANDWRITTEN USD VALUES (HIGHEST PRIORITY - USE REASONING): \n        - If you see ANY handwritten/manually written text containing "USD" followed by a number (e.g., "USD 5.00", "USD425", "USD 4/25" written by hand), use that amount as nPrecioTotal\n        - Handwritten values often appear as corrections, annotations, or final validations\n        - Look for text that appears different in style, position, or format - these are likely handwritten\n        - Examples: "USD 5.55" written near a printed "RM22.80", "USD425" at bottom of receipt, "USD4/25" as annotation\n        - **REASONING**: If you see both printed RM/MYR and handwritten USD, the handwritten USD is the authoritative total\n        - **IMPORTANT**: Handwritten USD values override ANY printed values, even if printed totals are present\n     2. HANDWRITTEN VALUES WITHOUT CURRENCY (HIGH PRIORITY):\n        - If you see handwritten numbers that appear to be totals (often near printed totals, in boxes, or highlighted), analyze the context\n        - If handwritten value is USD amount and printed is RM/MYR, prioritize handwritten USD\n        - Use reasoning: handwritten totals are usually final validations or conversions\n     3. Highlighted/Boxed values (PRIORITY - USE REASONING):\n        - Values in red boxes, yellow highlights, bordered sections, or visually emphasized areas are CRITICAL\n        - Extract values INSIDE colored boxes or highlighted areas - these are often final totals\n        - Examples: 'TOTAL AMOUNT IN US$ ... $ 120.60' in red box, totals in highlighted rectangles\n        - **REASONING**: Visually emphasized values indicate importance - prioritize these over regular text\n     4. Printed Totals (USE REASONING TO IDENTIFY CORRECT ONE):\n        - Look for "Total", "TOTAL", "Total Amount", "总计", "JUMLAH", "Grand Total", "Amount Due" followed by currency and number\n        - **REASONING**: If multiple totals appear (subtotal, tax, final total), use the FINAL total after all calculations\n        - For Italian invoices: If 'TOTAL' appears on one line with '$ XXX.XX' values below, extract the LAST value (final total after stamp duty)\n        - Example: 'TOTAL\n$\n120.60\n$\n2.34\n$\n122.94' → extract 122.94 (the LAST value after stamp duty of 2.34)\n     5. Oracle AP: 'Invoice Amount USD 655740.75' or 'Invoice Invoice Amount USD 655740.75' or 'Invoice Amount 655740.75'\n     6. Chinese/Malay totals: '总计' or 'JUMLAH RM' followed by number (e.g., '总计 RM 17.50' or '总计 1,234.56 元')\n     7. Calculation-based totals: If you see calculations like "USD 4,301.00 + USD 616.00 = USD 6,369.00", use the final sum (6,369.00)\n     8. **REASONING FALLBACK**: If no explicit total found, analyze the document structure:\n        - Look for patterns: printed totals usually appear after item lists, at bottom of tables, or near payment information\n        - If document has line items in mcomprobante_detalle, sum them as fallback\n        - Consider relationships: if there's a "Cash" payment matching a total, that's likely the correct total\n     9. OCR corrections: Fix spaces as decimals (32 40 → 32.40), hyphens as decimals (25-20 → 25.20)\n     **REMEMBER**: Use reasoning to relate information across the document - handwritten values near totals, highlighted boxes, and relationships between printed amounts all provide context for the CORRECT total.
-    "tCliente": "client name from 'Attn.:' or 'Attn' field" or null,
-    "tStampname": "Extract stamp name using patterns: 'BSQE', 'OTEM', 'OTRE', 'OTRU' (case insensitive, can be on same line or nearby lines)" or null,
+    "nPrecioTotal": number or string (total amount in USD - EXTRACT USING REASONING AND THESE PATTERNS in priority order):
+     **CRITICAL: This field MUST be in USD. If document has values in a currency other than USD and NO USD values, convert to USD using the exchange rates provided below.**
+     **FORMAT RULES FOR MONETARY VALUES (MANDATORY):**
+     - **MANDATORY**: For values >= 1000, you MUST format with thousands separators (commas) as STRING: "35,800.00", "258,000.00", "1,234.56", "5,693.07"
+     - **MANDATORY**: For values < 1000, can be number or string: 500.00 or "500.00"
+     - **CRITICAL EXAMPLES** (follow exactly):
+       * 35800 → MUST return "35,800.00" (as string)
+       * 258000 → MUST return "258,000.00" (as string)
+       * 5693.07 → MUST return "5,693.07" (as string)
+       * 1234.56 → MUST return "1,234.56" (as string)
+       * 1000 → MUST return "1,000.00" (as string)
+       * 500.00 → Can return 500.00 (number) or "500.00" (string)
+     - **PROCESS**: When you extract a monetary value >= 1000, format it with commas before returning it
+     - If document already shows formatted values (e.g., "35,800.00"), preserve that format as string
+     - If document shows unformatted values (e.g., "35800" or "5693.07"), format them with commas: "35,800.00" or "5,693.07"
+     - **DO NOT** return numbers >= 1000 without commas - always format as strings with commas
+     """ + currency_conversion_section + """
+     **CRITICAL: Use your reasoning ability to identify the CORRECT total by analyzing the document context, relationships between values, and visual emphasis.**
+     1. HANDWRITTEN USD VALUES (HIGHEST PRIORITY - USE REASONING):
+        - If you see ANY handwritten/manually written text containing "USD" followed by a number (e.g., "USD 5.00", "USD425", "USD 4/25" written by hand), use that amount as nPrecioTotal
+        - Handwritten values often appear as corrections, annotations, or final validations
+        - Look for text that appears different in style, position, or format - these are likely handwritten
+        - Examples: "USD 5.55" written near a printed "RM22.80", "USD425" at bottom of receipt, "USD4/25" as annotation
+        - **REASONING**: If you see both printed RM/MYR and handwritten USD, the handwritten USD is the authoritative total
+        - **IMPORTANT**: Handwritten USD values override ANY printed values, even if printed totals are present
+     2. HANDWRITTEN VALUES WITHOUT CURRENCY (HIGH PRIORITY):
+        - If you see handwritten numbers that appear to be totals (often near printed totals, in boxes, or highlighted), analyze the context
+        - If handwritten value is USD amount and printed is RM/MYR, prioritize handwritten USD
+        - Use reasoning: handwritten totals are usually final validations or conversions
+     3. Highlighted/Boxed values (PRIORITY - USE REASONING):
+        - Values in red boxes, yellow highlights, bordered sections, or visually emphasized areas are CRITICAL
+        - Extract values INSIDE colored boxes or highlighted areas - these are often final totals
+        - Examples: 'TOTAL AMOUNT IN US$ ... $ 120.60' in red box, totals in highlighted rectangles
+        - **REASONING**: Visually emphasized values indicate importance - prioritize these over regular text
+     4. Printed Totals (USE REASONING TO IDENTIFY CORRECT ONE):
+        - Look for "Total", "TOTAL", "Total Amount", "总计", "JUMLAH", "Grand Total", "Amount Due" followed by currency and number
+        - **REASONING**: If multiple totals appear (subtotal, tax, final total), use the FINAL total after all calculations
+        - For Italian invoices: If 'TOTAL' appears on one line with '$ XXX.XX' values below, extract the LAST value (final total after stamp duty)
+        - Example: 'TOTAL\n$\n120.60\n$\n2.34\n$\n122.94' → extract 122.94 (the LAST value after stamp duty of 2.34)
+     5. Oracle AP: 'Invoice Amount USD 655740.75' or 'Invoice Invoice Amount USD 655740.75' or 'Invoice Amount 655740.75'
+     6. Chinese/Malay totals: '总计' or 'JUMLAH RM' followed by number (e.g., '总计 RM 17.50' or '总计 1,234.56 元')
+     7. Calculation-based totals: If you see calculations like "USD 4,301.00 + USD 616.00 = USD 6,369.00", use the final sum (6,369.00)
+     8. **REASONING FALLBACK**: If no explicit total found, analyze the document structure:
+        - Look for patterns: printed totals usually appear after item lists, at bottom of tables, or near payment information
+        - If document has line items in mcomprobante_detalle, sum them as fallback
+        - Consider relationships: if there's a "Cash" payment matching a total, that's likely the correct total
+     9. OCR corrections: Fix spaces as decimals (32 40 → 32.40), hyphens as decimals (25-20 → 25.20)
+     **REMEMBER**: Use reasoning to relate information across the document - handwritten values near totals, highlighted boxes, and relationships between printed amounts all provide context for the CORRECT total.
+    "nPrecioTotalOriginal": number or string or null (original total amount in the original currency if conversion was performed - format with thousands separators if >= 1000, e.g., "220,000.00" for CLP, "5,000.00" for MXN - only include if conversion was performed),
+    "tMonedaOriginal": "currency code of the original amount (CLP, MXN, MYR, PEN, etc.) - only include if conversion was performed, null if document was already in USD)",
+    "precioTotal": number or string (sum of ALL nPrecioTotal values from mcomprobante_detalle array for this comprobante - calculate by adding all nPrecioTotal from items - **MANDATORY: If value >= 1000, MUST format as string with thousands separators: "35,800.00", "258,000.00", "5,693.07", etc. Examples: 5693.07 → "5,693.07", 1000 → "1,000.00"**),
+    "tCliente": "client name from 'Attn.:' or 'Attn' field - **If in Chinese, translate to English**" or null,
+    "tStampname": "Extract stamp name ONLY if you find one of these EXACT codes: 'BSQE', 'OTEM', 'OTRE', 'OTRU', 'OTHBP' (case insensitive). These are specific stamp identifiers, NOT company names or supplier names. If you see 'RV TRANSPORTES LTDA.' or any other company name, that is NOT a stamp name - use null instead. Stamp names are usually short codes (4-5 characters) that appear in document headers or near sequential numbers." or null,
     "tsequentialnumber": "Extract sequential number using patterns: 'BSQE1234', 'OE0001', 'OR0001', 'ORU1234' OR separated format 'OTEM\\nOE0001' (stamp on one line, code on next within 200 chars). Format: (BS|OE|OR|ORU) followed by 4+ digits. If stamp found but no code, look for 4+ digit number near stamp and construct using mapping: OTEM→OE, OTRE→OR, OTRU→ORU, BSQE→BS" or null,
     // For Oracle AP invoices, also extract:
     "tInvoiceAmount": "Invoice Amount" or null,
@@ -1175,9 +1724,12 @@ FOR "comprobante" TYPE - Extract:
   }],
   "mcomprobante_detalle": [{
     "nCantidad": number,
-    "tDescripcion": "item description - Extract EXACTLY what the document shows in the Description/Particulars/摘要 column of the table. Examples: 'ICE VANILLA LATT', 'ADD ESP SHT', 'Toll', 'Hotel', 'Meal', 'Room Charge', etc. Look at the ACTUAL table row - if it says 'ICE VANILLA LATT' in the description column, extract 'ICE VANILLA LATT'. If it says 'Toll', extract 'Toll'. DO NOT extract JSON field names like '\"ocr_text\"', '\"nImporte\"', '\"nPrecioTotal\"', '\"_myr_amount\"' - these are WRONG. Only extract what is actually visible in the document table. For empty receipts with no items filled, do NOT create items.",
-    "nPrecioUnitario": number,
-    "nPrecioTotal": number
+    "tUnidad": "unit of measure (e.g., 'kg', 'lb', 'unidades', 'units', 'EACH', 'KT', 'MT2', 'KGM', 'NIU') - Extract from 'Unit'/'U.M.'/'UOM' column in table OR infer from context. If not found, use 'unidades' (Spanish) or 'units' (English) as default. BE FLEXIBLE - extract ANY unit code you find, even if not in standard list.",
+    "tDescripcion": "item description - Extract EXACTLY what the document shows in the Description/Particulars/摘要 column of the table. Examples: 'ICE VANILLA LATT', 'ADD ESP SHT', 'Toll', 'Hotel', 'Meal', 'Room Charge', etc. Look at the ACTUAL table row - if it says 'ICE VANILLA LATT' in the description column, extract 'ICE VANILLA LATT'. If it says 'Toll', extract 'Toll'. DO NOT extract JSON field names like '\"ocr_text\"', '\"nImporte\"', '\"nPrecioTotal\"', '\"_myr_amount\"' - these are WRONG. Only extract what is actually visible in the document table. For empty receipts with no items filled, do NOT create items. **CRITICAL: If the description is in Chinese (中文), automatically translate it to English. Examples: '住宿服务*住宿费' → 'Accommodation service*Accommodation fee', '出租汽车公司' → 'Taxi company', '里程' → 'Mileage', '金额' → 'Amount', '合计' → 'Total'. Always translate Chinese text to English while preserving the structure and meaning.**",
+    "nPrecioUnitario": number or string (unit price - **MANDATORY: If value >= 1000, MUST format as string with thousands separators: "35,800.00", "258,000.00", "5,693.07", etc. Examples: 5693.07 → "5,693.07", 1000 → "1,000.00", 500.00 → 500.00 or "500.00"**),
+    "nPrecioTotal": number or string (total amount in USD for this item - **MANDATORY: If value >= 1000, MUST format as string with thousands separators: "35,800.00", "258,000.00", "5,693.07", etc. Examples: 5693.07 → "5,693.07", 1000 → "1,000.00", 500.00 → 500.00 or "500.00"** - if document has values in a currency other than USD and NO USD values, convert to USD using the exchange rates provided in the conversion rules),
+    "nPrecioTotalOriginal": number or string or null (original total amount in the original currency for this item if conversion was performed - format with thousands separators if >= 1000, e.g., "110,000.00" for CLP - only include if conversion was performed),
+    "tMonedaOriginal": "currency code of the original amount for this item (CLP, MXN, MYR, PEN, etc.) - only include if conversion was performed, null if item was already in USD)"
   }],
   // EXTRACTION RULES FOR mcomprobante_detalle:
   // CRITICAL: tDescripcion must be EXACTLY what the document shows, NOT JSON field names
@@ -1224,28 +1776,15 @@ FOR "resumen" TYPE - Extract:
     "tsourcereference": "source reference code - EXTRACT USING PATTERNS:\n     - Alphanumeric codes 10+ characters (e.g., 'Yanacocha AWTP Onshore', alphanumeric strings in table rows)\n     - Project names from headers (e.g., 'Project: Yanacocha AWTP Onshore')\n     - Look for patterns: [A-Z0-9]{10,} (alphanumeric codes)\n     - Often appears in table rows as first column or near job numbers",
     "tsourcerefid": "source ref ID - EXTRACT USING PATTERNS:\n     - Week numbers: 'Week 1', 'Week 2', etc.\n     - Item numbers from tables: 'Item No. 1', 'Item No. 2'\n     - Source reference IDs: alphanumeric strings (5+ chars) following source reference\n     - Often appears after source reference code in table rows" or null,
     "tdescription": "description - CLEAN, PROFESSIONAL text extracted from the document. Examples: 'Toll', 'Hotel', 'Meal', 'Expense Summary', 'Grand Total USD', 'TOTAL EXPENSES', etc. Extract ONLY the meaningful description from the document row or table, NOT the raw OCR text, NOT JSON fields (like '\"ocr_text\"', '\"nImporte\"', '\"_myr_amount\"'), NOT technical metadata. If the table shows 'Description: Toll', extract 'Toll'. If it shows 'Description: Meal', extract 'Meal'. For totals, extract 'Grand Total USD' or 'TOTAL EXPENSES'. Keep it simple and clean.",
-    "nImporte": number (USD amount - prioritize USD column values, use USD not MYR for nImporte),
+    "nImporte": number or string (USD amount - **MANDATORY: If value >= 1000, MUST format as string with thousands separators: "35,800.00", "258,000.00", "5,693.07", etc. Examples: 5693.07 → "5,693.07", 1000 → "1,000.00", 500.00 → 500.00 or "500.00"** - prioritize USD column values, use USD not MYR for nImporte),
     "tStampname": "BSQE|OTEM|OTRE|OTRU" or null,
-    "tsequentialnumber": "sequential code" or null,
-    // Additional metadata fields:
-    "_weekly_total": true if weekly total, or null,
-    "_week_number": "week number" or null,
-    "_cash_flow": true if cash flow value, or null,
-    "_cash_flow_type": "Total Disbursement|Period Balance|Cumulative Cash Flow|Opening Balance|Total Receipts" or null,
-    "_calculation": true if highlighted calculation, or null,
-    "_calculation_text": "calculation text" or null,
-    "_highlighted": true if highlighted value (e.g., "Grand Total USD" or "TOTAL EXPENSES"), or null,
-    "_handwritten": true if handwritten value, or null,
-    "_priority": true if handwritten (highest priority), or null,
-    // For expense summaries with tables:
-    "_myr_amount": number (MYR amount if present in table) or null,
-    "_item_number": "Item No. from table" or null
+    "tsequentialnumber": "sequential code" or null
   }],
   // IMPORTANT: For expense summary documents with multiple tables (like Bechtel expense summaries):
   // Extract EACH row from EACH table as a separate mresumen entry
   // Example: If you see 3 tables, extract ALL rows from table 1, then ALL rows from table 2, then ALL rows from table 3
   // Each row should have: tdescription (Toll/Hotel/Meal), nImporte (USD amount), tjobno (job number from header), etc.
-  // "Grand Total USD" values should also be extracted as separate mresumen entries with _highlighted: true
+    // "Grand Total USD" values should also be extracted as separate mresumen entries
   
   // Weekly totals: lines with ONLY numbers (no item descriptions) containing 2+ large monetary values
   // These appear at the end of tables and represent totals by week
@@ -1255,11 +1794,9 @@ FOR "resumen" TYPE - Extract:
     "tsourcereference": null,
     "tsourcerefid": "Week XX",
     "tdescription": "Total Week XX",
-    "nImporte": number,
+    "nImporte": number or string (FORMAT WITH THOUSANDS SEPARATORS if >= 1000: "35,800.00", "258,000.00", etc.),
     "tStampname": null,
-    "tsequentialnumber": null,
-    "_weekly_total": true,
-    "_week_number": "week number"
+    "tsequentialnumber": null
   }] or [],
   // Cash Flow values: extract ALL cash flow related values
   "cash_flow": [{
@@ -1268,25 +1805,23 @@ FOR "resumen" TYPE - Extract:
     "tsourcereference": null,
     "tsourcerefid": "Week XX" if applicable,
     "tdescription": "Cash Flow description with amount",
-    "nImporte": number (NEGATIVE if in parentheses like (305,350), POSITIVE otherwise),
+    "nImporte": number or string (NEGATIVE if in parentheses like (305,350), POSITIVE otherwise - FORMAT WITH THOUSANDS SEPARATORS if >= 1000: "35,800.00", "258,000.00", etc.),
     "tStampname": null,
-    "tsequentialnumber": null,
-    "_cash_flow": true,
-    "_cash_flow_type": "Total Disbursement|Period Balance|Cumulative Cash Flow|Opening Balance|Total Receipts"
+    "tsequentialnumber": null
   }] or []
 }
 
 FOR "expense_report" TYPE - Extract:
 {
   "mcomprobante": [{
-    "tNumero": "Report Number (e.g., '0ON74Y')",
-    "dFecha": "Report Date in YYYY-MM-DD (convert from 'Jul 23, 2025' format)",
-    "nPrecioTotal": number (Report Total amount - PRIORITY if in red box/highlighted),
-    "tEmployeeID": "Employee ID (e.g., '063573')",
-    "tEmployeeName": "Employee Name (e.g., 'AYALA SEHLKE, ANA MARIA')",
-    "tOrgCode": "Org Code (e.g., 'HXH0009')",
-    "tReportPurpose": "Report Purpose (e.g., 'Viaje a turno')",
-    "tReportName": "Report Name" or null,
+    "tNumero": "Report Number (e.g., '0ON74Y', '26497-200-318358-PB03-YQ-A-014')",
+    "dFecha": "Report Date in YYYY-MM-DD (convert from 'Jul 23, 2025' format, or extract from 'Month: Jun-25' → '2025-06-01')",
+    "nPrecioTotal": number or string (Report Total amount - FORMAT WITH THOUSANDS SEPARATORS if >= 1000: "35,800.00", "258,000.00", etc. - PRIORITY if in red box/highlighted, or sum of all expenses),
+    "tEmployeeID": "Employee ID (e.g., '063573')" or null,
+    "tEmployeeName": "Employee Name (e.g., 'AYALA SEHLKE, ANA MARIA', 'Michael-x Xu')" or null,
+    "tOrgCode": "Org Code (e.g., 'HXH0009')" or null,
+    "tReportPurpose": "Report Purpose (e.g., 'Viaje a turno')" or null,
+    "tReportName": "Report Name (e.g., 'Project Monthly Expense')" or null,
     "tDefaultApprover": "Default Approver" or null,
     "tFinalApprover": "Final Approver" or null,
     "tPolicy": "Policy (e.g., 'Assignment Long Term')" or null,
@@ -1295,20 +1830,28 @@ FOR "expense_report" TYPE - Extract:
     "tReportKey": "Report Key" or null,
     "tDocumentIdentifier": "BECHEXPRPT_{EmployeeID}_{ReportNumber}" or null,
     "tStampname": "BSQE|OTEM|OTRE|OTRU|OTHBP" or null,
-    "tsequentialnumber": "sequential code" or null
+    "tsequentialnumber": "sequential code (e.g., 'BS0004')" or null
   }],
   "mresumen": [{
-    // Same structure as resumen type, with expense report specific data
-    "tjobno": "Org Code",
-    "ttype": "Expense Report",
-    "tsourcereference": "Report Number",
-    "tsourcerefid": "Report Key",
-    "tdescription": "Report description with purpose",
-    "nImporte": number,
-    "tStampname": "stamp name" or null,
-    "tsequentialnumber": "sequential number" or null
+    // CRITICAL: Extract EACH ROW from expense report tables as a separate mresumen entry
+    // For "Project Monthly Expense" type reports with table structure:
+    // Extract ALL data rows (not header rows, not empty rows)
+    // Each row should have: Assignment No., Charge No., Report No., Country, Type of Activity, Type, Transportation Amount, Hotel Amount, Total Amount
+    "tjobno": "Assignment No. (e.g., '26497-200-318358-PB03-YZ-A') - Extract from 'Assignment No.' column",
+    "ttype": "Type of Activity (e.g., 'SQR', 'AEX') - Extract from 'Type of Activity' column, or 'Expense Report' if not available",
+    "tsourcereference": "Report No. (e.g., '26497-200-318358-PB03-YQ-A-014') - Extract from 'Report No.' column",
+    "tsourcerefid": "Charge No. (e.g., '26497-130') - Extract from 'Charge No.' column, or Report Key if available",
+    "tdescription": "Description combining Type of Activity + Type (e.g., 'SQR Train+Taxi', 'SQR Taxi') - Extract from 'Type of Activity' and 'Type' columns. Include country if relevant (e.g., 'SQR Train+Taxi - China')",
+    "nImporte": number (Total amount in USD - Extract from 'Total (USD)' column, prioritize USD over other currencies),
+    "tStampname": "stamp name (e.g., 'BSQE')" or null,
+    "tsequentialnumber": "sequential number (e.g., 'BS0004')" or null
   }],
-  // For OnShore documents:
+  // IMPORTANT: For expense report tables, extract EVERY data row as a separate mresumen entry
+  // Do NOT skip rows - extract ALL rows that contain data (Assignment No., Charge No., Report No., amounts, etc.)
+    // Include the "Total" row at the bottom as a separate mresumen entry
+  // For each row, extract ALL available fields (Assignment No., Charge No., Report No., Country, Type of Activity, Type, amounts, etc.)
+  
+  // For OnShore documents (deprecated - use mdepartamento and mdisciplina instead):
   "departments": [{
     "name": "Engineering|Operations|Maintenance|Safety|Environmental|Human Resources|Finance|IT Services|Other Services",
     "amount": number (if associated with monetary value) or null,
@@ -1357,7 +1900,8 @@ FOR "concur_expense" TYPE - Extract:
   }],
   "mcomprobante_detalle": [{
     "nCantidad": 1 (default),
-    "tDescripcion": "expense description with merchant and location",
+    "tUnidad": "unit of measure (e.g., 'kg', 'lb', 'unidades', 'units', 'EACH', 'KT', 'MT2', 'KGM', 'NIU') - Extract from 'Unit'/'U.M.'/'UOM' column in table OR infer from context. If not found, use 'unidades' (Spanish) or 'units' (English) as default. BE FLEXIBLE - extract ANY unit code you find, even if not in standard list.",
+    "tDescripcion": "expense description with merchant and location - **CRITICAL: If the description is in Chinese (中文), automatically translate it to English. Examples: '住宿服务*住宿费' → 'Accommodation service*Accommodation fee', '出租汽车公司' → 'Taxi company'. Always translate Chinese text to English while preserving the structure and meaning.**",
     "nPrecioUnitario": number,
     "nPrecioTotal": number,
     "tTransactionDate": "Transaction Date in YYYY-MM-DD" or null,
@@ -1438,87 +1982,84 @@ FOR "jornada" TYPE - Extract:
   // 8. Store cost breakdowns in mresumen array (one entry per project/section/total)
 }
 
-=== SPECIAL PRIORITIES ===
-1. HANDWRITTEN VALUES (HIGHEST PRIORITY - USE REASONING): 
-   **CRITICAL**: Handwritten text with monetary values has HIGHEST PRIORITY and overrides ANY printed values.
-   - **DETECTION**: Look for text that appears manually written - different style, position, annotation-like appearance, or clearly added by hand
-   - **PATTERNS**: Handwritten values often appear:
-     * Near printed totals as corrections or conversions (e.g., "USD 5.55" written next to "RM22.80")
-     * At bottom of receipts/invoices as final validations
-     * In boxes or highlighted areas as annotations
-     * With slight misalignment or different font style
-   - **EXAMPLES**: 
-     * "USD 5.55" written by hand near printed "Total RM22.80" → Use 5.55 as nPrecioTotal
-     * "USD425" handwritten at bottom of receipt → Use 425.00 as nPrecioTotal  
-     * "USD4/25" or "USD 4/25" as annotation → Interpret as "USD 4.25" or "USD 425" based on context
-     * Handwritten "$20" near printed totals → Use 20.00 as nPrecioTotal if it appears to be a final total
-   - **REASONING**: 
-     * Handwritten USD values are usually final validations, currency conversions, or corrections
-     * If you see both printed RM/MYR and handwritten USD, the handwritten USD is the authoritative conversion
-     * Handwritten totals often represent the amount actually paid or required
-   - **EXTRACTION**: 
-     * Mark handwritten values with [HANDWRITTEN] in ocr_text for identification
-     * Extract the handwritten USD value in ocr_text AND use it as nPrecioTotal in structured data (mcomprobante)
-     * Store the original RM/MYR printed amount separately if needed, but handwritten USD is ALWAYS the PRIMARY total
-   - **CONTEXT ANALYSIS**: 
-     * If handwritten value appears near a printed total, analyze which one represents the final amount
-     * Look for visual cues: boxes, arrows, or positioning that indicate the handwritten value is the final total
-     * Consider document purpose: handwritten USD on Malaysian receipts often indicates currency conversion
-2. HIGHLIGHTED VALUES: Values in red boxes, yellow highlights, or visually emphasized sections are PRIORITY - extract them completely. Especially important for:
-   - "TOTAL AMOUNT IN US$" values in red boxes at bottom of tables (Attachment to Invoice) - CRITICAL: Extract this as a separate item in mcomprobante_detalle with tDescripcion: "TOTAL AMOUNT IN US$", nPrecioTotal: value from red box
-   - "TOTAL $ XXX.XX" in red boxes (Italian invoices) - Extract the final total after stamp duty (the LAST value)
-   - Report Total amounts in red boxes (Expense Reports)
-   - For "ATTACHMENT TO INVOICE": The red box at the bottom contains the total amount - extract this value and use it as nPrecioTotal in a separate mcomprobante_detalle entry
-3. CALCULATIONS: Extract calculations like "USD 4,301.00 + USD 616.00 + USD 1,452.00 = USD 6,369.00" completely. Extract both individual values (4,301.00, 616.00, 1,452.00) AND final total (6,369.00).
-4. GL JOURNAL DETAILS: If document is "GL Journal Details" WITH highlighted calculations (red box), extract ONLY the highlighted calculation values, NOT all table rows. If WITHOUT highlighted calculations, extract all table rows as items (use ONLY nPrecioUnitario, NOT nPrecioTotal).
-5. ATTACHMENT TO INVOICE: For "ATTACHMENT TO INVOICE" documents - THIS IS CRITICAL AND MANDATORY:
-   - Extract ALL table rows as separate items in mcomprobante_detalle - DO NOT skip any rows
-   - Table structure: Resource | Vendor | Assignment no. | Report Number | Request | Type of Activity | Date of visit | hrs | hrly rate | km/miles | mileage rate | Expenses | Total Labor | Total Expenses | Total Amount
-   - For EACH data row (not headers):
-     * Extract Resource Name (e.g., "Martin Loges")
-     * Extract Vendor Name (e.g., "Duchting Pumpen, Witten, Germany")
-     * Extract Type of Activity (e.g., "Inspection")
-     * Extract Date of visit (e.g., "11-Jun-25", "30-Jun-25")
-     * Extract hrs (e.g., 12, 10)
-     * Extract hrly rate OR mileage rate (e.g., $ 0.67)
-     * Extract Total Amount (e.g., $ 60.30) - THIS IS MANDATORY
-   - Mapping to mcomprobante_detalle:
-     * tDescripcion: "Resource Name - Vendor Name - Type of Activity" (e.g., "Martin Loges - Duchting Pumpen, Witten, Germany - Inspection")
-     * nCantidad: Extract from "hrs" column (e.g., 12, 10) OR from "km/miles" if hrs is empty
-     * nPrecioUnitario: Extract from "hrly rate" OR "mileage rate" column (e.g., 0.67)
-     * nPrecioTotal: Extract from "Total Amount" column (e.g., 60.30) - REQUIRED
-   - For "TOTAL AMOUNT IN US$" row at the bottom (usually in red box/highlighted):
-     * Extract this as a SEPARATE entry in mcomprobante_detalle
-     * tDescripcion: "TOTAL AMOUNT IN US$" (exactly as shown)
-     * nCantidad: Extract from "hrs" column if shown (e.g., 22) OR from "km/miles" (e.g., 180) OR use 1
-     * nPrecioUnitario: Can be null or use rate if available
-     * nPrecioTotal: Extract from "Total Amount" column from red box/highlighted area (e.g., 120.60) - THIS IS THE CRITICAL VALUE
-   - CRITICAL: Extract ALL rows including the total row - do NOT skip any rows
-6. ITALIAN INVOICES (FATTURA): Pay special attention to red boxes or highlighted areas containing invoice numbers (e.g., "FATTURA NO.: 333/25") and total amounts.
-   - Invoice number format: "FATTURA NO.: 333/25" or "INVOICE No. 333/25" → extract "333/25" as tNumero
-   - Total extraction: Look for "TOTAL" keyword followed by values
-   - If "TOTAL" is on one line and "$ XXX.XX" values on following lines, extract ALL values but prioritize the LAST value (final total after stamp duty)
-   - Example: If you see "TOTAL\n$\n120.60\n$\n2.34\n$\n122.94", extract 122.94 as nPrecioTotal (the LAST value after stamp duty)
-   - Also extract stamp duty separately if visible: "Stamp duty excl art. 15 DPR 633/1972 (€ 2,00)" → $ 2.34
-   - Extract ALL monetary values shown: base amount (120.60), stamp duty (2.34), final total (122.94)
-   - If there's a "Total amount in Euro:" with conversion, extract that too but prioritize USD amounts
-7. WEEKLY TOTALS (OnShore): Extract lines with multiple large monetary values at the end of tables (e.g., "7,816,974.79 305,349.84 6,333,781.02"). These are usually weekly totals. Look for lines with ONLY numbers (>=2 large values >=1000) and no item descriptions.
-8. CASH FLOW VALUES (OnShore): Extract "Total Disbursement", "Period Balance", "Cumulative Cash Flow", "Opening Balance", "Total Receipts" values from cash flow tables. Include negative values correctly (from parentheses like (305,350) → -305350).
-9. DEPARTMENTS & DISCIPLINES (OnShore): Extract department names (Engineering, Operations, Maintenance, Safety, Environmental, Human Resources, Finance, IT Services, Other Services) and discipline names (Project Management, Quality Control, Procurement, Construction, Logistics) from tables, headers, or classification sections. Map NC Codes (611=Engineering, 612=Operations, etc.).
-10. INVOICE APPROVAL REPORT: Do NOT extract "Line Item Details" as items. Those are data columns (Line Amount, Nat Class, Job, Sub Job, Cost Code), NOT purchase items. Only extract actual purchase items if they exist elsewhere.
-11. INVOICE GROUP DETAIL: Do NOT extract "Invoice Group Detail" section as items. Skip lines matching pattern like "BSQEUSD 751671 33025" or containing "INV Group ID".
-12. LABOR DETAILS: For "BSQE SERVICE CHARGES" or labor tables with "Emp Name", extract rows with pattern: Employee Name + BSQE code + date + Hours + Hrly Rate + Currency + Amount. Map: hours → nCantidad, rate → nPrecioUnitario, amount → nPrecioTotal, description → "Employee Name INSPECTING".
-13. EXPENSE SUMMARY TABLES: For documents with multiple expense tables (like Bechtel expense summaries with Toll/Hotel/Meal):
-    - Extract EVERY row from EVERY table as a separate mresumen entry
-    - Include Item No. if present in the table
-    - CRITICAL FOR DESCRIPTIONS: Look at the actual "Description" column in the table. If it says "Toll", extract "Toll". If it says "Hotel", extract "Hotel". If it says "Meal", extract "Meal". Extract ONLY what the document shows in the Description column, NOT JSON structures, NOT OCR metadata.
-    - Use USD amount as nImporte (prioritize USD over MYR)
-    - Store MYR amount in _myr_amount if needed
-    - Extract job number from header (e.g., "BECHTEL JOBS NO.: 26443") as tjobno
-    - Extract project name (e.g., "Project: Yanacocha AWTP Onshore") as tsourcereference
-    - For "Grand Total USD" rows: Extract "Grand Total USD" as tdescription (literally from the document), extract the USD amount as nImporte, set _highlighted: true
-    - For "TOTAL EXPENSES" rows: Extract "TOTAL EXPENSES" as tdescription (literally from the document), extract the USD amount as nImporte, set _highlighted: true and highest priority
-    - Do NOT skip any rows - extract ALL items from ALL tables completely
+FOR ALL DOCUMENT TYPES - Extract mmaquinaria_equipos (machinery/equipment/vehicles) if present:
+**CRITICAL: For taxi receipts and transportation receipts, ALSO extract them in mmaquinaria_equipos as "Vehículo" type:**
+- Chinese taxi receipts (发票联 with 车号): Extract vehicle information (车号/Car No., 证号/Certificate No., dates, times, mileage, amounts)
+- Each taxi receipt should be a separate entry in mmaquinaria_equipos
+- Extract: tTipo: "Vehículo", tPlaca: Car No. (车号), dFecha: Date (日期), nValorMonetario: Amount (金额), tMoneda: Currency (usually CNY for Chinese receipts)
+- Also extract: boarding time (上车), alighting time (下车), mileage (里程), waiting time (等候), unit price (单价)
+
+{
+  "mmaquinaria_equipos": [{
+    // CRITICAL: PRIORITIZE MONETARY VALUES - Extract ALL monetary values related to machinery/equipment/vehicles
+    // This table is used for validation between summaries and individual records, so monetary values are ESSENTIAL
+    
+    // Fields principales (prioritarios - especialmente valores monetarios)
+    "tTipo": "Vehículo|Equipo|Maquinaria|Herramienta|Orden de Compra|Guía de Remisión|Taxi Receipt" or null,
+    "tDescripcion": "Complete description of the item/equipment/machinery/vehicle - extract from document - **CRITICAL: If the description is in Chinese (中文), automatically translate it to English. Examples: '住宿服务*住宿费' → 'Accommodation service*Accommodation fee', '出租汽车公司' → 'Taxi company'. Always translate Chinese text to English while preserving the structure and meaning.**",
+    "nValorMonetario": number, // PRIORITY: Price, cost, value, total amount - EXTRACT IF PRESENT (REQUIRED for validation)
+    "tMoneda": "USD|PEN|EUR|CLP|MYR" or null, // Currency of the monetary value
+    
+    // Información de vehículos (si aplica)
+    "tMarca": "Vehicle brand (e.g., 'NISSAN', 'TOYOTA')" or null,
+    "tPlaca": "License plate (e.g., 'C1J-905')" or null,
+    "tTUCE": "TUCE number" or null,
+    "tConductor": "Driver name (e.g., 'SEGUNDO KELVIN JULON VASQUEZ')" or null,
+    "tNumeroDocumento": "Driver document number (e.g., 'D.N.I.-47799028')" or null,
+    "tNumeroLicencia": "Driver license number (e.g., '847799028')" or null,
+    
+    // Información de equipos/maquinaria (si aplica)
+    "tModelo": "Model number or name" or null,
+    "tSerial": "Serial number" or null,
+    "tNumeroOrden": "Order number (e.g., '548125', '543403', '557177')" or null,
+    "tCodigoItem": "Item code (e.g., 'FPOUSSC000000391', 'KITS000171')" or null,
+    "nCantidad": number or null, // Quantity of items
+    "tUnidadMedida": "Unit of measure (e.g., 'EACH', 'KT', 'MT2', 'KGM', 'NIU')" or null,
+    "nPrecioUnitario": number or null, // Unit price if available
+    "nPrecioTotal": number or null, // Total price if available (PRIORITY if present)
+    
+    // Información de órdenes de compra (si aplica)
+    "tProveedor": "Supplier name" or null,
+    "tRUC": "RUC or tax ID" or null,
+    "dFecha": "Date in YYYY-MM-DD format" or null,
+    "dFechaEmision": "Emission date in YYYY-MM-DD" or null,
+    "dFechaInicioTraslado": "Transport start date in YYYY-MM-DD" or null,
+    "tPuntoPartida": "Origin point" or null,
+    "tPuntoLlegada": "Destination point" or null,
+    "tModalidadTraslado": "Transport modality (e.g., 'PUBLICO')" or null,
+    "tPesoBrutoTotal": "Gross weight (e.g., 'KGM 2639')" or null,
+    
+    // Información adicional (flexible - extraer cualquier campo que encuentre)
+    "tUbicacion": "Location" or null,
+    "tEstado": "Status" or null,
+    "tReferencia": "Reference number" or null,
+    "tObservaciones": "Observations or notes" or null,
+    "tDescripcionDetallada": "Detailed description from item tables" or null,
+    "tCatalogo": "Catalog number" or null,
+    "tMarcaProducto": "Product brand" or null,
+    "tFechaEntrega": "Delivery date in YYYY-MM-DD" or null,
+    // ... ANY OTHER FIELD you find in the document that is relevant - be flexible and extract what you see
+  }],
+  // EXTRACTION RULES FOR mmaquinaria_equipos:
+  // 1. PRIORITY: Extract ALL monetary values (nValorMonetario, nPrecioUnitario, nPrecioTotal) - these are CRITICAL for validation
+  // 2. For purchase orders (Órdenes de Compra): Extract ALL items from pricing tables with their monetary values
+  // 3. For vehicle information (Guías de Remisión): Extract vehicle details (marca, placa, TUCE, conductor, license)
+  // 4. For equipment/machinery: Extract descriptions, serial numbers, model numbers, codes
+  // 5. For order tables: Extract each row as a separate entry if it has monetary values
+  // 6. BE FLEXIBLE: Extract ANY additional fields you find that are relevant to machinery/equipment/vehicles/orders
+  // 7. If document has multiple items in a table, create separate entries for EACH item
+  // 8. Always include monetary values if present - they are essential for validation purposes
+  // 9. **CRITICAL FOR TAXI RECEIPTS**: For Chinese taxi receipts (发票联 with 车号):
+  //    - Extract EACH taxi receipt as a separate mmaquinaria_equipos entry
+  //    - tTipo: "Vehículo" or "Taxi Receipt"
+  //    - tPlaca: Extract from "车号" (Car No.) column (e.g., "K-T0116", "K-T5962", "K-T6601", "K-T0272", "A.AN0942")
+  //    - dFecha: Extract from "日期" (Date) column (e.g., "2025年06月11日" → "2025-06-11")
+  //    - nValorMonetario: Extract from "金额" (Amount) column (e.g., 88.00, 68.00, 57.00, 72.00)
+  //    - tMoneda: "CNY" (Chinese Yuan) for Chinese receipts
+  //    - tDescripcion: Combine boarding/alighting info (e.g., "Taxi from 06:09 to 06:53, 28.4km")
+  //    - Also extract: boarding time (上车), alighting time (下车), mileage (里程), waiting time (等候), unit price (单价)
+  //    - If document has multiple taxi receipts, create separate entry for EACH one
+}
 
 === DATE FORMAT CONVERSION ===
 Convert ALL dates to YYYY-MM-DD format. Accept these input formats:
@@ -1575,8 +2116,24 @@ Example response structure:
     "mnaturaleza": [{"tNaturaleza": "Alimentación"}],
     "mdocumento_tipo": [{"iMDocumentoTipo": 1, "tTipo": "Comprobante"}],
     "midioma": [{"iMIdioma": 2, "tIdioma": "Inglés"}],
+    "munidad_medida": [{"tUnidad": "kg"}, {"tUnidad": "unidades"}],
+    "mdepartamento": [{"tDepartamento": "Engineering"}, {"tDepartamento": "Procurement"}],
+    "mdisciplina": [{"tDisciplina": "Project Management"}],
     "mcomprobante": [...],
-    "mcomprobante_detalle": [...]
+    "mcomprobante_detalle": [{
+      "nCantidad": 2,
+      "tUnidad": "kg",
+      "tDescripcion": "Item description",
+      "nPrecioUnitario": 10.50,
+      "nPrecioTotal": 21.00
+    }],
+    "mmaquinaria_equipos": [{
+      "tTipo": "Vehículo",
+      "tMarca": "NISSAN",
+      "tPlaca": "C1J-905",
+      "nValorMonetario": 5000.00,
+      "tMoneda": "USD"
+    }]
   }
 }
 
@@ -1588,27 +2145,32 @@ After extracting the OCR text, translate it to English IF the original language 
 - Only translate natural language parts
 - Preserve structure, line breaks, and special characters
 
-=== STEP 4: TRANSLATE TEXT (if needed) ===
-After extracting the OCR text, translate it to English IF the original language is NOT English or Spanish:
-- If original language is Italian, Chinese, Malay, or any other language → translate to English
-- If original language is English or Spanish → keep ocr_text_translated the same as ocr_text
-- Maintain all formatting, numbers, dates, and technical terms exactly as they appear
-- Only translate natural language parts
-- Preserve structure, line breaks, and special characters
-
 CRITICAL: Extract EVERYTHING. Leave NOTHING behind. Return complete, accurate JSON. Prioritize highlighted/handwritten values.
+
+=== CRITICAL: DO NOT INCLUDE FIELDS STARTING WITH "_" (MANDATORY) ===
+**MANDATORY RULE**: Do NOT extract or include ANY fields that start with underscore "_" in the structured_data output.
+- All fields starting with "_" are internal metadata/processing fields and should NEVER appear in the final JSON response
+- **FORBIDDEN FIELDS** (examples - DO NOT include any of these or similar):
+  * "_currency", "_source_line", "_auto_extracted", "_currency_code"
+  * "_myr_amount", "_highlighted", "_is_total_row", "_total"
+  * "_metadata", "_internal", "_processing", "_temp", "_is_total"
+  * ANY field name that starts with "_" - FORBIDDEN
+- **ONLY INCLUDE**: Standard fields without underscore prefix (e.g., tjobno, ttype, nImporte, tStampname, tsequentialnumber, nCantidad, tDescripcion, nPrecioUnitario, nPrecioTotal, etc.)
+- **VALIDATION**: Before returning the JSON, verify that NO field names start with "_" - if you find any, remove them completely
 
 === CRITICAL: COMPLETE EXTRACTION REQUIREMENT ===
 You MUST extract ALL fields completely. Do NOT return partial data:
-- If document is "comprobante": 
+- If document is "ticket", "factura_electronica", "comprobante", OR "nota_bill": 
   * Extract mcomprobante (with tNumero, dFecha, nPrecioTotal, tStampname, tsequentialnumber) - REQUIRED
   * Extract mcomprobante_detalle (ALL items from tables) - REQUIRED if document has a table with items
   * For "ATTACHMENT TO INVOICE": Extract ALL table rows including "TOTAL AMOUNT IN US$" row - MANDATORY
   * For Italian invoices: Extract all monetary values including base amount and stamp duty, prioritize final total after stamp duty
 - If document is "resumen": Extract mresumen (with tjobno, ttype, tsourcereference, tsourcerefid, tdescription, nImporte, tStampname, tsequentialnumber) - ALL rows from ALL tables
 - If document is "jornada": Extract mjornada AND mjornada_empleado (ALL employees with hours, dates, org codes, project allocations, costs) - MANDATORY
-- ALWAYS extract catalog tables: mdivisa, mproveedor, mnaturaleza, mdocumento_tipo, midioma
+- ALWAYS extract catalog tables: mdivisa, mproveedor, mnaturaleza, mdocumento_tipo, midioma, munidad_medida, mdepartamento, mdisciplina
 - ALWAYS extract stamp info: tStampname (BSQE/OTEM/OTRE/OTRU) and tsequentialnumber (BS1234/OE0001/etc.)
+- ALWAYS extract mmaquinaria_equipos if document contains vehicle, equipment, machinery, or order information (see details below)
+- NOTE: onshore_offshore is NOT extracted from document - it will be added by backend based on periodo_id
 - If ANY field can be extracted from the document, extract it. Do NOT skip fields just because they seem optional.
 - For documents with tables: Extract ALL rows from ALL tables - do NOT skip rows
 - For documents with totals in red boxes: Extract those totals as separate items with highest priority
@@ -1627,3 +2189,9 @@ IMPORTANT REMINDERS:
 - All dates must be converted to YYYY-MM-DD format
 - All numbers must be actual numbers, not strings
 - Use null for missing fields, [] for empty arrays"""
+        
+        # Cachear el prompt y el hash de conversiones para evitar recalcularlo
+        self._prompt_cache = prompt
+        self._currency_conversions_hash = current_conversions_hash
+        
+        return prompt

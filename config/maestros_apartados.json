@@ -1,0 +1,39 @@
+{
+  "apartados": [
+    {
+      "id": "apartado-1764368664990-0",
+      "nombre": "Bebidas Alcoholicas",
+      "orden": 0
+    },
+    {
+      "id": "apartado-1764368664990-2",
+      "nombre": "Comida por Persona",
+      "orden": 1
+    },
+    {
+      "id": "apartado-1764368664990-1",
+      "nombre": "Juegos al Azar",
+      "orden": 2
+    },
+    {
+      "id": "apartado-1764886223835-0",
+      "nombre": "Medicamentos",
+      "orden": 3
+    },
+    {
+      "id": "apartado-1764886694352-0",
+      "nombre": "Comida",
+      "orden": 4
+    },
+    {
+      "id": "apartado-1765373969106-0",
+      "nombre": "Concepto Prueba 1",
+      "orden": 5
+    },
+    {
+      "id": "apartado-1765373969106-1",
+      "nombre": "Concepto Prueba2",
+      "orden": 6
+    }
+  ]
+}

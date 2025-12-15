@@ -236,12 +236,14 @@ class PeriodoManager:
         
         return None
     
-    def delete_periodo(self, periodo_id: str) -> bool:
+    def delete_periodo(self, periodo_id: str, upload_manager=None, delete_files: bool = True) -> bool:
         """
-        Elimina un periodo.
+        Elimina un periodo y limpia/elimina los archivos asociados.
         
         Args:
             periodo_id: ID del periodo
+            upload_manager: Instancia de UploadManager para limpiar/eliminar archivos (opcional)
+            delete_files: Si es True, elimina los archivos físicos y metadatas. Si es False, solo limpia el periodo_id
             
         Returns:
             True si se eliminó, False si no existía
@@ -249,16 +251,39 @@ class PeriodoManager:
         data = self._load_periodos()
         periodos = data.get("periodos", [])
         
-        original_count = len(periodos)
+        # Buscar el periodo antes de eliminarlo para obtener archivos asociados
+        periodo_to_delete = None
+        for p in periodos:
+            if p.get("periodo_id") == periodo_id:
+                periodo_to_delete = p
+                break
+        
+        if not periodo_to_delete:
+            return False
+        
+        # Limpiar/eliminar archivos asociados si se proporciona upload_manager
+        if upload_manager:
+            try:
+                # Obtener lista de archivos asociados
+                archivos_asociados = periodo_to_delete.get("archivos_asociados", [])
+                
+                if delete_files:
+                    # Eliminar archivos físicos y metadatas
+                    deleted_count = upload_manager.remove_periodo_from_metadata(periodo_id, delete_files=True)
+                    logger.info(f"Eliminados {deleted_count} archivos asociados al periodo {periodo_id}")
+                else:
+                    # Solo remover periodo_id de la metadata
+                    updated_count = upload_manager.remove_periodo_from_metadata(periodo_id, delete_files=False)
+                    logger.info(f"Removido periodo_id {periodo_id} de metadata de {updated_count} archivos")
+            except Exception as e:
+                logger.warning(f"Error limpiando/eliminando archivos al eliminar periodo {periodo_id}: {e}")
+        
+        # Eliminar el periodo
         periodos = [p for p in periodos if p.get("periodo_id") != periodo_id]
-        
-        if len(periodos) < original_count:
-            data["periodos"] = periodos
-            self._save_periodos(data)
-            logger.info(f"Periodo eliminado: {periodo_id}")
-            return True
-        
-        return False
+        data["periodos"] = periodos
+        self._save_periodos(data)
+        logger.info(f"Periodo eliminado: {periodo_id}")
+        return True
     
     def add_archivo_to_periodo(self, periodo_id: str, request_id: str) -> bool:
         """
@@ -282,8 +307,10 @@ class PeriodoManager:
                     periodo["archivos_asociados"] = archivos
                     # Actualizar estado y registros
                     periodo["registros"] = len(archivos)
-                    if periodo["estado"] == "vacio":
-                        periodo["estado"] = "pendiente"
+                    # Solo actualizar estado si NO está "cerrado" (periodos cerrados no deben cambiar de estado)
+                    if periodo.get("estado") != "cerrado":
+                        if periodo["estado"] == "vacio":
+                            periodo["estado"] = "pendiente"
                     periodo["ultimo_procesamiento"] = datetime.now().isoformat()
                     self._save_periodos(data)
                     logger.info(f"Archivo {request_id} agregado al periodo {periodo_id}")
@@ -312,7 +339,8 @@ class PeriodoManager:
                     archivos.remove(request_id)
                     periodo["archivos_asociados"] = archivos
                     periodo["registros"] = len(archivos)
-                    if len(archivos) == 0:
+                    # Solo actualizar estado si NO está "cerrado" (periodos cerrados no deben cambiar de estado)
+                    if len(archivos) == 0 and periodo.get("estado") != "cerrado":
                         periodo["estado"] = "vacio"
                     self._save_periodos(data)
                     logger.info(f"Archivo {request_id} removido del periodo {periodo_id}")
@@ -334,4 +362,50 @@ class PeriodoManager:
         if periodo:
             return periodo.get("archivos_asociados", [])
         return []
+    
+    def save_apartados_snapshot(self, periodo_id: str, apartados: List[Dict[str, Any]]) -> bool:
+        """
+        Guarda un snapshot de apartados para un periodo específico.
+        Esto se usa cuando el periodo se cierra para mantener un histórico.
+        
+        Args:
+            periodo_id: ID del periodo
+            apartados: Lista de apartados a guardar como snapshot
+            
+        Returns:
+            True si se guardó exitosamente, False si el periodo no existe
+        """
+        data = self._load_periodos()
+        periodos = data.get("periodos", [])
+        
+        for periodo in periodos:
+            if periodo.get("periodo_id") == periodo_id:
+                # Crear una copia profunda de los apartados para el snapshot
+                import copy
+                snapshot = copy.deepcopy(apartados)
+                
+                # Guardar el snapshot y la fecha de creación
+                periodo["apartados_snapshot"] = snapshot
+                periodo["apartados_snapshot_created_at"] = datetime.now().isoformat()
+                
+                self._save_periodos(data)
+                logger.info(f"Snapshot de apartados guardado para periodo {periodo_id} ({len(snapshot)} apartados)")
+                return True
+        
+        return False
+    
+    def get_apartados_snapshot(self, periodo_id: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Obtiene el snapshot de apartados de un periodo si existe.
+        
+        Args:
+            periodo_id: ID del periodo
+            
+        Returns:
+            Lista de apartados del snapshot o None si no existe
+        """
+        periodo = self.get_periodo(periodo_id)
+        if periodo:
+            return periodo.get("apartados_snapshot")
+        return None
 

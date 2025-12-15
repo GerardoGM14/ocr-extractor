@@ -13,16 +13,19 @@ import json
 import asyncio
 import secrets
 import hashlib
+import string
 from pathlib import Path
 from typing import Optional, Dict, Any, AsyncGenerator, Tuple
 from datetime import datetime, timedelta
 from threading import Lock
+from pydantic import BaseModel
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query, Header, Depends
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, Query, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from starlette.requests import Request
+from fastapi.exceptions import RequestValidationError
+from starlette.requests import Request as StarletteRequest
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -45,6 +48,9 @@ from .models import (
     ApplyPromptResponse,
     ErrorInfo,
     PromptVersionInfo,
+    TokenTestResponse,
+    TokenUsageStats,
+    PageTokenStats,
     # Dashboard Models
     DashboardStatsResponse,
     DashboardAnalyticsResponse,
@@ -66,13 +72,26 @@ from .models import (
     BatchProcessRequest,
     BatchProcessResponse,
     BatchJobInfo,
+    ProcessSelectedRequest,
     # Auth Models
     LoginRequest,
     LoginResponse,
     LogoutRequest,
     LogoutResponse,
+    # User Management Models
+    UserInfo,
+    UserCreateRequest,
+    UserUpdateRequest,
+    UserUpdateByAdminRequest,
+    UserPasswordResetRequest,
+    UsersListResponse,
+    UserResponse,
     # Export Models
-    BulkExportRequest
+    BulkExportRequest,
+    # Maestros Models
+    ApartadoInfo,
+    MaestrosSaveRequest,
+    MaestrosResponse
 )
 from .dependencies import (
     get_ocr_extractor,
@@ -82,6 +101,8 @@ from .dependencies import (
     get_archive_manager,
     get_processed_tracker,
     is_email_allowed,
+    add_email_to_allowed_list,
+    remove_email_from_allowed_list,
     get_learning_system,
     get_periodo_manager,
     get_database_service
@@ -119,6 +140,62 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Exception handler para errores de validación de Pydantic
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: StarletteRequest, exc: RequestValidationError):
+    """
+    Maneja errores de validación de Pydantic y retorna mensajes amigables.
+    """
+    errors = exc.errors()
+    error_messages = []
+    
+    for error in errors:
+        field = ".".join(str(loc) for loc in error.get("loc", []))
+        error_type = error.get("type", "")
+        error_msg = error.get("msg", "")
+        
+        # Mensajes personalizados según el campo y tipo de error
+        if "periodo" in field.lower():
+            if error_type == "value_error.missing":
+                error_messages.append("Periodo vacío, considerar insertar uno")
+            elif error_type == "value_error.str.min_length":
+                error_messages.append("Periodo vacío, considerar insertar uno")
+            elif "not_empty" in str(error_msg) or "Periodo vacío" in str(error_msg):
+                error_messages.append("Periodo vacío, considerar insertar uno")
+            else:
+                error_messages.append("Periodo vacío, considerar insertar uno")
+        elif "tipo" in field.lower():
+            if error_type == "value_error.missing":
+                error_messages.append("Periodo vacío, considerar insertar uno")
+            elif "tipo_valid" in str(error_msg) or "onshore" in str(error_msg).lower() or "offshore" in str(error_msg).lower():
+                error_messages.append("El tipo debe ser 'onshore' o 'offshore'")
+            else:
+                error_messages.append(f"Error en el campo Tipo: {error_msg}")
+        else:
+            # Mensaje genérico para otros campos
+            if error_type == "value_error.missing":
+                error_messages.append(f"El campo '{field}' es obligatorio")
+            else:
+                error_messages.append(f"Error en '{field}': {error_msg}")
+    
+    # Si no hay mensajes personalizados, usar el primero disponible
+    if not error_messages:
+        if errors:
+            first_error = errors[0]
+            error_messages.append(first_error.get("msg", "Error de validación"))
+    
+    # Retornar mensaje en formato compatible con FastAPI (detail como string)
+    error_message = error_messages[0] if error_messages else "Error de validación"
+    
+    # FastAPI espera detail como string o lista de objetos, pero para compatibilidad con frontend
+    # retornamos como string simple
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": error_message  # Formato estándar de FastAPI - string simple para compatibilidad con frontend
+        }
+    )
+
 # CORS middleware - Permitir todos los orígenes
 app.add_middleware(
     CORSMiddleware,
@@ -140,10 +217,160 @@ _active_tokens: Dict[str, Dict[str, Any]] = {}  # token -> {email, expires_at, c
 _tokens_lock = Lock()
 TOKEN_EXPIRATION_HOURS = 24  # Tokens expiran después de 24 horas
 
+# ===== Sistema de edición concurrente de periodos (en memoria) =====
+class PeriodEditingRequest(BaseModel):
+    email: str
+    nombre: Optional[str] = None
+
+
+_period_edit_locks: Dict[str, Dict[str, Any]] = {}  # periodo_id -> {email, nombre, since, last_seen}
+_period_edit_lock = Lock()
+PERIOD_EDIT_TTL_MINUTES = 5
+
+
+def _cleanup_period_edit_locks() -> None:
+    """
+    Limpia bloqueos de edición expirados para evitar que se queden colgados
+    si un usuario cierra el navegador sin salir explícitamente.
+    """
+    if not _period_edit_locks:
+        return
+
+    now = datetime.utcnow()
+    expire_before = now - timedelta(minutes=PERIOD_EDIT_TTL_MINUTES)
+
+    with _period_edit_lock:
+        to_delete = []
+        for periodo_id, info in _period_edit_locks.items():
+            last_seen_str = info.get("last_seen")
+            try:
+                if last_seen_str:
+                    last_seen = datetime.fromisoformat(last_seen_str)
+                else:
+                    # Si no hay last_seen, usar since como fallback
+                    since_str = info.get("since")
+                    last_seen = datetime.fromisoformat(since_str) if since_str else None
+            except Exception:
+                last_seen = None
+
+            if last_seen is None or last_seen < expire_before:
+                to_delete.append(periodo_id)
+
+        for periodo_id in to_delete:
+            _period_edit_locks.pop(periodo_id, None)
+
 
 def generate_auth_token() -> str:
     """Genera un token de autenticación seguro."""
     return secrets.token_urlsafe(32)
+
+
+def truncate_request_id_for_folder(request_id: str, max_length: int = 30) -> str:
+    """
+    Trunca el request_id para usarlo como nombre de carpeta, evitando rutas demasiado largas.
+    
+    Args:
+        request_id: ID del request completo
+        max_length: Longitud máxima (default: 30 caracteres)
+        
+    Returns:
+        request_id truncado a max_length caracteres
+    """
+    if len(request_id) <= max_length:
+        return request_id
+    # Truncar y mantener los primeros caracteres (más importantes)
+    return request_id[:max_length]
+
+def generate_secure_password(length: int = 10) -> str:
+    """
+    Genera una contraseña aleatoria cumpliendo requisitos de complejidad.
+    """
+    lowercase_chars = string.ascii_lowercase
+    uppercase_chars = string.ascii_uppercase
+    numbers = string.digits
+    special_chars = "!@#$%&*?"
+    all_chars = lowercase_chars + uppercase_chars + numbers + special_chars
+
+    while True:
+        password = ''.join(secrets.choice(all_chars) for _ in range(length))
+        if (
+            any(c in lowercase_chars for c in password)
+            and any(c in uppercase_chars for c in password)
+            and any(c in numbers for c in password)
+            and any(c in special_chars for c in password)
+        ):
+            return password
+
+
+@app.post("/api/v1/periodos/{periodo_id}/editing/enter", tags=["Periodos"])
+async def enter_period_editing(periodo_id: str, body: PeriodEditingRequest):
+    """
+    Marca que un usuario ha entrado a editar un periodo.
+    No bloquea el acceso, solo informa si ya había otra persona editando.
+    """
+    _cleanup_period_edit_locks()
+    now = datetime.utcnow().isoformat()
+
+    with _period_edit_lock:
+        existing = _period_edit_locks.get(periodo_id)
+
+        # Si ya hay alguien distinto editando, informar pero no reemplazar su lock
+        if existing and existing.get("email") != body.email:
+            return {
+                "success": True,
+                "already_in_use": True,
+                "editor_email": existing.get("email"),
+                "editor_nombre": existing.get("nombre"),
+                "since": existing.get("since"),
+            }
+
+        # Registrar / actualizar lock para este usuario
+        since = existing.get("since") if existing and existing.get("email") == body.email else now
+        _period_edit_locks[periodo_id] = {
+            "email": body.email,
+            "nombre": body.nombre,
+            "since": since,
+            "last_seen": now,
+        }
+
+    return {
+        "success": True,
+        "already_in_use": False,
+        "editor_email": body.email,
+        "editor_nombre": body.nombre,
+        "since": since,
+    }
+
+
+@app.post("/api/v1/periodos/{periodo_id}/editing/heartbeat", tags=["Periodos"])
+async def heartbeat_period_editing(periodo_id: str, body: PeriodEditingRequest):
+    """
+    Actualiza el heartbeat de un usuario que sigue con el periodo abierto.
+    Si el lock ya no existe o pertenece a otro usuario, se devuelve active=False.
+    """
+    _cleanup_period_edit_locks()
+    now = datetime.utcnow().isoformat()
+
+    with _period_edit_lock:
+        existing = _period_edit_locks.get(periodo_id)
+        if existing and existing.get("email") == body.email:
+            existing["last_seen"] = now
+            return {"success": True, "active": True}
+
+    return {"success": True, "active": False}
+
+
+@app.post("/api/v1/periodos/{periodo_id}/editing/leave", tags=["Periodos"])
+async def leave_period_editing(periodo_id: str, body: PeriodEditingRequest):
+    """
+    Libera explícitamente el lock de edición cuando el usuario sale del periodo.
+    """
+    with _period_edit_lock:
+        existing = _period_edit_locks.get(periodo_id)
+        if existing and existing.get("email") == body.email:
+            _period_edit_locks.pop(periodo_id, None)
+
+    return {"success": True}
 
 
 def generate_password_from_email(email: str) -> str:
@@ -375,6 +602,114 @@ def format_name_from_email(email: str) -> str:
     return ' '.join(formatted_parts)
 
 
+def get_user_passwords_file() -> Path:
+    """Obtiene la ruta del archivo user_passwords.json."""
+    config_paths = [
+        Path(__file__).parent.parent.parent.parent / "config" / "user_passwords.json",
+        Path("./config/user_passwords.json"),
+        Path(__file__).parent.parent.parent / "config" / "user_passwords.json"
+    ]
+    
+    for path in config_paths:
+        if path.exists():
+            return path
+    
+    # Si no existe, crear uno nuevo
+    passwords_file = Path(__file__).parent.parent.parent.parent / "config" / "user_passwords.json"
+    passwords_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(passwords_file, 'w', encoding='utf-8') as f:
+        json.dump({"passwords": {}, "users": {}}, f, indent=2, ensure_ascii=False)
+    return passwords_file
+
+
+def load_users_data() -> Dict[str, Any]:
+    """Carga los datos de usuarios desde user_passwords.json."""
+    passwords_file = get_user_passwords_file()
+    try:
+        with open(passwords_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {"passwords": {}, "users": {}}
+
+
+def save_users_data(data: Dict[str, Any]) -> bool:
+    """Guarda los datos de usuarios en user_passwords.json."""
+    passwords_file = get_user_passwords_file()
+    try:
+        with open(passwords_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"Error guardando datos de usuarios: {e}")
+        return False
+
+
+# ===== Maestros Helper Functions =====
+
+def get_maestros_file() -> Path:
+    """Obtiene la ruta del archivo maestros_apartados.json dentro de ExtractorOCRv1/config/."""
+    # Desde main.py: ExtractorOCRv1/src/api/main.py
+    # Subir 3 niveles: src/api -> src -> ExtractorOCRv1
+    # Luego ir a config/maestros_apartados.json
+    base_path = Path(__file__).parent.parent.parent  # ExtractorOCRv1
+    config_paths = [
+        base_path / "config" / "maestros_apartados.json",  # ExtractorOCRv1/config/maestros_apartados.json
+        Path("./config/maestros_apartados.json"),
+        Path("ExtractorOCRv1/config/maestros_apartados.json"),
+    ]
+    
+    for path in config_paths:
+        if path.exists():
+            return path.resolve()
+    
+    # Si no existe, crear uno nuevo en ExtractorOCRv1/config/
+    maestros_file = base_path / "config" / "maestros_apartados.json"
+    maestros_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(maestros_file, 'w', encoding='utf-8') as f:
+        json.dump({"apartados": []}, f, indent=2, ensure_ascii=False)
+    return maestros_file.resolve()
+
+
+def load_maestros_data() -> Dict[str, Any]:
+    """Carga los datos de maestros desde maestros_apartados.json."""
+    maestros_file = get_maestros_file()
+    try:
+        with open(maestros_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {"apartados": []}
+
+
+def save_maestros_data(data: Dict[str, Any]) -> bool:
+    """Guarda los datos de maestros en maestros_apartados.json."""
+    maestros_file = get_maestros_file()
+    try:
+        with open(maestros_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"Error guardando datos de maestros: {e}")
+        return False
+
+
+def get_user_role(email: str) -> str:
+    """Obtiene el rol de un usuario."""
+    email_normalized = email.lower().strip()
+    data = load_users_data()
+    users = data.get("users", {})
+    if email_normalized in users:
+        return users[email_normalized].get("role", "user")
+    # Si no está en users, verificar si es admin por defecto
+    if email_normalized == "luis.saenz@newmont.com":
+        return "admin"
+    return "user"
+
+
+def is_admin(email: str) -> bool:
+    """Verifica si un usuario es admin."""
+    return get_user_role(email) == "admin"
+
+
 def create_auth_token(email: str) -> str:
     """
     Crea un token de autenticación para un email.
@@ -532,10 +867,292 @@ async def health_check():
     )
 
 
-# ===== Auth Endpoints =====
-
+# ===== Auth Setup =====
 security = HTTPBearer(auto_error=False)
 
+
+@app.post("/api/v1/test-tokens", response_model=TokenTestResponse, tags=["Testing"])
+async def test_token_usage(
+    pdf_file: UploadFile = File(..., description="Archivo PDF para probar"),
+    page_number: Optional[int] = Form(default=None, description="Número de página específica a procesar (1-indexed). Si es None o 0, procesa todas las páginas"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Endpoint de prueba para calcular el uso de tokens de Gemini API.
+    
+    Procesa una página específica o todas las páginas del PDF y calcula:
+    - Tokens de entrada (imagen + prompt)
+    - Tokens de salida (respuesta)
+    - Estadísticas detalladas por página y totales
+    
+    Args:
+        pdf_file: Archivo PDF a probar
+        page_number: Número de página a procesar (None o 0 = todas las páginas, 1-N = página específica)
+        credentials: Credenciales de autenticación (opcional)
+        
+    Returns:
+        TokenTestResponse con estadísticas de uso de tokens por página y totales
+    """
+    import time
+    from PIL import Image
+    from src.core.pdf_processor import PDFProcessor
+    from src.core.file_manager import FileManager
+    
+    start_time = time.time()
+    
+    try:
+        # Validar autenticación si está habilitada
+        if credentials:
+            token = credentials.credentials
+            if not validate_auth_token(token):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token inválido o expirado"
+                )
+        
+        # Guardar PDF temporalmente
+        file_manager = get_file_manager()
+        temp_folder_str = file_manager.get_temp_folder()
+        temp_folder = Path(temp_folder_str)  # Convertir string a Path
+        temp_folder.mkdir(parents=True, exist_ok=True)
+        
+        temp_pdf_path = temp_folder / f"test_{uuid.uuid4()}.pdf"
+        with open(temp_pdf_path, 'wb') as f:
+            content = await pdf_file.read()
+            f.write(content)
+        
+        # Extraer página específica como imagen
+        pdf_processor = PDFProcessor()
+        if not pdf_processor.open_pdf(str(temp_pdf_path)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pudo abrir el PDF"
+            )
+        
+        total_pages = pdf_processor.get_page_count()
+        
+        # Determinar qué páginas procesar
+        if page_number is None or page_number == 0:
+            # Procesar todas las páginas
+            pages_to_process = list(range(1, total_pages + 1))
+        else:
+            # Validar página específica
+            if page_number < 1 or page_number > total_pages:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Página {page_number} no válida. El PDF tiene {total_pages} página(s)"
+                )
+            pages_to_process = [page_number]
+        
+        # Obtener servicio Gemini
+        gemini_service = get_gemini_service()
+        prompt = gemini_service._create_ocr_and_structure_prompt()
+        prompt_length_chars = len(prompt)
+        
+        # Obtener configuración de DPI y delay desde config
+        image_dpi = gemini_service.config.get("image_dpi", 200)  # Default: 200 DPI (reducido de 300)
+        page_delay = gemini_service.config.get("page_delay_seconds", 0.5)  # Default: 0.5 segundos
+        
+        # Procesar cada página
+        page_stats_list = []
+        total_input_tokens_estimated = 0
+        total_output_tokens_estimated = 0
+        total_input_tokens_actual = 0
+        total_output_tokens_actual = 0
+        total_prompt_length = 0
+        total_response_length = 0
+        total_image_size = 0
+        
+        for idx, current_page in enumerate(pages_to_process):
+            page_start_time = time.time()
+            temp_img_path = None
+            
+            # Agregar delay entre páginas para evitar exceder cuota (excepto la primera)
+            # Delay dinámico basado en tokens estimados: más tokens = más delay
+            if idx > 0:
+                # Calcular delay basado en tokens estimados de la página anterior
+                if page_stats_list:
+                    last_tokens = page_stats_list[-1].token_stats.input_tokens_estimated
+                    # Delay base desde config, más 0.01s por cada 1000 tokens estimados
+                    delay_seconds = page_delay + (last_tokens / 1000) * 0.01
+                    delay_seconds = min(delay_seconds, 3.0)  # Máximo 3 segundos
+                else:
+                    delay_seconds = page_delay
+                time.sleep(delay_seconds)
+            
+            try:
+                # Extraer página como imagen (convertir de 1-indexed a 0-indexed)
+                # Usar DPI configurado (default: 200 en lugar de 300) para reducir tamaño de imagen y tokens
+                temp_img_path = temp_folder / f"test_page_{current_page}_{uuid.uuid4()}.png"
+                page_index = current_page - 1  # Convertir de 1-indexed a 0-indexed
+                if not pdf_processor.save_page_as_image(page_index, temp_img_path, dpi=image_dpi):
+                    page_stats_list.append(PageTokenStats(
+                        page_number=current_page,
+                        token_stats=TokenUsageStats(
+                            input_tokens_estimated=0,
+                            output_tokens_estimated=0,
+                            total_tokens_estimated=0,
+                            prompt_length_chars=prompt_length_chars,
+                            response_length_chars=0,
+                            image_size_bytes=0,
+                            image_dimensions=None
+                        ),
+                        processing_time_seconds=0,
+                        error="No se pudo extraer la página como imagen"
+                    ))
+                    continue
+                
+                # Obtener información de la imagen
+                img = Image.open(temp_img_path)
+                image_size_bytes = temp_img_path.stat().st_size
+                image_dimensions = {"width": img.size[0], "height": img.size[1]}
+                
+                # Estimar tokens de entrada
+                image_tokens_estimated = max(1, image_size_bytes // 256)
+                prompt_tokens_estimated = prompt_length_chars // 4
+                input_tokens_estimated = image_tokens_estimated + prompt_tokens_estimated
+                
+                # Llamar a Gemini
+                try:
+                    response = gemini_service.model.generate_content([prompt, img])
+                    
+                    # Intentar obtener tokens reales
+                    input_tokens_actual = None
+                    output_tokens_actual = None
+                    
+                    if hasattr(response, 'usage_metadata'):
+                        usage = response.usage_metadata
+                        if hasattr(usage, 'prompt_token_count'):
+                            input_tokens_actual = usage.prompt_token_count
+                        if hasattr(usage, 'candidates_token_count'):
+                            output_tokens_actual = usage.candidates_token_count
+                    
+                    if input_tokens_actual is None:
+                        input_tokens_actual = input_tokens_estimated
+                    
+                    response_text = response.text if response.text else ""
+                    response_length_chars = len(response_text)
+                    output_tokens_estimated = response_length_chars // 4
+                    
+                    if output_tokens_actual is None:
+                        output_tokens_actual = output_tokens_estimated
+                    
+                    # Acumular totales
+                    total_input_tokens_estimated += input_tokens_estimated
+                    total_output_tokens_estimated += output_tokens_estimated
+                    total_input_tokens_actual += input_tokens_actual
+                    total_output_tokens_actual += output_tokens_actual
+                    total_prompt_length += prompt_length_chars
+                    total_response_length += response_length_chars
+                    total_image_size += image_size_bytes
+                    
+                    page_processing_time = time.time() - page_start_time
+                    
+                    page_stats_list.append(PageTokenStats(
+                        page_number=current_page,
+                        token_stats=TokenUsageStats(
+                            input_tokens_estimated=input_tokens_estimated,
+                            output_tokens_estimated=output_tokens_estimated,
+                            total_tokens_estimated=input_tokens_estimated + output_tokens_estimated,
+                            input_tokens_actual=input_tokens_actual,
+                            output_tokens_actual=output_tokens_actual,
+                            total_tokens_actual=input_tokens_actual + output_tokens_actual,
+                            prompt_length_chars=prompt_length_chars,
+                            response_length_chars=response_length_chars,
+                            image_size_bytes=image_size_bytes,
+                            image_dimensions=image_dimensions
+                        ),
+                        processing_time_seconds=page_processing_time,
+                        error=None
+                    ))
+                    
+                except Exception as api_error:
+                    error_msg = str(api_error)
+                    page_processing_time = time.time() - page_start_time
+                    
+                    # Acumular tokens estimados incluso si hay error (para estadísticas)
+                    total_input_tokens_estimated += input_tokens_estimated
+                    total_prompt_length += prompt_length_chars
+                    total_image_size += image_size_bytes
+                    
+                    page_stats_list.append(PageTokenStats(
+                        page_number=current_page,
+                        token_stats=TokenUsageStats(
+                            input_tokens_estimated=input_tokens_estimated,
+                            output_tokens_estimated=0,
+                            total_tokens_estimated=input_tokens_estimated,
+                            prompt_length_chars=prompt_length_chars,
+                            response_length_chars=0,
+                            image_size_bytes=image_size_bytes,
+                            image_dimensions=image_dimensions
+                        ),
+                        processing_time_seconds=page_processing_time,
+                        error=error_msg
+                    ))
+                    
+                    # Si es error 429, esperar antes de continuar con la siguiente página
+                    if "429" in error_msg or "quota" in error_msg.lower() or "exhausted" in error_msg.lower():
+                        wait_time = 2  # Esperar 2 segundos entre páginas si hay error 429
+                        print(f"Page {current_page} - Quota error, waiting {wait_time}s before next page...")
+                        time.sleep(wait_time)
+                    
+            finally:
+                # Limpiar imagen temporal
+                if temp_img_path and temp_img_path.exists():
+                    try:
+                        temp_img_path.unlink()
+                    except Exception:
+                        pass
+        
+        # Calcular totales
+        total_processing_time = time.time() - start_time
+        
+        # Limpiar PDF temporal
+        try:
+            temp_pdf_path.unlink()
+        except Exception:
+            pass
+        
+        # Crear estadísticas totales
+        total_token_stats = TokenUsageStats(
+            input_tokens_estimated=total_input_tokens_estimated,
+            output_tokens_estimated=total_output_tokens_estimated,
+            total_tokens_estimated=total_input_tokens_estimated + total_output_tokens_estimated,
+            input_tokens_actual=total_input_tokens_actual if total_input_tokens_actual > 0 else None,
+            output_tokens_actual=total_output_tokens_actual if total_output_tokens_actual > 0 else None,
+            total_tokens_actual=(total_input_tokens_actual + total_output_tokens_actual) if (total_input_tokens_actual > 0 or total_output_tokens_actual > 0) else None,
+            prompt_length_chars=total_prompt_length,
+            response_length_chars=total_response_length,
+            image_size_bytes=total_image_size,
+            image_dimensions=None
+        )
+        
+        return TokenTestResponse(
+            success=True,
+            filename=pdf_file.filename,
+            total_pages=total_pages,
+            pages_processed=len(pages_to_process),
+            page_stats=page_stats_list,
+            total_token_stats=total_token_stats,
+            total_processing_time_seconds=total_processing_time,
+            model_used=gemini_service.model_name,
+            max_output_tokens=gemini_service.config.get("max_output_tokens", 65536),
+            error=None
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en test-tokens: {e}")
+        import traceback
+        logger.debug(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error procesando PDF: {str(e)}"
+        )
+
+
+# ===== Auth Endpoints =====
 
 def get_current_user_email(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
@@ -639,8 +1256,27 @@ async def login(request: LoginRequest):
     token = create_auth_token(email)
     token_data = _active_tokens.get(token)
     
-    # Extraer y formatear nombre del email
-    nombre = format_name_from_email(email)
+    # Obtener nombre, rol y estado del usuario
+    data = load_users_data()
+    users = data.get("users", {})
+    user_data = users.get(email)
+
+    if user_data:
+        user_status = user_data.get("status", "active")
+        if user_status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": f"El usuario {email} está inhabilitado. Contacta a un administrador para reactivarlo.",
+                    "success": False,
+                },
+            )
+
+        nombre = user_data.get("nombre", format_name_from_email(email))
+        role = user_data.get("role", "user")
+    else:
+        nombre = format_name_from_email(email)
+        role = get_user_role(email)
     
     # Mensaje con información de la fuente usada
     mensaje = f"Login exitoso. Validado desde {fuente_validacion}. Usa este token en el header 'Authorization: Bearer <token>' para autenticarte."
@@ -652,7 +1288,532 @@ async def login(request: LoginRequest):
         nombre=nombre,
         message=mensaje,
         expires_at=token_data["expires_at"] if token_data else None,
-        fuente_validacion=fuente_validacion
+        fuente_validacion=fuente_validacion,
+        role=role
+    )
+
+
+def get_current_user_email(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[str]:
+    """Obtiene el email del usuario actual desde el token."""
+    if not credentials:
+        return None
+    token = credentials.credentials
+    token_data = _active_tokens.get(token)
+    if token_data:
+        email = token_data.get("email")
+        if email:
+            # Verificar si el usuario está activo antes de retornar el email
+            data = load_users_data()
+            users = data.get("users", {})
+            user_data = users.get(email)
+            
+            if not user_data:
+                # Usuario eliminado - invalidar token
+                _active_tokens.pop(token, None)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error": "Tu cuenta ha sido eliminada. Contacta con el administrador.",
+                        "success": False,
+                        "account_suspended": True
+                    }
+                )
+            
+            user_status = user_data.get("status", "active")
+            if user_status != "active":
+                # Usuario inhabilitado - invalidar token
+                _active_tokens.pop(token, None)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error": "Tu cuenta ha sido suspendida. Contacta con el administrador.",
+                        "success": False,
+                        "account_suspended": True
+                    }
+                )
+        
+        return email
+    return None
+
+
+@app.get("/api/v1/auth/me", response_model=UserResponse, tags=["Auth"])
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Obtiene la información del usuario actual autenticado.
+    Verifica el estado del usuario y retorna error si está inhabilitado o eliminado.
+    
+    Returns:
+        Información del usuario actual
+    """
+    current_email = get_current_user_email(credentials)
+    
+    if not current_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": "No autenticado. Por favor, inicia sesión.",
+                "success": False
+            }
+        )
+    
+    # Verificar si el usuario existe y está activo
+    data = load_users_data()
+    users = data.get("users", {})
+    user_data = users.get(current_email)
+    
+    if not user_data:
+        # Usuario eliminado - invalidar token
+        token = credentials.credentials if credentials else None
+        if token and token in _active_tokens:
+            _active_tokens.pop(token, None)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Tu cuenta ha sido eliminada. Contacta con el administrador.",
+                "success": False,
+                "account_suspended": True
+            }
+        )
+    
+    user_status = user_data.get("status", "active")
+    if user_status != "active":
+        # Usuario inhabilitado - invalidar token
+        token = credentials.credentials if credentials else None
+        if token and token in _active_tokens:
+            _active_tokens.pop(token, None)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Tu cuenta ha sido suspendida. Contacta con el administrador.",
+                "success": False,
+                "account_suspended": True
+            }
+        )
+    
+    return UserResponse(
+        success=True,
+        message="Usuario autenticado",
+        user=UserInfo(
+            email=current_email,
+            nombre=user_data.get("nombre", format_name_from_email(current_email)),
+            role=user_data.get("role", "user"),
+            status=user_data.get("status", "active"),
+            ultima_edicion=user_data.get("ultima_edicion")
+        )
+    )
+
+
+@app.get("/api/v1/users", response_model=UsersListResponse, tags=["Users"])
+async def list_users(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Lista todos los usuarios (solo admin).
+    
+    Returns:
+        Lista de usuarios con su información
+    """
+    current_email = get_current_user_email(credentials)
+    if not current_email or not is_admin(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden ver la lista de usuarios"
+        )
+    
+    data = load_users_data()
+    users = data.get("users", {})
+    passwords = data.get("passwords", {})
+    
+    user_list = []
+    for email, user_data in users.items():
+        user_list.append(UserInfo(
+            email=email,
+            nombre=user_data.get("nombre", format_name_from_email(email)),
+            role=user_data.get("role", "user"),
+            status=user_data.get("status", "active"),
+            ultima_edicion=user_data.get("ultima_edicion")
+        ))
+    
+    # Incluir usuarios que están en passwords pero no en users (backward compatibility)
+    for email, password in passwords.items():
+        if email not in users:
+            user_list.append(UserInfo(
+                email=email,
+                nombre=format_name_from_email(email),
+                role=get_user_role(email),
+                status="active",
+                ultima_edicion=None
+            ))
+    
+    return UsersListResponse(
+        success=True,
+        users=user_list,
+        total=len(user_list)
+    )
+
+
+@app.post("/api/v1/users", response_model=UserResponse, tags=["Users"])
+async def create_user(
+    request: UserCreateRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Crea un nuevo usuario (solo admin).
+    
+    Args:
+        request: Datos del usuario a crear
+        
+    Returns:
+        Usuario creado
+    """
+    current_email = get_current_user_email(credentials)
+    if not current_email or not is_admin(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden crear usuarios"
+        )
+    
+    email_normalized = request.email.lower().strip()
+    data = load_users_data()
+    users = data.get("users", {})
+    passwords = data.get("passwords", {})
+    
+    if email_normalized in users:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El usuario {email_normalized} ya existe"
+        )
+    
+    # Generar contraseña si no se proporciona
+    password = request.password or generate_password_from_email(email_normalized)
+    
+    # Crear usuario
+    users[email_normalized] = {
+        "password": password,
+        "role": request.role,
+        "status": "active",
+        "nombre": request.nombre,
+        "ultima_edicion": datetime.now().isoformat()
+    }
+    passwords[email_normalized] = password
+    
+    data["users"] = users
+    data["passwords"] = passwords
+    
+    if not save_users_data(data):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al guardar el usuario"
+        )
+    
+    # Agregar email a la lista de correos autorizados
+    if not add_email_to_allowed_list(email_normalized):
+        logger.warning(f"No se pudo agregar {email_normalized} a allowed_emails.json, pero el usuario fue creado")
+    
+    return UserResponse(
+        success=True,
+        message=f"Usuario {email_normalized} creado exitosamente",
+        user=UserInfo(
+            email=email_normalized,
+            nombre=request.nombre,
+            role=request.role,
+            status="active",
+            ultima_edicion=users[email_normalized]["ultima_edicion"]
+        )
+    )
+
+
+@app.put("/api/v1/users/{email}", response_model=UserResponse, tags=["Users"])
+async def update_user(
+    email: str,
+    request: UserUpdateRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Actualiza el perfil del usuario (nombre, contraseña, avatar).
+    Los usuarios solo pueden actualizar su propio perfil.
+    
+    Args:
+        email: Email del usuario a actualizar
+        request: Datos a actualizar
+        
+    Returns:
+        Usuario actualizado
+    """
+    current_email = get_current_user_email(credentials)
+    if not current_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de autenticación requerido"
+        )
+    
+    email_normalized = email.lower().strip()
+    
+    # Los usuarios solo pueden actualizar su propio perfil (a menos que sean admin)
+    if email_normalized != current_email.lower() and not is_admin(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo puedes actualizar tu propio perfil"
+        )
+    
+    data = load_users_data()
+    users = data.get("users", {})
+    passwords = data.get("passwords", {})
+    
+    if email_normalized not in users:
+        # Si no está en users, crear entrada básica
+        users[email_normalized] = {
+            "password": passwords.get(email_normalized, generate_password_from_email(email_normalized)),
+            "role": get_user_role(email_normalized),
+            "status": "active",
+            "nombre": format_name_from_email(email_normalized),
+            "ultima_edicion": None
+        }
+    
+    # Actualizar campos
+    if request.nombre:
+        users[email_normalized]["nombre"] = request.nombre
+    if request.password:
+        users[email_normalized]["password"] = request.password
+        passwords[email_normalized] = request.password
+    if request.avatar_url:
+        users[email_normalized]["avatar_url"] = request.avatar_url
+    
+    users[email_normalized]["ultima_edicion"] = datetime.now().isoformat()
+    
+    data["users"] = users
+    data["passwords"] = passwords
+    
+    if not save_users_data(data):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al guardar los cambios"
+        )
+    
+    return UserResponse(
+        success=True,
+        message="Perfil actualizado exitosamente",
+        user=UserInfo(
+            email=email_normalized,
+            nombre=users[email_normalized]["nombre"],
+            role=users[email_normalized]["role"],
+            status=users[email_normalized]["status"],
+            ultima_edicion=users[email_normalized]["ultima_edicion"]
+        )
+    )
+
+
+@app.patch("/api/v1/users/{email}", response_model=UserResponse, tags=["Users"])
+async def update_user_by_admin(
+    email: str,
+    request: UserUpdateByAdminRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Actualiza un usuario (solo admin): nombre, rol, estado.
+    
+    Args:
+        email: Email del usuario a actualizar
+        request: Datos a actualizar
+        
+    Returns:
+        Usuario actualizado
+    """
+    current_email = get_current_user_email(credentials)
+    if not current_email or not is_admin(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden actualizar usuarios"
+        )
+    
+    email_normalized = email.lower().strip()
+    data = load_users_data()
+    users = data.get("users", {})
+    
+    if email_normalized not in users:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Usuario {email_normalized} no encontrado"
+        )
+    
+    # Actualizar campos
+    if request.nombre:
+        users[email_normalized]["nombre"] = request.nombre
+    if request.role:
+        users[email_normalized]["role"] = request.role
+    if request.status:
+        users[email_normalized]["status"] = request.status
+        # Si se inhabilita el usuario, invalidar todos sus tokens activos
+        if request.status == "inactive":
+            tokens_to_remove = [
+                token for token, token_data in _active_tokens.items()
+                if token_data.get("email") == email_normalized
+            ]
+            for token in tokens_to_remove:
+                _active_tokens.pop(token, None)
+            logger.info(f"Tokens invalidados para usuario inhabilitado: {email_normalized}")
+    
+    users[email_normalized]["ultima_edicion"] = datetime.now().isoformat()
+    
+    data["users"] = users
+    
+    if not save_users_data(data):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al guardar los cambios"
+        )
+    
+    return UserResponse(
+        success=True,
+        message="Usuario actualizado exitosamente",
+        user=UserInfo(
+            email=email_normalized,
+            nombre=users[email_normalized]["nombre"],
+            role=users[email_normalized]["role"],
+            status=users[email_normalized]["status"],
+            ultima_edicion=users[email_normalized]["ultima_edicion"]
+        )
+    )
+
+
+@app.patch("/api/v1/users/{email}/password/reset", response_model=UserResponse, tags=["Users"])
+async def reset_user_password(
+    email: str,
+    request: UserPasswordResetRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Restaura la contraseña de un usuario (solo admin).
+    
+    Args:
+        email: Email del usuario
+        request: Nueva contraseña (opcional, se genera si no se proporciona)
+        
+    Returns:
+        Usuario actualizado
+    """
+    current_email = get_current_user_email(credentials)
+    if not current_email or not is_admin(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden restaurar contraseñas"
+        )
+    
+    email_normalized = email.lower().strip()
+    data = load_users_data()
+    users = data.get("users", {})
+    passwords = data.get("passwords", {})
+    
+    if email_normalized not in users:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Usuario {email_normalized} no encontrado"
+        )
+    
+    # Generar o usar contraseña proporcionada (si no se envía, crear una nueva aleatoria)
+    new_password = request.new_password or generate_secure_password()
+    users[email_normalized]["password"] = new_password
+    passwords[email_normalized] = new_password
+    users[email_normalized]["ultima_edicion"] = datetime.now().isoformat()
+    
+    data["users"] = users
+    data["passwords"] = passwords
+    
+    if not save_users_data(data):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al guardar la contraseña"
+        )
+    
+    return UserResponse(
+        success=True,
+        message=f"Contraseña restaurada para {email_normalized}",
+        user=UserInfo(
+            email=email_normalized,
+            nombre=users[email_normalized]["nombre"],
+            role=users[email_normalized]["role"],
+            status=users[email_normalized]["status"],
+            ultima_edicion=users[email_normalized]["ultima_edicion"]
+        ),
+        new_password=new_password
+    )
+
+
+@app.delete("/api/v1/users/{email}", response_model=UserResponse, tags=["Users"])
+async def delete_user(
+    email: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Elimina un usuario (solo admin).
+
+    Args:
+        email: Email del usuario a eliminar
+
+    Returns:
+        Usuario eliminado
+    """
+    current_email = get_current_user_email(credentials)
+    if not current_email or not is_admin(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden eliminar usuarios"
+        )
+
+    email_normalized = email.lower().strip()
+
+    if email_normalized == current_email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No puedes eliminar tu propio perfil"
+        )
+
+    data = load_users_data()
+    users = data.get("users", {})
+    passwords = data.get("passwords", {})
+
+    if email_normalized not in users:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Usuario {email_normalized} no encontrado"
+        )
+
+    deleted_user = users.pop(email_normalized)
+    passwords.pop(email_normalized, None)
+
+    data["users"] = users
+    data["passwords"] = passwords
+
+    # Invalidar tokens activos del usuario eliminado
+    tokens_to_remove = [
+        token for token, token_data in _active_tokens.items()
+        if token_data.get("email") == email_normalized
+    ]
+    for token in tokens_to_remove:
+        _active_tokens.pop(token, None)
+
+    if not save_users_data(data):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al eliminar el usuario"
+        )
+    
+    # Remover email de la lista de correos autorizados
+    if not remove_email_from_allowed_list(email_normalized):
+        logger.warning(f"No se pudo remover {email_normalized} de allowed_emails.json, pero el usuario fue eliminado")
+    
+    return UserResponse(
+        success=True,
+        message=f"Usuario {email_normalized} eliminado exitosamente",
+        user=UserInfo(
+            email=email_normalized,
+            nombre=deleted_user.get("nombre", format_name_from_email(email_normalized)),
+            role=deleted_user.get("role", "user"),
+            status=deleted_user.get("status", "inactive"),
+            ultima_edicion=deleted_user.get("ultima_edicion")
+        )
     )
 
 
@@ -733,7 +1894,8 @@ async def upload_pdf(
     email: str = Form(..., description="Email del usuario"),
     year: int = Form(..., description="Año a procesar (2000-2100)"),
     month: str = Form(..., description="Mes a procesar (ej: 'Marzo' o '3')"),
-    periodo_id: Optional[str] = Form(default=None, description="ID del periodo para asociar este archivo (opcional, ej: '2025-11-onshore')")
+    periodo_id: Optional[str] = Form(default=None, description="ID del periodo para asociar este archivo (opcional, ej: '2025-11-onshore')"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Sube y valida un PDF para procesamiento posterior.
@@ -756,6 +1918,9 @@ async def upload_pdf(
         - Si no proporcionas periodo_id, puedes especificarlo al procesar con process-pdf o process-batch
         - También puedes usar process-all para procesar todos los archivos de un periodo automáticamente
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     # Validar que sea PDF
     if not pdf_file.filename.lower().endswith('.pdf'):
         error_response = ErrorResponse(
@@ -900,7 +2065,10 @@ async def upload_pdf(
 
 
 @app.delete("/api/v1/upload-pdf/{file_id}", response_model=DeleteUploadResponse, tags=["Upload"])
-async def delete_uploaded_pdf(file_id: str):
+async def delete_uploaded_pdf(
+    file_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Elimina un PDF subido y su metadata.
     
@@ -917,6 +2085,9 @@ async def delete_uploaded_pdf(file_id: str):
         - Solo se pueden eliminar archivos que aún no han sido procesados
         - Si el archivo está en proceso, se recomienda esperar a que termine antes de eliminarlo
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     upload_manager = get_upload_manager()
     
     # Verificar que el archivo existe
@@ -1095,7 +2266,7 @@ async def process_pdf(
                     "month": normalized_month
                 },
                 save_files=save_files,
-                output_folder=output_folder,
+                output_folder=f"api/{truncate_request_id_for_folder(request_id)}",  # Carpeta específica por request_id maestro (truncado a 30 chars)
                 periodo_id=periodo_id_to_use,
                 start_page=start_page,
                 end_page=end_page,
@@ -1119,7 +2290,7 @@ async def process_pdf(
                 "month": normalized_month
             },
             save_files=save_files,
-            output_folder=output_folder,
+            output_folder=f"api/{truncate_request_id_for_folder(request_id)}",  # Carpeta específica por request_id (truncado a 30 chars)
             periodo_id=periodo_id_to_use,
             batch_id=request_id,
             is_batch_job=False  # Este es el job maestro
@@ -1146,7 +2317,7 @@ async def process_pdf(
                 "month": normalized_month
             },
             save_files=save_files,
-            output_folder=output_folder,
+            output_folder=f"api/{truncate_request_id_for_folder(request_id)}",  # Carpeta específica por request_id (truncado a 30 chars)
             periodo_id=periodo_id_to_use
         )
         
@@ -1244,7 +2415,7 @@ async def process_batch(request: BatchProcessRequest):
                     "month": normalized_month
                 },
                 save_files=request.save_files,
-                output_folder=request.output_folder,
+                output_folder=f"api/{truncate_request_id_for_folder(request_id)}",  # Carpeta específica por request_id (truncado a 30 chars)
                 periodo_id=request.periodo_id
             )
             
@@ -1335,7 +2506,7 @@ async def _stream_job_status(request_id: str) -> AsyncGenerator[str, None]:
     worker_manager = get_worker_manager()
     last_status = None
     last_progress = -1
-    timeout_seconds = 1800  # 30 minutos máximo
+    timeout_seconds = 18000000  # 300000 minutos máximo
     start_time = time.time()
     poll_interval = 0.5  # Polling cada 0.5 segundos
     
@@ -1481,82 +2652,100 @@ def _get_archivo_info_from_json(request_id: str) -> Optional[Dict[str, Any]]:
     try:
         file_manager = get_file_manager()
         base_output = file_manager.get_output_folder() or "./output"
-        structured_folder = Path(base_output) / "api" / "structured"
+        
+        # Para batch jobs, extraer el request_id maestro (antes de _batch_)
+        request_id_to_search = request_id
+        if "_batch_" in request_id:
+            request_id_to_search = request_id.split("_batch_")[0]
+        
+        # Truncar request_id para buscar en la carpeta (mismo truncamiento que al crear)
+        request_id_folder = truncate_request_id_for_folder(request_id_to_search)
+        
+        # Buscar en la carpeta específica por request_id
+        structured_folder = Path(base_output) / "api" / request_id_folder / "structured"
         
         if not structured_folder.exists():
             return None
         
-        # Buscar JSONs estructurados de este request_id
-        for json_file in structured_folder.glob("*_structured.json"):
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
-                
-                metadata = json_data.get("metadata", {})
-                if metadata.get("request_id") != request_id:
-                    continue
-                
-                # Extraer información del archivo (igual que en get_periodo_detail)
-                additional_data = json_data.get("additional_data", {})
-                
-                # Buscar job_no, source_reference, etc.
-                mresumen = additional_data.get("mresumen", [])
-                mcomprobante = additional_data.get("mcomprobante", [])
-                
-                job_no = None
-                source_ref = None
-                entered_curr = None
-                entered_amount = None
-                total_usd = None
-                fecha_valoracion = None
-                
-                # Intentar extraer de mresumen o mcomprobante
-                if mresumen:
-                    first_item = mresumen[0]
-                    if isinstance(first_item, dict):
-                        job_no = first_item.get("tjobno") or first_item.get("job_no")
-                        source_ref = first_item.get("source_reference")
-                        entered_curr = first_item.get("tDivisa")
-                        entered_amount = first_item.get("nMonto")
-                        if entered_curr and entered_curr.upper() == "USD" and entered_amount:
-                            total_usd = float(entered_amount)
-                        fecha_valoracion = first_item.get("fecha_valoracion")
-                
-                if mcomprobante and not job_no:
-                    first_item = mcomprobante[0]
-                    if isinstance(first_item, dict):
-                        job_no = first_item.get("_stamp_name") or first_item.get("tSequentialNumber")
-                        source_ref = first_item.get("tNumero")
-                
-                # Buscar total_usd en mresumen si no se encontró
-                if not total_usd and mresumen:
-                    for item in mresumen:
-                        if isinstance(item, dict):
-                            monto = item.get("nMonto")
-                            divisa = item.get("tDivisa")
-                            if monto and divisa and divisa.upper() == "USD":
-                                total_usd = float(monto)
-                                break
-                
-                return {
-                    "archivo_id": request_id[:8],
-                    "request_id": request_id,
-                    "filename": metadata.get("filename", "unknown"),
-                    "estado": "procesado",
-                    "progress": 100,
-                    "status": "completed",
-                    "job_no": job_no,
-                    "type": metadata.get("document_type"),
-                    "source_reference": source_ref,
-                    "source_ref_id": source_ref,
-                    "entered_curr": entered_curr,
-                    "entered_amount": entered_amount,
-                    "total_usd": total_usd,
-                    "fecha_valoracion": fecha_valoracion,
-                    "processed_at": metadata.get("processed_at")
-                }
-            except Exception:
-                continue
+        # Buscar JSONs estructurados en esta carpeta específica
+        # Todos los JSONs en esta carpeta pertenecen a este request_id (o sus batches)
+        json_files = list(structured_folder.glob("*_structured.json"))
+        if not json_files:
+            return None
+        
+        # Usar el primer JSON encontrado (todos tienen la misma metadata)
+        json_file = json_files[0]
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+            
+            metadata = json_data.get("metadata", {})
+            # Verificar que el request_id coincide (puede ser el maestro o un batch)
+            json_request_id = metadata.get("request_id", "")
+            if json_request_id != request_id and not json_request_id.startswith(request_id + "_batch_"):
+                # Si no coincide, puede ser que estemos buscando un batch pero encontramos el maestro
+                # o viceversa, en ese caso continuar con el primer JSON encontrado
+                pass
+            
+            # Extraer información del archivo (igual que en get_periodo_detail)
+            # Las tablas ahora están en el nivel raíz, no en additional_data
+            mresumen = json_data.get("mresumen", [])
+            mcomprobante = json_data.get("mcomprobante", [])
+            
+            job_no = None
+            source_ref = None
+            entered_curr = None
+            entered_amount = None
+            total_usd = None
+            fecha_valoracion = None
+            
+            # Intentar extraer de mresumen o mcomprobante
+            if mresumen:
+                first_item = mresumen[0]
+                if isinstance(first_item, dict):
+                    job_no = first_item.get("tjobno") or first_item.get("job_no")
+                    source_ref = first_item.get("source_reference")
+                    entered_curr = first_item.get("tDivisa")
+                    entered_amount = first_item.get("nMonto")
+                    if entered_curr and entered_curr.upper() == "USD" and entered_amount:
+                        total_usd = float(entered_amount)
+                    fecha_valoracion = first_item.get("fecha_valoracion")
+            
+            if mcomprobante and not job_no:
+                first_item = mcomprobante[0]
+                if isinstance(first_item, dict):
+                    job_no = first_item.get("_stamp_name") or first_item.get("tSequentialNumber")
+                    source_ref = first_item.get("tNumero")
+            
+            # Buscar total_usd en mresumen si no se encontró
+            if not total_usd and mresumen:
+                for item in mresumen:
+                    if isinstance(item, dict):
+                        monto = item.get("nMonto")
+                        divisa = item.get("tDivisa")
+                        if monto and divisa and divisa.upper() == "USD":
+                            total_usd = float(monto)
+                            break
+            
+            return {
+                "archivo_id": request_id[:8],
+                "request_id": request_id,
+                "filename": metadata.get("filename", "unknown"),
+                "estado": "procesado",
+                "progress": 100,
+                "status": "completed",
+                "job_no": job_no,
+                "type": metadata.get("document_type"),
+                "source_reference": source_ref,
+                "source_ref_id": source_ref,
+                "entered_curr": entered_curr,
+                "entered_amount": entered_amount,
+                "total_usd": total_usd,
+                "fecha_valoracion": fecha_valoracion,
+                "processed_at": metadata.get("processed_at")
+            }
+        except Exception:
+            return None
         
         return None
     except Exception:
@@ -1582,7 +2771,7 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
     last_jobs_state = {}
     last_periodo_estado = None  # Para detectar cambios en el estado del periodo
     last_total_archivos = 0  # Para detectar cuando se sube un archivo nuevo
-    timeout_seconds = 1800  # 30 minutos máximo
+    timeout_seconds = 18000000  # 300000 minutos máximo
     start_time = time.time()
     poll_interval = 0.5  # Polling cada 0.5 segundos para actualizaciones más rápidas
     
@@ -1916,7 +3105,10 @@ async def _stream_periodo_status(periodo_id: str) -> AsyncGenerator[str, None]:
 
 
 @app.post("/api/v1/periodos/{periodo_id}/process-all", response_model=BatchProcessResponse, tags=["Periodos"])
-async def process_all_periodo_files(periodo_id: str):
+async def process_all_periodo_files(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Procesa automáticamente todos los archivos pendientes de un periodo.
     
@@ -2070,7 +3262,7 @@ async def process_all_periodo_files(periodo_id: str):
                         "month": normalized_month
                     },
                     save_files=True,  # Siempre guardar archivos
-                    output_folder="api",
+                    output_folder=f"api/{truncate_request_id_for_folder(request_id)}",  # Carpeta específica por request_id (truncado a 30 chars)
                     periodo_id=periodo_id  # Asociar automáticamente al periodo
                 )
                 
@@ -2126,8 +3318,205 @@ async def process_all_periodo_files(periodo_id: str):
         )
 
 
+@app.post("/api/v1/periodos/{periodo_id}/process-selected", response_model=BatchProcessResponse, tags=["Periodos"])
+async def process_selected_periodo_files(
+    periodo_id: str, 
+    request: ProcessSelectedRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Procesa solo los archivos seleccionados (por file_id/request_id) de un periodo.
+    
+    Este endpoint procesa únicamente los archivos cuyos file_ids se proporcionan en la lista.
+    Verifica que cada archivo tenga el periodo_id correcto en su metadata.
+    
+    Los archivos se procesan en batch (hasta 3 workers simultáneos).
+    
+    Args:
+        periodo_id: ID del periodo (ej: "2025-11-onshore")
+        request: ProcessSelectedRequest con lista de file_ids a procesar
+        
+    Returns:
+        BatchProcessResponse con lista de jobs creados (cada uno con su request_id)
+    """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
+    try:
+        periodo_manager = get_periodo_manager()
+        upload_manager = get_upload_manager()
+        worker_manager = get_worker_manager()
+        
+        logger.info(f"[process-selected] Procesando {len(request.file_ids)} archivos para periodo {periodo_id}")
+        
+        # 1. Validar que el periodo existe
+        periodo_data = periodo_manager.get_periodo(periodo_id)
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo '{periodo_id}' no encontrado"
+            )
+        
+        # 2. Obtener archivos asociados al periodo (para mostrar en errores)
+        archivos_asociados = periodo_manager.get_archivos_from_periodo(periodo_id)
+        archivos_info = []
+        for request_id in archivos_asociados:
+            try:
+                metadata = upload_manager.get_uploaded_metadata(request_id)
+                if metadata:
+                    archivos_info.append({
+                        "file_id": request_id,
+                        "filename": metadata.get("filename", "unknown")
+                    })
+            except Exception:
+                archivos_info.append({
+                    "file_id": request_id,
+                    "filename": "unknown"
+                })
+        
+        # 3. Validar y procesar los file_ids proporcionados
+        if not request.file_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista de file_ids no puede estar vacía"
+            )
+        
+        jobs_creados = []
+        errores_procesamiento = []
+        
+        for file_id in request.file_ids:
+            try:
+                # Validar que el file_id existe en uploads
+                if not upload_manager.file_exists(file_id):
+                    errores_procesamiento.append({
+                        "file_id": file_id,
+                        "error": f"Archivo con file_id '{file_id}' no encontrado en uploads"
+                    })
+                    continue
+                
+                # Obtener metadata del archivo
+                metadata = upload_manager.get_uploaded_metadata(file_id)
+                if not metadata:
+                    errores_procesamiento.append({
+                        "file_id": file_id,
+                        "error": f"No se pudo obtener metadata para file_id '{file_id}'"
+                    })
+                    continue
+                
+                # Verificar que el periodo_id en metadata coincide con el periodo solicitado
+                file_metadata = metadata.get("metadata", {})
+                file_periodo_id = file_metadata.get("periodo_id")
+                
+                if file_periodo_id != periodo_id:
+                    errores_procesamiento.append({
+                        "file_id": file_id,
+                        "error": f"Archivo pertenece al periodo '{file_periodo_id}', no a '{periodo_id}'"
+                    })
+                    continue
+                
+                # Obtener PDF path
+                pdf_path = upload_manager.get_uploaded_pdf_path(file_id)
+                if not pdf_path:
+                    errores_procesamiento.append({
+                        "file_id": file_id,
+                        "error": f"No se pudo obtener ruta del PDF para file_id '{file_id}'"
+                    })
+                    continue
+                
+                # Si el archivo no está en archivos_asociados, agregarlo al periodo
+                if file_id not in archivos_asociados:
+                    logger.info(f"[process-selected] Agregando archivo {file_id} al periodo {periodo_id}")
+                    periodo_manager.add_archivo_to_periodo(periodo_id, file_id)
+                
+                # Obtener datos del PDF
+                pdf_filename = metadata.get("filename", "unknown")
+                email = file_metadata.get("email", "unknown")
+                year = file_metadata.get("year")
+                normalized_month = file_metadata.get("month")
+                
+                # Usar file_id como request_id (request_id = file_id)
+                request_id = file_id
+                
+                logger.info(f"[process-selected] [{request_id}] Procesando archivo: {pdf_filename}")
+                
+                # Crear job con periodo_id
+                job = ProcessingJob(
+                    request_id=request_id,
+                    file_id=file_id,
+                    pdf_path=Path(pdf_path),
+                    metadata={
+                        "filename": pdf_filename,
+                        "email": email,
+                        "year": year,
+                        "month": normalized_month
+                    },
+                    save_files=True,
+                    output_folder=f"api/{truncate_request_id_for_folder(request_id)}",  # Carpeta específica por request_id (truncado a 30 chars)
+                    periodo_id=periodo_id
+                )
+                
+                # Agregar job a la cola
+                worker_manager.add_job(job)
+                
+                # Determinar estado inicial
+                initial_status = "queued"
+                initial_message = "Esperando en cola de procesamiento..."
+                
+                if worker_manager.get_active_jobs_count() < worker_manager.max_workers:
+                    initial_status = "processing"
+                    initial_message = "Iniciando procesamiento..."
+                    job.status = "processing"
+                    job.message = "Iniciando procesamiento..."
+                
+                # Agregar a la lista de jobs creados
+                jobs_creados.append(BatchJobInfo(
+                    file_id=file_id,
+                    request_id=request_id,
+                    status=initial_status,
+                    message=initial_message
+                ))
+                
+            except Exception as e:
+                logger.exception(f"[process-selected] Error procesando file_id '{file_id}': {e}")
+                errores_procesamiento.append({
+                    "file_id": file_id,
+                    "error": f"Error inesperado: {str(e)}"
+                })
+        
+        # Crear mensaje con información de archivos disponibles si hay errores
+        message = None
+        if not jobs_creados and archivos_info:
+            archivos_list = "\n".join([f"  - {a['file_id']}: {a['filename']}" for a in archivos_info[:10]])
+            message = f"No se pudo procesar ningún archivo. Archivos asociados al periodo ({len(archivos_info)} total):\n{archivos_list}"
+            if len(archivos_info) > 10:
+                message += f"\n  ... y {len(archivos_info) - 10} más"
+        elif errores_procesamiento:
+            message = f"Procesados {len(jobs_creados)} archivos. {len(errores_procesamiento)} archivos con errores."
+        
+        return BatchProcessResponse(
+            success=len(jobs_creados) > 0,
+            total=len(request.file_ids),
+            procesados=len(jobs_creados),
+            jobs=jobs_creados,
+            errores=errores_procesamiento if errores_procesamiento else None,
+            message=message
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[process-selected] Error inesperado: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error procesando archivos seleccionados: {str(e)}"
+        )
+
+
 @app.get("/api/v1/periodos/{periodo_id}/process-status-stream", tags=["Periodos"])
-async def stream_periodo_status(periodo_id: str):
+async def stream_periodo_status(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Stream de estado de procesamiento de todos los jobs de un periodo usando Server-Sent Events (SSE).
     
@@ -2312,22 +3701,27 @@ async def get_processed_files(limit: int = 10):
                     try:
                         file_manager = get_file_manager()
                         base_output = file_manager.get_output_folder() or "./output"
-                        structured_folder = Path(base_output) / "api" / "structured"
+                        api_folder = Path(base_output) / "api"
                         
-                        if structured_folder.exists() and request_id_prefix:
-                            # Buscar JSONs que tengan request_id con este prefijo
-                            for json_file in structured_folder.glob("*_structured.json"):
-                                try:
-                                    with open(json_file, 'r', encoding='utf-8') as jf:
-                                        json_data = json.load(jf)
-                                    metadata = json_data.get("metadata", {})
-                                    json_request_id = metadata.get("request_id", "")
-                                    if json_request_id and json_request_id[:8] == request_id_prefix:
-                                        # Encontramos el request_id completo
-                                        excel_files[json_request_id] = excel_file.name
-                                        break
-                                except Exception:
-                                    continue
+                        if api_folder.exists() and request_id_prefix:
+                            # Buscar en todas las carpetas api/{request_id}/structured/
+                            for request_folder in api_folder.iterdir():
+                                if request_folder.is_dir():
+                                    structured_folder = request_folder / "structured"
+                                    if structured_folder.exists():
+                                        # Buscar JSONs en esta carpeta específica
+                                        for json_file in structured_folder.glob("*_structured.json"):
+                                            try:
+                                                with open(json_file, 'r', encoding='utf-8') as jf:
+                                                    json_data = json.load(jf)
+                                                metadata = json_data.get("metadata", {})
+                                                json_request_id = metadata.get("request_id", "")
+                                                if json_request_id and json_request_id[:8] == request_id_prefix:
+                                                    # Encontramos el request_id completo
+                                                    excel_files[json_request_id] = excel_file.name
+                                                    break
+                                            except Exception:
+                                                continue
                     except Exception:
                         pass
     
@@ -2726,7 +4120,10 @@ from .excel_generator import generate_excel_for_request as _generate_excel_for_r
 
 
 @app.get("/api/v1/export-zip/{request_id}", tags=["Export"])
-async def export_zip(request_id: str):
+async def export_zip(
+    request_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Redirige a la descarga del archivo ZIP para un request_id.
     
@@ -2738,6 +4135,9 @@ async def export_zip(request_id: str):
     Returns:
         Redirección a /public/{zip_filename} o error 404 si no se encuentra
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     from fastapi.responses import RedirectResponse
     
     upload_manager = get_upload_manager()
@@ -2928,7 +4328,10 @@ async def export_bulk_files(request: BulkExportRequest):
 
 
 @app.get("/api/v1/export-excel/{request_id}", tags=["Export"])
-async def export_structured_to_excel(request_id: str):
+async def export_structured_to_excel(
+    request_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Redirige a la descarga del Excel consolidado para un request_id.
     
@@ -2941,6 +4344,9 @@ async def export_structured_to_excel(request_id: str):
     Returns:
         Redirección a /public/{excel_filename} o archivo Excel para descarga directa
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     from fastapi.responses import RedirectResponse
     
     upload_manager = get_upload_manager()
@@ -3054,23 +4460,30 @@ async def serve_public_file(filename: str):
         if len(parts) >= 3:
             # El request_id está en los últimos caracteres (8 caracteres)
             potential_request_id_short = parts[-1]
-            # Buscar request_id en los JSONs estructurados
+            # Buscar request_id en los JSONs estructurados (buscar en todas las carpetas api/{request_id}/structured/)
             base_output = file_manager.get_output_folder() or "./output"
-            structured_folder = Path(base_output) / "api" / "structured"
+            api_folder = Path(base_output) / "api"
             
-            if structured_folder.exists():
-                all_json_files = structured_folder.glob("*_structured.json")
-                for json_file in all_json_files:
-                    try:
-                        with open(json_file, 'r', encoding='utf-8') as f:
-                            json_data = json.load(f)
-                        metadata = json_data.get("metadata", {})
-                        request_id = metadata.get("request_id", "")
-                        if request_id and request_id[:8] == potential_request_id_short:
-                            email_found = metadata.get("email", "")
+            if api_folder.exists():
+                # Buscar en todas las carpetas api/{request_id}/structured/
+                for request_folder in api_folder.iterdir():
+                    if request_folder.is_dir():
+                        structured_folder = request_folder / "structured"
+                        if structured_folder.exists():
+                            all_json_files = structured_folder.glob("*_structured.json")
+                            for json_file in all_json_files:
+                                try:
+                                    with open(json_file, 'r', encoding='utf-8') as f:
+                                        json_data = json.load(f)
+                                    metadata = json_data.get("metadata", {})
+                                    request_id = metadata.get("request_id", "")
+                                    if request_id and request_id[:8] == potential_request_id_short:
+                                        email_found = metadata.get("email", "")
+                                        break
+                                except Exception:
+                                    continue
+                        if email_found:
                             break
-                    except Exception:
-                        continue
     
     # Buscar en archivos procesados desde upload-pdf (para ZIPs y Excel)
     if not email_found:
@@ -3138,10 +4551,12 @@ async def get_dashboard_stats(
     moneda: str = Query("USD", description="Moneda (USD, PEN, EUR)"),
     tipo_documento: Optional[str] = Query(None, description="Tipo de documento"),
     departamento: Optional[str] = Query(None, description="Departamento"),
-    disciplina: Optional[str] = Query(None, description="Disciplina")
+    disciplina: Optional[str] = Query(None, description="Disciplina"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Obtiene estadísticas globales del dashboard.
+    Requiere autenticación.
     
     Args:
         fecha_inicio: Fecha de inicio para filtrar
@@ -3154,6 +4569,9 @@ async def get_dashboard_stats(
     Returns:
         Estadísticas globales (Monto Total, Total Horas)
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         # ============================================================
         # NOTA: Actualmente lee de JSONs estructurados (temporal)
@@ -3175,57 +4593,60 @@ async def get_dashboard_stats(
         # Intentar leer de JSONs reales primero
         file_manager = get_file_manager()
         base_output = file_manager.get_output_folder() or "./output"
-        structured_folder = Path(base_output) / "api" / "structured"
+        api_folder = Path(base_output) / "api"
         
         monto_total = 0.0
         total_horas = 0.0
         has_real_data = False
         
-        # TEMPORAL: Leer todos los JSONs estructurados y agregar
+        # TEMPORAL: Leer todos los JSONs estructurados desde todas las carpetas api/{request_id}/structured/
         # TODO: Migrar a SQL Server cuando tengas conexión a BD
-        if structured_folder.exists():
-            for json_file in structured_folder.glob("*_structured.json"):
-                try:
-                    with open(json_file, 'r', encoding='utf-8') as f:
-                        json_data = json.load(f)
-                    
-                    has_real_data = True
-                    
-                    # Aplicar filtros aquí si es necesario
-                    metadata = json_data.get("metadata", {})
-                    
-                    # Filtrar por fecha si se proporciona
-                    if fecha_inicio or fecha_fin:
-                        processed_at = metadata.get("processed_at", "")
-                        if processed_at:
-                            # TODO: Implementar filtro de fechas
-                            # Cuando tengas BD: WHERE fEmision BETWEEN fecha_inicio AND fecha_fin
-                            pass
-                    
-                    # Extraer montos y horas de additional_data
-                    # TODO: Cuando tengas BD, esto vendrá de:
-                    # - MCOMPROBANTE.nPrecioTotal
-                    # - MJORNADA.nTotalHoras
-                    additional_data = json_data.get("additional_data", {})
-                    
-                    # Buscar en mcomprobante
-                    comprobantes = additional_data.get("mcomprobante", [])
-                    for comp in comprobantes:
-                        if isinstance(comp, dict):
-                            precio_total = comp.get("nPrecioTotal", 0)
-                            if precio_total:
-                                monto_total += float(precio_total)
-                    
-                    # Buscar en mjornada
-                    jornadas = additional_data.get("mjornada", [])
-                    for jornada in jornadas:
-                        if isinstance(jornada, dict):
-                            horas = jornada.get("nTotalHoras", 0)
-                            if horas:
-                                total_horas += float(horas)
-                
-                except Exception as e:
-                    logger.warning(f"Error leyendo {json_file}: {e}")
+        if api_folder.exists():
+            # Buscar en todas las carpetas api/{request_id}/structured/
+            for request_folder in api_folder.iterdir():
+                if request_folder.is_dir():
+                    structured_folder = request_folder / "structured"
+                    if structured_folder.exists():
+                        for json_file in structured_folder.glob("*_structured.json"):
+                            try:
+                                with open(json_file, 'r', encoding='utf-8') as f:
+                                    json_data = json.load(f)
+                                
+                                has_real_data = True
+                                
+                                # Aplicar filtros aquí si es necesario
+                                metadata = json_data.get("metadata", {})
+                                
+                                # Filtrar por fecha si se proporciona
+                                if fecha_inicio or fecha_fin:
+                                    processed_at = metadata.get("processed_at", "")
+                                    if processed_at:
+                                        # TODO: Implementar filtro de fechas
+                                        # Cuando tengas BD: WHERE fEmision BETWEEN fecha_inicio AND fecha_fin
+                                        pass
+                                
+                                # Extraer montos y horas (las tablas ahora están en el nivel raíz)
+                                # TODO: Cuando tengas BD, esto vendrá de:
+                                # - MCOMPROBANTE.nPrecioTotal
+                                # - MJORNADA.nTotalHoras
+                                
+                                # Buscar en mcomprobante
+                                comprobantes = json_data.get("mcomprobante", [])
+                                for comp in comprobantes:
+                                    if isinstance(comp, dict):
+                                        precio_total = comp.get("nPrecioTotal", 0)
+                                        if precio_total:
+                                            monto_total += float(precio_total)
+                                
+                                # Buscar en mjornada
+                                jornadas = json_data.get("mjornada", [])
+                                for jornada in jornadas:
+                                    if isinstance(jornada, dict):
+                                        horas = jornada.get("nTotalHoras", 0)
+                                        if horas:
+                                            total_horas += float(horas)
+                            except Exception as e:
+                                logger.warning(f"Error leyendo {json_file}: {e}")
                     continue
         
         # Si no hay datos reales, usar datos mockeados para pruebas
@@ -3254,14 +4675,19 @@ async def get_dashboard_stats(
 async def get_dashboard_analytics(
     fecha_inicio: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
     fecha_fin: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
-    moneda: str = Query("USD", description="Moneda (USD, PEN, EUR)")
+    moneda: str = Query("USD", description="Moneda (USD, PEN, EUR)"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Obtiene análisis Off-Shore y On-Shore.
+    Requiere autenticación.
     
     Returns:
         Análisis con totales, distribución por departamento y top 5 disciplinas
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         # ============================================================
         # DATOS MOCKEADOS PARA PRUEBAS (TEMPORAL)
@@ -3399,14 +4825,18 @@ async def get_dashboard_analytics(
 @app.get("/api/v1/dashboard/rejected-concepts", response_model=RejectedConceptsResponse, tags=["Dashboard"])
 async def get_rejected_concepts(
     fecha_inicio: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
-    fecha_fin: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)")
+    fecha_fin: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Obtiene lista de conceptos rechazados.
+    Requiere autenticación.
     
     Returns:
         Lista de conceptos rechazados con cantidad, monto y porcentaje
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
     try:
         # ============================================================
         # DATOS MOCKEADOS PARA PRUEBAS (TEMPORAL)
@@ -3470,7 +4900,11 @@ async def get_rejected_concepts(
 
 @app.post("/api/v1/periodos", response_model=PeriodoResponse, tags=["Periodos"])
 @limiter.limit("10/minute")  # Máximo 10 requests por minuto por IP
-async def create_periodo(request: Request, periodo_data: CreatePeriodoRequest):
+async def create_periodo(
+    request: Request, 
+    periodo_data: CreatePeriodoRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Crea un nuevo periodo.
     
@@ -3481,10 +4915,20 @@ async def create_periodo(request: Request, periodo_data: CreatePeriodoRequest):
     Returns:
         Periodo creado
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         periodo_manager = get_periodo_manager()
         
-        # Validar tipo
+        # Validación adicional: asegurar que periodo no esté vacío (ya validado por Pydantic, pero por seguridad)
+        if not periodo_data.periodo or not periodo_data.periodo.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El campo 'Periodo' es obligatorio y no puede estar vacío"
+            )
+        
+        # Validar tipo (ya validado por Pydantic, pero por seguridad)
         if periodo_data.tipo.lower() not in ["onshore", "offshore"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -3537,10 +4981,12 @@ async def list_periodos(
     estado: Optional[str] = Query(None, description="Filtrar por estado"),
     search: Optional[str] = Query(None, description="Buscar en periodo"),
     limit: int = Query(15, ge=1, le=100, description="Límite de resultados por página"),
-    page: int = Query(1, ge=1, description="Número de página (empieza desde 1)")
+    page: int = Query(1, ge=1, description="Número de página (empieza desde 1)"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
     Lista periodos con filtros opcionales y paginación.
+    Requiere autenticación.
     
     Args:
         tipo: Filtrar por tipo (onshore/offshore)
@@ -3663,9 +5109,14 @@ async def list_periodos(
 
 @app.get("/api/v1/periodos/{periodo_id}", response_model=PeriodoDetailResponse, tags=["Periodos"])
 @limiter.limit("30/minute")  # Máximo 30 requests por minuto por IP
-async def get_periodo_detail(request: Request, periodo_id: str):
+async def get_periodo_detail(
+    request: Request, 
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Obtiene el detalle completo de un periodo incluyendo sus archivos.
+    Requiere autenticación.
     
     Args:
         periodo_id: ID del periodo
@@ -3691,25 +5142,47 @@ async def get_periodo_detail(request: Request, periodo_id: str):
         # Primero en JSONs estructurados, luego en processed_tracking.json
         file_manager = get_file_manager()
         base_output = file_manager.get_output_folder() or "./output"
-        structured_folder = Path(base_output) / "api" / "structured"
         processed_tracker = get_processed_tracker()
+        upload_manager = get_upload_manager()
         
         for request_id in request_ids:
             archivo_info = None
             
-            # 1. Buscar en JSONs estructurados (si existen)
+            # Obtener metadata del archivo subido para file_size_bytes y uploaded_at
+            uploaded_file_metadata = None
+            try:
+                uploaded_file_metadata = upload_manager.get_uploaded_metadata(request_id)
+            except Exception:
+                pass
+            
+            # 1. Buscar en JSONs estructurados en la carpeta específica por request_id
+            # Para batch jobs, extraer el request_id maestro (antes de _batch_)
+            request_id_to_search = request_id
+            if "_batch_" in request_id:
+                request_id_to_search = request_id.split("_batch_")[0]
+            
+            # Truncar request_id para buscar en la carpeta (mismo truncamiento que al crear)
+            request_id_folder = truncate_request_id_for_folder(request_id_to_search)
+            
+            structured_folder = Path(base_output) / "api" / request_id_folder / "structured"
             if structured_folder.exists():
-                for json_file in structured_folder.glob("*_structured.json"):
+                # Buscar todos los JSONs en esta carpeta específica
+                json_files = list(structured_folder.glob("*_structured.json"))
+                if json_files:
+                    # Usar el primer JSON encontrado (todos tienen la misma metadata)
+                    json_file = json_files[0]
                     try:
                         with open(json_file, 'r', encoding='utf-8') as f:
                             json_data = json.load(f)
                         metadata = json_data.get("metadata", {})
-                        if metadata.get("request_id") == request_id:
+                        # Verificar que el request_id coincide (puede ser el maestro o un batch)
+                        json_request_id = metadata.get("request_id", "")
+                        if json_request_id == request_id or json_request_id.startswith(request_id + "_batch_"):
                             # Extraer información del archivo
-                            additional_data = json_data.get("additional_data", {})
-                            # Extraer job_no, type, etc. de additional_data si están disponibles
-                            mresumen = additional_data.get("mresumen", [])
-                            mcomprobante = additional_data.get("mcomprobante", [])
+                            # Las tablas ahora están en el nivel raíz, no en additional_data
+                            # Extraer job_no, type, etc. del nivel raíz si están disponibles
+                            mresumen = json_data.get("mresumen", [])
+                            mcomprobante = json_data.get("mcomprobante", [])
                             
                             job_no = None
                             source_ref = None
@@ -3736,6 +5209,13 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                                 total_usd = first_item.get("total_usd")
                                 fecha_valoracion = first_item.get("fecha_valoracion")
                             
+                            # Obtener file_size_bytes y uploaded_at del metadata del archivo subido
+                            file_size_bytes = None
+                            uploaded_at = None
+                            if uploaded_file_metadata:
+                                file_size_bytes = uploaded_file_metadata.get("file_size_bytes")
+                                uploaded_at = uploaded_file_metadata.get("uploaded_at")
+                            
                             archivo_info = PeriodoArchivoInfo(
                                 archivo_id=request_id[:8],
                                 request_id=request_id,
@@ -3749,7 +5229,9 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                                 entered_amount=entered_amount,
                                 total_usd=total_usd,
                                 fecha_valoracion=fecha_valoracion,
-                                processed_at=metadata.get("processed_at")
+                                processed_at=metadata.get("processed_at"),
+                                file_size_bytes=file_size_bytes,
+                                uploaded_at=uploaded_at
                             )
                             break
                     except Exception:
@@ -3765,6 +5247,13 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                         
                         if request_id in tracking_data:
                             file_data = tracking_data[request_id]
+                            # Obtener file_size_bytes y uploaded_at del metadata del archivo subido
+                            file_size_bytes = None
+                            uploaded_at = None
+                            if uploaded_file_metadata:
+                                file_size_bytes = uploaded_file_metadata.get("file_size_bytes")
+                                uploaded_at = uploaded_file_metadata.get("uploaded_at")
+                            
                             archivo_info = PeriodoArchivoInfo(
                                 archivo_id=request_id[:8],
                                 request_id=request_id,
@@ -3778,7 +5267,9 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                                 entered_amount=None,
                                 total_usd=None,
                                 fecha_valoracion=None,
-                                processed_at=file_data.get("processed_at")
+                                processed_at=file_data.get("processed_at"),
+                                file_size_bytes=file_size_bytes,
+                                uploaded_at=uploaded_at
                             )
                 except Exception:
                     pass
@@ -3822,7 +5313,9 @@ async def get_periodo_detail(request: Request, periodo_id: str):
                         entered_amount=None,
                         total_usd=None,
                         fecha_valoracion=None,
-                        processed_at=uploaded_file.get("processed_at") if is_processed else None
+                        processed_at=uploaded_file.get("processed_at") if is_processed else None,
+                        file_size_bytes=uploaded_file.get("file_size_bytes"),
+                        uploaded_at=uploaded_file.get("uploaded_at")
                     )
                     archivos.append(archivo_info)
                     request_ids_incluidos.add(file_id)
@@ -3867,15 +5360,19 @@ async def get_periodo_detail(request: Request, periodo_id: str):
         # Verificar primero si el periodo está "cerrado" en la base de datos
         # Si está cerrado, no calcular dinámicamente, usar "cerrado" directamente
         estado_guardado = periodo_data.get("estado", "")
-        if estado_guardado == "cerrado":
+        
+        # CRÍTICO: SIEMPRE respetar el estado "cerrado" - no calcular dinámicamente
+        # El estado "cerrado" tiene prioridad absoluta sobre cualquier cálculo dinámico
+        if estado_guardado and estado_guardado.lower() == "cerrado":
             # Si el periodo está cerrado, usar "cerrado" directamente sin calcular
             estado_calculado = "cerrado"
+            logger.info(f"Periodo {periodo_id} está CERRADO - usando estado 'cerrado' sin calcular")
         else:
             # Calcular estado según prioridad (según requerimientos del usuario):
             # 1. Si no hay archivos → "vacio"
             # 2. Si hay al menos uno pendiente → "pendiente"
             # 3. Si todos están procesados → "procesado"
-            estado_calculado = "vacio"
+            estado_calculado = "pendiente"
             if total_archivos == 0:
                 # No hay archivos
                 estado_calculado = "vacio"
@@ -3938,7 +5435,12 @@ async def get_periodo_detail(request: Request, periodo_id: str):
 
 @app.put("/api/v1/periodos/{periodo_id}", response_model=PeriodoResponse, tags=["Periodos"])
 @limiter.limit("20/minute")  # Máximo 20 requests por minuto por IP
-async def update_periodo(request: Request, periodo_id: str, updates: Dict[str, Any]):
+async def update_periodo(
+    request: Request, 
+    periodo_id: str, 
+    updates: Dict[str, Any],
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Actualiza un periodo.
     
@@ -3949,6 +5451,9 @@ async def update_periodo(request: Request, periodo_id: str, updates: Dict[str, A
     Returns:
         Periodo actualizado
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         periodo_manager = get_periodo_manager()
         periodo_data = periodo_manager.update_periodo(periodo_id, updates)
@@ -3993,9 +5498,17 @@ async def update_periodo(request: Request, periodo_id: str, updates: Dict[str, A
 
 
 @app.delete("/api/v1/periodos/{periodo_id}", tags=["Periodos"])
-async def delete_periodo(periodo_id: str):
+async def delete_periodo(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
-    Elimina un periodo.
+    Elimina un periodo y elimina los archivos físicos (PDFs) y metadatas asociados.
+    
+    Al eliminar un periodo, también se eliminan:
+    - Los archivos PDF físicos en uploads/
+    - Los archivos de metadata en uploads/metadata/
+    - La entrada del periodo en el sistema
     
     Args:
         periodo_id: ID del periodo
@@ -4003,9 +5516,19 @@ async def delete_periodo(periodo_id: str):
     Returns:
         Confirmación de eliminación
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         periodo_manager = get_periodo_manager()
-        deleted = periodo_manager.delete_periodo(periodo_id)
+        upload_manager = get_upload_manager()
+        
+        # Eliminar periodo y eliminar archivos físicos asociados
+        deleted = periodo_manager.delete_periodo(
+            periodo_id, 
+            upload_manager=upload_manager, 
+            delete_files=True  # Eliminar archivos físicos y metadatas
+        )
         
         if not deleted:
             raise HTTPException(
@@ -4026,7 +5549,10 @@ async def delete_periodo(periodo_id: str):
 
 
 @app.get("/api/v1/periodos/{periodo_id}/resumen-ps", response_model=PeriodoResumenPSResponse, tags=["Periodos"])
-async def get_periodo_resumen_ps(periodo_id: str):
+async def get_periodo_resumen_ps(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Obtiene el resumen PS (Off-Shore/On-Shore) de un periodo.
     
@@ -4036,6 +5562,9 @@ async def get_periodo_resumen_ps(periodo_id: str):
     Returns:
         Resumen PS con Department, Discipline, Total US $, Total Horas, Ratios EDP
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         periodo_manager = get_periodo_manager()
         periodo_data = periodo_manager.get_periodo(periodo_id)
@@ -4046,12 +5575,107 @@ async def get_periodo_resumen_ps(periodo_id: str):
                 detail=f"Periodo {periodo_id} no encontrado"
             )
         
-        # TODO: Implementar lógica para generar resumen PS desde los JSONs estructurados
-        # Por ahora retornar estructura vacía
+        # Intentar cargar consolidado desde archivo
+        from ..services.resumen_consolidator import ResumenConsolidator
+        from ..api.dependencies import get_file_manager
+        
+        file_manager = get_file_manager()
+        consolidator = ResumenConsolidator(output_folder=file_manager.get_output_folder() or Path("./output"))
+        consolidado = consolidator.load_consolidado(periodo_id)
+        
+        if consolidado:
+            # Convertir consolidado a formato de respuesta
+            periodo_tipo = periodo_data.get("tipo", "offshore").lower()
+            items_data = consolidado.get("resumen_ps", {}).get(periodo_tipo, [])
+            
+            # Convertir items a formato PeriodoResumenPSItem
+            items = []
+            for item in items_data:
+                if periodo_tipo == "onshore":
+                    # Para OnShore, incluir todos los campos
+                    items.append({
+                        "department": item.get("department", "---"),
+                        "discipline": item.get("discipline", "---"),
+                        "total_us": item.get("total_us", 0.0),
+                        "total_horas": item.get("total_hours", 0.0),  # Mapear total_hours a total_horas
+                        "ratios_edp": (item.get("total_us", 0.0) / item.get("total_hours", 1.0)) if item.get("total_hours", 0.0) > 0 else 0.0,
+                        "job_no": item.get("job_no", "---"),
+                        "wages": item.get("wages", 0.0),
+                        "expatriate_allowances": item.get("expatriate_allowances", 0.0),
+                        "multiplier": item.get("multiplier", 0.0),
+                        "odc": item.get("odc", 0.0),
+                        "epp": item.get("epp", 0.0),
+                        "total_hours": item.get("total_hours", 0.0)
+                    })
+                else:
+                    # Para OffShore
+                    items.append({
+                        "department": item.get("department", "---"),
+                        "discipline": item.get("discipline", "---"),
+                        "total_us": item.get("total_us", 0.0),
+                        "total_horas": item.get("total_horas", 0.0),
+                        "ratios_edp": item.get("ratios_edp", 0.0)
+                    })
+            
+            return PeriodoResumenPSResponse(
+                success=True,
+                periodo_id=periodo_id,
+                tipo=periodo_tipo,
+                items=items,
+                total=len(items)
+            )
+        else:
+            # Si no hay consolidado, intentar consolidar ahora (puede que los JSONs aún existan)
+            request_ids = periodo_manager.get_archivos_from_periodo(periodo_id)
+            if request_ids:
+                periodo_tipo = periodo_data.get("tipo", "offshore")
+                consolidado = consolidator.consolidate_periodo(
+                    periodo_id=periodo_id,
+                    periodo_tipo=periodo_tipo,
+                    request_ids=request_ids
+                )
+                
+                # Convertir y retornar
+                items_data = consolidado.get("resumen_ps", {}).get(periodo_tipo.lower(), [])
+                items = []
+                for item in items_data:
+                    if periodo_tipo.lower() == "onshore":
+                        items.append({
+                            "department": item.get("department", "---"),
+                            "discipline": item.get("discipline", "---"),
+                            "total_us": item.get("total_us", 0.0),
+                            "total_horas": item.get("total_hours", 0.0),
+                            "ratios_edp": (item.get("total_us", 0.0) / item.get("total_hours", 1.0)) if item.get("total_hours", 0.0) > 0 else 0.0,
+                            "job_no": item.get("job_no", "---"),
+                            "wages": item.get("wages", 0.0),
+                            "expatriate_allowances": item.get("expatriate_allowances", 0.0),
+                            "multiplier": item.get("multiplier", 0.0),
+                            "odc": item.get("odc", 0.0),
+                            "epp": item.get("epp", 0.0),
+                            "total_hours": item.get("total_hours", 0.0)
+                        })
+                    else:
+                        items.append({
+                            "department": item.get("department", "---"),
+                            "discipline": item.get("discipline", "---"),
+                            "total_us": item.get("total_us", 0.0),
+                            "total_horas": item.get("total_horas", 0.0),
+                            "ratios_edp": item.get("ratios_edp", 0.0)
+                        })
+                
+                return PeriodoResumenPSResponse(
+                    success=True,
+                    periodo_id=periodo_id,
+                    tipo=periodo_tipo.lower(),
+                    items=items,
+                    total=len(items)
+                )
+        
+        # Si no hay archivos procesados, retornar vacío
         return PeriodoResumenPSResponse(
             success=True,
             periodo_id=periodo_id,
-            tipo=periodo_data["tipo"],
+            tipo=periodo_data.get("tipo", "offshore"),
             items=[],
             total=0
         )
@@ -4067,7 +5691,10 @@ async def get_periodo_resumen_ps(periodo_id: str):
 
 
 @app.post("/api/v1/periodos/{periodo_id}/exportar", tags=["Periodos"])
-async def exportar_periodo(periodo_id: str):
+async def exportar_periodo(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Exporta un periodo (genera ZIP consolidado con todos los ZIPs y Excels de los archivos procesados).
     
@@ -4083,6 +5710,9 @@ async def exportar_periodo(periodo_id: str):
     Returns:
         Redirección a /public/{periodo_id}_export_{timestamp}.zip
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     from fastapi.responses import RedirectResponse
     import zipfile
     
@@ -4221,10 +5851,182 @@ async def exportar_periodo(periodo_id: str):
         )
 
 
+@app.get("/api/v1/periodos/{periodo_id}/resumen-ps/exportar-excel", tags=["Periodos"])
+async def exportar_resumen_ps_excel(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Exporta el resumen PS de un periodo a Excel.
+    
+    Args:
+        periodo_id: ID del periodo
+        
+    Returns:
+        Archivo Excel con el resumen PS
+    """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
+    try:
+        from fastapi.responses import FileResponse
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+        
+        periodo_manager = get_periodo_manager()
+        periodo_data = periodo_manager.get_periodo(periodo_id)
+        
+        if not periodo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Periodo {periodo_id} no encontrado"
+            )
+        
+        # Cargar consolidado
+        from ..services.resumen_consolidator import ResumenConsolidator
+        from ..api.dependencies import get_file_manager
+        
+        file_manager = get_file_manager()
+        consolidator = ResumenConsolidator(output_folder=file_manager.get_output_folder() or Path("./output"))
+        consolidado = consolidator.load_consolidado(periodo_id)
+        
+        if not consolidado:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No hay resumen consolidado para el periodo {periodo_id}"
+            )
+        
+        periodo_tipo = periodo_data.get("tipo", "offshore").lower()
+        items_data = consolidado.get("resumen_ps", {}).get(periodo_tipo, [])
+        
+        if not items_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No hay datos en el resumen PS del periodo {periodo_id}"
+            )
+        
+        # Crear workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Resumen PS-{periodo_tipo.capitalize()}"
+        
+        # Estilos
+        header_fill = PatternFill(start_color="1F1F1F", end_color="1F1F1F", fill_type="solid")  # Header oscuro
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        currency_format = '#,##0.00'
+        number_format = '#,##0.00'
+        
+        # Escribir headers según tipo
+        row = 1
+        if periodo_tipo == "onshore":
+            headers = ["Job No", "Department", "Discipline", "Wages", "Expatriate Allowances", 
+                      "Multiplier", "ODC", "EPP", "Total US $", "Total Hours"]
+            col_widths = [15, 20, 20, 15, 20, 12, 12, 12, 15, 15]
+        else:
+            headers = ["Department", "Discipline", "Total US $", "Total Horas", "Ratios EDP $/HH"]
+            col_widths = [25, 25, 15, 15, 18]
+        
+        # Escribir headers
+        for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
+            cell = ws.cell(row=row, column=col_idx, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = border
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+        
+        # Escribir datos
+        for item in items_data:
+            row += 1
+            if periodo_tipo == "onshore":
+                values = [
+                    item.get("job_no", "---"),
+                    item.get("department", "---"),
+                    item.get("discipline", "---"),
+                    item.get("wages", 0.0),
+                    item.get("expatriate_allowances", 0.0),
+                    item.get("multiplier", 0.0),
+                    item.get("odc", 0.0),
+                    item.get("epp", 0.0),
+                    item.get("total_us", 0.0),
+                    item.get("total_hours", 0.0)
+                ]
+            else:
+                values = [
+                    item.get("department", "---"),
+                    item.get("discipline", "---"),
+                    item.get("total_us", 0.0),
+                    item.get("total_horas", 0.0),
+                    item.get("ratios_edp", 0.0)
+                ]
+            
+            for col_idx, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col_idx, value=value)
+                cell.border = border
+                
+                # Aplicar formato según tipo de dato
+                if isinstance(value, (int, float)):
+                    if periodo_tipo == "onshore":
+                        if col_idx in [4, 5, 9]:  # Columnas monetarias (Wages, Expatriate Allowances, Total US $)
+                            cell.number_format = currency_format
+                        elif col_idx == 10:  # Total Hours
+                            cell.number_format = '#,##0.00'  # Formato con 2 decimales
+                        else:  # Multiplier, ODC, EPP
+                            cell.number_format = number_format
+                    else:  # OffShore
+                        if col_idx == 3:  # Total US $
+                            cell.number_format = currency_format
+                        elif col_idx == 4:  # Total Horas
+                            cell.number_format = '#,##0.00'  # Formato con 2 decimales
+                        elif col_idx == 5:  # Ratios EDP $/HH
+                            cell.number_format = '#,##0.000'  # Formato con 3 decimales como en la imagen
+                        else:
+                            cell.number_format = number_format
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+        
+        # Guardar Excel
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        excel_filename = f"resumen_ps_{periodo_id}_{timestamp}.xlsx"
+        excel_path = file_manager.get_output_folder() or Path("./output")
+        excel_path = excel_path / "public" / excel_filename
+        excel_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        wb.save(excel_path)
+        
+        return FileResponse(
+            path=excel_path,
+            filename=excel_filename,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error exportando resumen PS a Excel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error exportando resumen PS a Excel: {str(e)}"
+        )
+
+
 @app.post("/api/v1/periodos/{periodo_id}/bloquear", response_model=PeriodoResponse, tags=["Periodos"])
-async def bloquear_periodo(periodo_id: str):
+async def bloquear_periodo(
+    periodo_id: str,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     """
     Bloquea un periodo (cambia estado a "cerrado").
+    Al bloquear, guarda un snapshot de los apartados actuales para mantener histórico.
     
     Args:
         periodo_id: ID del periodo
@@ -4232,8 +6034,16 @@ async def bloquear_periodo(periodo_id: str):
     Returns:
         Periodo actualizado con estado "cerrado"
     """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
     try:
         periodo_manager = get_periodo_manager()
+        
+        # Cargar apartados actuales antes de bloquear para guardar snapshot
+        maestros_data = load_maestros_data()
+        apartados_actuales = maestros_data.get("apartados", [])
+        
         # Actualizar estado a "cerrado"
         periodo_data = periodo_manager.update_periodo(periodo_id, {"estado": "cerrado"})
         
@@ -4242,6 +6052,11 @@ async def bloquear_periodo(periodo_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Periodo {periodo_id} no encontrado"
             )
+        
+        # Guardar snapshot de apartados para este periodo
+        if apartados_actuales:
+            periodo_manager.save_apartados_snapshot(periodo_id, apartados_actuales)
+            logger.info(f"Snapshot de apartados guardado para periodo cerrado {periodo_id}")
         
         # Asegurar que el estado sea "cerrado" en la respuesta
         periodo_data["estado"] = "cerrado"
@@ -4277,7 +6092,7 @@ async def bloquear_periodo(periodo_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al bloquear periodo: {str(e)}"
-        )
+    )
 
 
 @app.exception_handler(Exception)
@@ -4293,6 +6108,274 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": "Error interno del servidor",
             "details": str(exc) if os.getenv("DEBUG", "false").lower() == "true" else None
         }
+    )
+
+
+# ===== Maestros Endpoints =====
+
+@app.get("/api/v1/maestros/apartados", response_model=MaestrosResponse, tags=["Maestros"])
+async def get_maestros_apartados(
+    periodo_id: Optional[str] = Query(None, description="ID del periodo (opcional). Si se proporciona y el periodo está cerrado, retorna el snapshot"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Obtiene la lista de apartados (conceptos) configurados.
+    
+    Si se proporciona periodo_id y el periodo está cerrado, retorna el snapshot
+    de apartados que tenía cuando se cerró, para mantener el histórico.
+    
+    Args:
+        periodo_id: ID del periodo (opcional). Si el periodo está cerrado, retorna su snapshot.
+    
+    Returns:
+        Lista de apartados guardados en maestros_apartados.json o snapshot del periodo si está cerrado
+    """
+    get_current_user_email(credentials)
+    
+    try:
+        apartados = []
+        
+        # Si hay periodo_id, verificar si tiene snapshot (periodo cerrado)
+        if periodo_id:
+            periodo_manager = get_periodo_manager()
+            periodo = periodo_manager.get_periodo(periodo_id)
+            
+            if periodo and periodo.get("estado") == "cerrado":
+                # Periodo cerrado: usar snapshot
+                snapshot = periodo_manager.get_apartados_snapshot(periodo_id)
+                if snapshot:
+                    apartados = snapshot
+                    logger.info(f"Retornando snapshot de apartados para periodo cerrado {periodo_id}")
+                else:
+                    # No hay snapshot, usar apartados actuales
+                    data = load_maestros_data()
+                    apartados = data.get("apartados", [])
+            else:
+                # Periodo abierto o no existe: usar apartados actuales
+                data = load_maestros_data()
+                apartados = data.get("apartados", [])
+        else:
+            # Sin periodo_id: usar apartados actuales
+            data = load_maestros_data()
+            apartados = data.get("apartados", [])
+        
+        # Convertir a formato ApartadoInfo
+        apartados_info = [
+            ApartadoInfo(
+                id=a.get("id", ""),
+                nombre=a.get("nombre", ""),
+                orden=a.get("orden", 0)
+            )
+            for a in apartados
+        ]
+        
+        return MaestrosResponse(
+            success=True,
+            apartados=apartados_info
+        )
+    except Exception as e:
+        logger.error(f"Error al obtener apartados: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponse(
+                request_id="",
+                error="Error al obtener apartados",
+                details={"message": str(e)}
+            ).model_dump()
+        )
+
+
+@app.post("/api/v1/maestros/apartados", response_model=MaestrosResponse, tags=["Maestros"])
+async def save_maestros_apartados(
+    request: MaestrosSaveRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Guarda la lista de apartados (conceptos) configurados.
+    
+    Args:
+        request: Lista de apartados a guardar
+        
+    Returns:
+        Confirmación de guardado exitoso con la lista de apartados guardados
+    """
+    get_current_user_email(credentials)
+    
+    try:
+        # Convertir ApartadoInfo a dict para guardar en JSON
+        apartados_dict = [
+            {
+                "id": a.id,
+                "nombre": a.nombre,
+                "orden": a.orden
+            }
+            for a in request.apartados
+        ]
+        
+        # Guardar en archivo JSON
+        data = {"apartados": apartados_dict}
+        if save_maestros_data(data):
+            return MaestrosResponse(
+                success=True,
+                apartados=request.apartados,
+                message="Apartados guardados exitosamente"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=ErrorResponse(
+                    request_id="",
+                    error="Error al guardar apartados",
+                    details={"message": "No se pudo escribir en el archivo"}
+                ).model_dump()
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al guardar apartados: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponse(
+                request_id="",
+                error="Error al guardar apartados",
+                details={"message": str(e)}
+            ).model_dump()
+        )
+
+
+@app.get("/api/v1/maestros/apartados/exportar-excel", tags=["Maestros"])
+async def exportar_apartados_excel(
+    periodo_id: Optional[str] = Query(None, description="ID del periodo (opcional)"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """
+    Exporta la lista de apartados configurados a Excel.
+    
+    Args:
+        periodo_id: ID del periodo (opcional) para incluir en el nombre del archivo
+    
+    Returns:
+        Archivo Excel con los apartados ordenados según su posición
+    """
+    # Verificar autenticación y estado del usuario
+    get_current_user_email(credentials)
+    
+    try:
+        from fastapi.responses import FileResponse
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+        from ..api.dependencies import get_file_manager
+        
+        # Cargar apartados - usar snapshot si el periodo está cerrado, sino usar apartados actuales
+        apartados = []
+        if periodo_id:
+            # Verificar si hay snapshot para este periodo
+            periodo_manager = get_periodo_manager()
+            snapshot = periodo_manager.get_apartados_snapshot(periodo_id)
+            
+            if snapshot:
+                # Usar snapshot del periodo cerrado
+                apartados = snapshot
+                logger.info(f"Usando snapshot de apartados para periodo {periodo_id}")
+            else:
+                # Usar apartados actuales
+                data = load_maestros_data()
+                apartados = data.get("apartados", [])
+        else:
+            # Si no hay periodo_id, usar apartados actuales
+            data = load_maestros_data()
+            apartados = data.get("apartados", [])
+        
+        if not apartados:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No hay apartados configurados para exportar"
+            )
+        
+        # Ordenar apartados por orden
+        apartados_ordenados = sorted(apartados, key=lambda x: x.get("orden", 0))
+        
+        # Crear workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Apartados Configurados"
+        
+        # Estilos
+        header_fill = PatternFill(start_color="1F1F1F", end_color="1F1F1F", fill_type="solid")  # Header oscuro
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Escribir headers
+        headers = ["Orden", "Concepto", "Total US $"]
+        col_widths = [15, 40, 18]
+        
+        row = 1
+        for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
+            cell = ws.cell(row=row, column=col_idx, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = border
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+        
+        # Escribir datos
+        for apartado in apartados_ordenados:
+            row += 1
+            values = [
+                apartado.get("orden", 0) + 1,  # Mostrar posición desde 1
+                apartado.get("nombre", "---"),
+                "---"  # Total US $ - placeholder
+            ]
+            
+            for col_idx, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col_idx, value=value)
+                cell.border = border
+                
+                # Formato según tipo de columna
+                if col_idx == 1:  # Orden - número centrado
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 2:  # Concepto - texto izquierda
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                else:  # Total US $ - texto centrado
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Guardar Excel
+        file_manager = get_file_manager()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if periodo_id:
+            excel_filename = f"noreembolsables_{periodo_id}_{timestamp}.xlsx"
+        else:
+            excel_filename = f"noreembolsables_{timestamp}.xlsx"
+        base_output = file_manager.get_output_folder() or "./output"
+        excel_path = Path(base_output) / "public" / excel_filename
+        excel_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        wb.save(excel_path)
+        
+        return FileResponse(
+            path=excel_path,
+            filename=excel_filename,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error exportando apartados a Excel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponse(
+                request_id="",
+                error="Error al exportar apartados a Excel",
+                details={"message": str(e)}
+            ).model_dump()
     )
 
 

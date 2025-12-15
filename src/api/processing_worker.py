@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
+from ..core.file_manager import truncate_pdf_name_base, truncate_filename_for_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -157,7 +159,10 @@ class ProcessingWorkerManager:
             file_manager = get_file_manager()
             upload_manager = get_upload_manager()
             
-            pdf_name = Path(job.metadata.get("filename", "unknown")).stem
+            pdf_name_full = Path(job.metadata.get("filename", "unknown")).stem
+            # Truncar SOLO el nombre base del PDF (sin extensiones ni sufijos)
+            # Esto garantiza que _page_1, _page_2, etc. se mantengan intactos
+            pdf_name = truncate_pdf_name_base(pdf_name_full, max_length=50)
             
             # Callback de progreso
             def progress_callback(message: str, percentage: Optional[int]):
@@ -216,6 +221,13 @@ class ProcessingWorkerManager:
                     periodo = periodo_manager.get_periodo(job.periodo_id)
                     if periodo:
                         periodo_manager.add_archivo_to_periodo(job.periodo_id, job.request_id)
+                        # Agregar onshore_offshore desde el tipo del periodo
+                        periodo_tipo = periodo.get("tipo", "").lower()
+                        if periodo_tipo in ["onshore", "offshore"]:
+                            api_metadata["onshore_offshore"] = periodo_tipo
+                        
+                        # Consolidar resumen PS del periodo (después de guardar JSONs)
+                        # Esto se hará después de guardar los JSONs estructurados
                 except Exception as e:
                     logger.warning(f"[{job.request_id}] Error asociando a periodo: {e}")
             
@@ -235,12 +247,18 @@ class ProcessingWorkerManager:
                         if "metadata" not in page_result["json_2_structured"]:
                             page_result["json_2_structured"]["metadata"] = {}
                         page_result["json_2_structured"]["metadata"].update(api_metadata)
+                        
+                        # Agregar onshore_offshore al nivel raíz si está disponible
+                        # (ya no está en additional_data)
+                        if "onshore_offshore" in api_metadata:
+                            page_result["json_2_structured"]["onshore_offshore"] = api_metadata["onshore_offshore"]
                     
                     # Guardar JSONs
                     import json
                     
                     raw_subfolder = api_output_folder / "raw"
                     raw_subfolder.mkdir(parents=True, exist_ok=True)
+                    # El pdf_name ya está truncado, solo agregamos _page_X
                     raw_filename = f"{pdf_name}_page_{page_num}_raw.json"
                     raw_path = raw_subfolder / raw_filename
                     with open(raw_path, 'w', encoding='utf-8') as f:
@@ -248,6 +266,7 @@ class ProcessingWorkerManager:
                     
                     struct_subfolder = api_output_folder / "structured"
                     struct_subfolder.mkdir(parents=True, exist_ok=True)
+                    # El pdf_name ya está truncado, solo agregamos _page_X
                     struct_filename = f"{pdf_name}_page_{page_num}_structured.json"
                     struct_path = struct_subfolder / struct_filename
                     with open(struct_path, 'w', encoding='utf-8') as f:
@@ -319,7 +338,8 @@ class ProcessingWorkerManager:
                         # Crear ZIP y Excel
                         if db_saved_successfully or not db_service.is_enabled():
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            zip_filename = f"{pdf_name}_{timestamp}_{job.request_id[:8]}.zip"
+                            zip_filename_base = f"{pdf_name}_{timestamp}_{job.request_id[:8]}.zip"
+                            zip_filename = truncate_filename_for_path(zip_filename_base, max_length=50)
                             zip_path = archive_manager.zip_folder(api_folder, zip_filename)
                             
                             if zip_path.exists():
@@ -357,6 +377,28 @@ class ProcessingWorkerManager:
                                 with self.jobs_lock:
                                     job.download_url = download_url
                                     job.excel_download_url = excel_download_url
+                                
+                                # Consolidar resumen PS del periodo ANTES de borrar JSONs
+                                if job.periodo_id:
+                                    try:
+                                        from ..services.resumen_consolidator import ResumenConsolidator
+                                        consolidator = ResumenConsolidator(output_folder=file_manager.get_output_folder() or Path("./output"))
+                                        periodo_manager = get_periodo_manager()
+                                        periodo = periodo_manager.get_periodo(job.periodo_id)
+                                        if periodo:
+                                            request_ids = periodo_manager.get_archivos_from_periodo(job.periodo_id)
+                                            periodo_tipo = periodo.get("tipo", "offshore")
+                                            # Usar la carpeta estándar output/api/structured para consolidar
+                                            standard_structured_folder = Path(file_manager.get_output_folder() or "./output") / "api" / "structured"
+                                            consolidator.consolidate_periodo(
+                                                periodo_id=job.periodo_id,
+                                                periodo_tipo=periodo_tipo,
+                                                request_ids=request_ids,
+                                                structured_folder=standard_structured_folder
+                                            )
+                                            logger.info(f"[{job.request_id}] Resumen PS consolidado para periodo {job.periodo_id}")
+                                    except Exception as e:
+                                        logger.warning(f"[{job.request_id}] Error consolidando resumen PS: {e}")
                                 
                                 # Borrar JSONs si BD fue exitoso
                                 if db_saved_successfully:
@@ -449,7 +491,8 @@ class ProcessingWorkerManager:
             # Crear ZIP y Excel usando el request_id maestro
             if db_saved_successfully or not db_service.is_enabled():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                zip_filename = f"{pdf_name}_{timestamp}_{master_job.request_id[:8]}.zip"
+                zip_filename_base = f"{pdf_name}_{timestamp}_{master_job.request_id[:8]}.zip"
+                zip_filename = truncate_filename_for_path(zip_filename_base, max_length=50)
                 zip_path = archive_manager.zip_folder(api_folder, zip_filename)
                 
                 if zip_path.exists():
@@ -490,6 +533,22 @@ class ProcessingWorkerManager:
                             periodo = periodo_manager.get_periodo(master_job.periodo_id)
                             if periodo:
                                 periodo_manager.add_archivo_to_periodo(master_job.periodo_id, master_job.request_id)
+                                
+                                # Consolidar resumen PS del periodo
+                                try:
+                                    from ..services.resumen_consolidator import ResumenConsolidator
+                                    consolidator = ResumenConsolidator(output_folder=file_manager.get_output_folder() or Path("./output"))
+                                    request_ids = periodo_manager.get_archivos_from_periodo(master_job.periodo_id)
+                                    periodo_tipo = periodo.get("tipo", "offshore")
+                                    consolidator.consolidate_periodo(
+                                        periodo_id=master_job.periodo_id,
+                                        periodo_tipo=periodo_tipo,
+                                        request_ids=request_ids,
+                                        structured_folder=structured_folder  # Usar la carpeta local del archivo
+                                    )
+                                    logger.info(f"[{master_job.request_id}] Resumen PS consolidado para periodo {master_job.periodo_id}")
+                                except Exception as e:
+                                    logger.warning(f"[{master_job.request_id}] Error consolidando resumen PS: {e}")
                         except Exception as e:
                             logger.warning(f"[{master_job.request_id}] Error asociando a periodo: {e}")
                     
@@ -502,6 +561,28 @@ class ProcessingWorkerManager:
                         master_job.pages_processed = total_pages
                         master_job.download_url = download_url
                         master_job.excel_download_url = excel_download_url
+                    
+                    # Consolidar resumen PS del periodo ANTES de borrar JSONs (para batch jobs)
+                    if master_job.periodo_id:
+                        try:
+                            from ..services.resumen_consolidator import ResumenConsolidator
+                            consolidator = ResumenConsolidator(output_folder=file_manager.get_output_folder() or Path("./output"))
+                            periodo_manager = get_periodo_manager()
+                            periodo = periodo_manager.get_periodo(master_job.periodo_id)
+                            if periodo:
+                                request_ids = periodo_manager.get_archivos_from_periodo(master_job.periodo_id)
+                                periodo_tipo = periodo.get("tipo", "offshore")
+                                # Usar la carpeta estándar output/api/structured para consolidar
+                                standard_structured_folder = Path(file_manager.get_output_folder() or "./output") / "api" / "structured"
+                                consolidator.consolidate_periodo(
+                                    periodo_id=master_job.periodo_id,
+                                    periodo_tipo=periodo_tipo,
+                                    request_ids=request_ids,
+                                    structured_folder=standard_structured_folder
+                                )
+                                logger.info(f"[{master_job.request_id}] Resumen PS consolidado para periodo {master_job.periodo_id}")
+                        except Exception as e:
+                            logger.warning(f"[{master_job.request_id}] Error consolidando resumen PS: {e}")
                     
                     # Borrar JSONs si BD fue exitoso
                     if db_saved_successfully:

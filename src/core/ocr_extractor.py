@@ -10,7 +10,7 @@ import threading
 import time
 
 from .pdf_processor import PDFProcessor
-from .file_manager import FileManager
+from .file_manager import FileManager, truncate_pdf_name_base
 from .json_parser import JSONParser
 
 
@@ -73,7 +73,10 @@ class OCRExtractor:
         )
         
         total_pages = len(pages)
-        pdf_name = Path(pdf_path).stem
+        pdf_name_full = Path(pdf_path).stem
+        # Truncar SOLO el nombre base del PDF (sin extensiones ni sufijos)
+        # Esto garantiza que _page_1, _page_2, etc. se mantengan intactos
+        pdf_name = truncate_pdf_name_base(pdf_name_full, max_length=50)
         
         if progress_callback:
             progress_callback(f"PDF dividido en {total_pages} página(s)", 5)
@@ -162,6 +165,8 @@ class OCRExtractor:
             if use_structured_extraction and hasattr(self.gemini_service, 'extract_structured_data_from_image'):
                 try:
                     # 1. Extracción estructurada directa (OCR + estructuración en una llamada)
+                    # NOTA: No hacemos reintentos automáticos para errores 429 porque cada reintento
+                    # consume tokens de entrada (prompt + imagen), multiplicando el consumo innecesariamente
                     structured_result = self.gemini_service.extract_structured_data_from_image(
                         str(img_path)
                     )
@@ -239,22 +244,74 @@ class OCRExtractor:
                                                 translated_text = nested_translated
                                             print(f"Info: Extracted ocr_text_translated from nested JSON for page {page_num}")
                             except (json.JSONDecodeError, ValueError, TypeError) as e:
-                                # Si el JSON está mal formado, usar texto vacío y continuar inmediatamente
-                                # NO intentar múltiples extracciones que pueden colgar el servidor
-                                print(f"Warning: Could not parse ocr_text as JSON for page {page_num}: {e}. Using empty text and continuing.")
-                                ocr_text = ""
-                                translated_text = ""
+                                # Si el JSON está mal formado, intentar extraer texto plano como fallback
+                                # NO dejar texto vacío si hay contenido válido
+                                print(f"Warning: Could not parse ocr_text as JSON for page {page_num}: {e}. Attempting text extraction fallback.")
+                                
+                                # Intentar extraer texto plano del string original
+                                if ocr_text and isinstance(ocr_text, str):
+                                    # Si el string contiene texto legible (no solo JSON), intentar limpiarlo
+                                    if len(ocr_text) > 50 and not ocr_text.strip().startswith('{'):
+                                        # Parece texto válido, limpiarlo y usar
+                                        cleaned = ocr_text.strip()
+                                        # Remover posibles marcadores JSON al inicio/fin
+                                        if cleaned.startswith('"ocr_text"'):
+                                            # Intentar extraer el valor del campo ocr_text
+                                            import re
+                                            match = re.search(r'"ocr_text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"', cleaned)
+                                            if match:
+                                                ocr_text = match.group(1).replace('\\n', '\n').replace('\\"', '"')
+                                            else:
+                                                ocr_text = cleaned
+                                        else:
+                                            ocr_text = cleaned
+                                        print(f"Info: Extracted text from malformed JSON ({len(ocr_text)} chars)")
+                                    else:
+                                        # Si es muy corto o parece JSON puro, dejar vacío
+                                        print(f"Warning: ocr_text appears to be invalid JSON only, using empty text")
+                                        ocr_text = ""
+                                else:
+                                    ocr_text = ""
+                                
+                                translated_text = ocr_text if ocr_text else ""
                                 gemini_structured_data = {}
                         
-                        # CRITICAL: Si ocr_text o translated_text todavía contienen JSON después de la extracción,
-                        # usar texto vacío y continuar (NO intentar limpieza recursiva que puede colgar el servidor)
+                        # CRITICAL: Si ocr_text todavía contiene JSON después de la extracción,
+                        # intentar extraer texto válido antes de dejarlo vacío
                         if ocr_text and isinstance(ocr_text, str) and ocr_text.strip().startswith('{'):
-                            print(f"Warning: ocr_text still contains JSON after extraction for page {page_num}. Using empty text and continuing to next page.")
-                            ocr_text = ""
+                            print(f"Warning: ocr_text still contains JSON after extraction for page {page_num}. Attempting final text extraction.")
+                            # Último intento: buscar texto dentro del JSON
+                            try:
+                                json_attempt = json.loads(ocr_text)
+                                if isinstance(json_attempt, dict):
+                                    # Buscar campos de texto comunes
+                                    for field in ["ocr_text", "text", "content", "ocr_text_translated"]:
+                                        if field in json_attempt and isinstance(json_attempt[field], str) and len(json_attempt[field]) > 10:
+                                            ocr_text = json_attempt[field]
+                                            print(f"Info: Extracted text from JSON field '{field}' ({len(ocr_text)} chars)")
+                                            break
+                                    if ocr_text.strip().startswith('{'):
+                                        # Aún es JSON, usar texto vacío
+                                        print(f"Warning: Could not extract valid text from JSON, using empty text")
+                                        ocr_text = ""
+                            except:
+                                # Si falla, usar texto vacío
+                                print(f"Warning: Final JSON extraction failed, using empty text")
+                                ocr_text = ""
                         
                         if translated_text and isinstance(translated_text, str) and translated_text.strip().startswith('{'):
-                            print(f"Warning: translated_text still contains JSON after extraction for page {page_num}. Using empty text and continuing to next page.")
-                            translated_text = "" if not ocr_text else ocr_text
+                            # Mismo proceso para translated_text
+                            try:
+                                json_attempt = json.loads(translated_text)
+                                if isinstance(json_attempt, dict):
+                                    for field in ["ocr_text_translated", "ocr_text", "text", "content"]:
+                                        if field in json_attempt and isinstance(json_attempt[field], str) and len(json_attempt[field]) > 10:
+                                            translated_text = json_attempt[field]
+                                            break
+                                    if translated_text.strip().startswith('{'):
+                                        translated_text = "" if not ocr_text else ocr_text
+                            except:
+                                translated_text = "" if not ocr_text else ocr_text
                         
                         # Crear resultado OCR compatible con formato anterior
                         ocr_result = {
@@ -305,8 +362,12 @@ class OCRExtractor:
                         # No ejecutar el método tradicional
                         
                     else:
-                        # Si falla la extracción estructurada, usar método tradicional
-                        print(f"Advertencia: Extracción estructurada falló para página {page_num}, usando método tradicional")
+                        # Si falla la extracción estructurada (incluyendo errores 429), usar método tradicional
+                        error_type = structured_result.get("error_type") if structured_result else None
+                        if error_type == "quota_exceeded":
+                            print(f"Advertencia: Cuota excedida para página {page_num}, usando método tradicional (sin reintentos para evitar consumo excesivo de tokens)")
+                        else:
+                            print(f"Advertencia: Extracción estructurada falló para página {page_num}, usando método tradicional")
                         use_structured_extraction = False
                         
                 except Exception as e:
@@ -571,7 +632,7 @@ class OCRExtractor:
         for page_result in results:
             page_num = page_result.get("page_number")
             
-            # Guardar JSON 1
+            # Guardar JSON 1 (el pdf_name ya está truncado, solo agregamos _page_X)
             raw_filename = f"{pdf_name}_page_{page_num}_raw.json"
             self.file_manager.save_json(
                 page_result.get("json_1_raw"), 
@@ -579,7 +640,7 @@ class OCRExtractor:
                 subfolder="raw"
             )
             
-            # Guardar JSON 2
+            # Guardar JSON 2 (el pdf_name ya está truncado, solo agregamos _page_X)
             struct_filename = f"{pdf_name}_page_{page_num}_structured.json"
             self.file_manager.save_json(
                 page_result.get("json_2_structured"),
